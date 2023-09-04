@@ -1,5 +1,5 @@
 ## PhotoD
-# Estimating distances to stars using broadband optical photometry, such as SDSS and LSST
+### Estimating distances to stars using broadband optical photometry, such as SDSS and LSST
 
 
 data: all data files (catalogs, etc)
