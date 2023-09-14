@@ -268,16 +268,17 @@ def show3Flat2Dmaps(Z1, Z2, Z3, md, xLab, yLab, x0=-99, y0=-99, logScale=False, 
 
     cax = fig.add_axes([0.84, 0.1, 0.1, 0.75])
     cax.set_axis_off()
-    cb = fig.colorbar(cmap, ax=cax)
-    if (logScale):
-        cb.set_label("density on log scale")
-    else:
-        cb.set_label("density on linear scale")
+    if (0):
+        cb = fig.colorbar(cmap, ax=cax)
+        if (logScale):
+            cb.set_label("density on log scale")
+        else:
+            cb.set_label("density on linear scale")
 
     for ax in axs.flat:
         ax.set(xlabel=xLab, ylabel=yLab)
 
-    plt.savefig('../plots/bayesPanels.png')
+    # plt.savefig('../plots/bayesPanels.png')
     plt.show() 
 
     

@@ -1,5 +1,5 @@
 import numpy as np
-from astropy.table import Table
+from astropy.table import Table, vstack
 from scipy.stats import gaussian_kde
 from scipy.interpolate import griddata
 import BayesTools as bt
@@ -12,6 +12,7 @@ import PlotTools as pt
 # def readTRILEGAL():
 # def readTRILEGALLSST():
 # def readTRILEGALLSSTestimates():
+# def readKarloMLestimates3(inKfile, simtype):
 # def LSSTsimsLocus(fixForStripe82=True): 
 # def BHBlocus(): 
 # def photoFeH(ug, gr): 
@@ -19,25 +20,25 @@ import PlotTools as pt
 # def extcoeff(): 
 # def getColorsFromMrFeH(L, Lvalues):
 # def getColorsFromGivenMrFeH(myMr, myFeH, L, gp, colors=""):
-# def getLocusChi2colorsSLOW(colorNames, Mcolors, Ocolors, Oerrors):
 # def getLocusChi2colors(colorNames, Mcolors, Ocolors, Oerrors):
 # def logLfromObsColors(Mr, FeH, ObsColors, ObsColErrors, gridProperties, SDSScolors):
 # def getFitResults(i, gridStride, Ntest, colors, locusGrid, ObsColorErr, locusFitMS, locusFitRG, results):
 # def extractBestFit(chi2vals, locusGrid):
 # def fitPhotoD(i, gridStride, colors, data2fit, locusFitMS, locusFitRG, results):
 # def getPhotoDchi2map(i, colors, data2fit, locus):
+# def getPhotoDchi2map3D(i, colors, colorReddCoeffs, data2fit, locus, ArCoeff, masterLocus=False):
+# def get3DmodelList(locusData, fitColors):
+# def make3DlocusFast(locus3D0, ArGrid, colors, colorCorrection, FeH1d, Mr1d):
+# def make3DlocusList(locusData, fitColors, ArGridList):
+# def make3Dlocus(locus, ArGrid, colors, colCorr):
 # def fitMedians(x, y, xMin, xMax, Nbin, verbose=1): 
-# def getLSSTm5(data, depth='coadd'):
-# def get2Dmap(sample, labels, metadata):
-# def dumpPriorMaps(sample, rmagMin, rmagMax, rmagNsteps, fileRootname):
-# def readPrior(rmagMin, rmagMax, rmagNsteps,rootname):
-# def getMetadataPriors(priorMap=""):
-# def getMetadataLikelihood(locusData=""):
-# def pnorm(pdf):
-# def getStats(x,pdf):
-# def showPosterior(iS): 
-
-
+# def basicStats(df, colName):
+# def getMedianSigG(basicStatsLine):
+# def makeStatsTable0(df, dMrname='dMr', dFeHname='dFeH', magName='umag', magThresh=25.0, FeHthresh=-1.0, Mr1=4.0, Mr2=8.0):
+# def makeStatsTable(df, dMrname='dMr', dFeHname='dFeH', magName='umag', magThresh=25.0, FeHthresh=-1.0, Mr1=4.0, Mr2=8.0):
+# def getLSSTm5(data, depth='coadd', magVersion=False, suffix=''):
+# def getLSSTm5err(mags, depth='coadd'):
+  
 def MSlocus(gi, FeH):
         ## main sequence SDSS color locus, as a function of [Fe/H], from
         ## Yuan et al (2015, ApJ 799, 134): "Stellar loci I. Metalicity dependence and intrinsic widths" 
@@ -500,35 +501,12 @@ def getColorsFromGivenMrFeH(myMr, myFeH, L, gp, colors=""):
     for color in colors:
         myColors[color] = L[color][k]
     return myColors
-
-# obsolete...
-def getColorsFromMrFeHslow(L, Lvalues, imax):
-    SDSScolors = ['ug', 'gr', 'ri', 'iz']
-    for i in range(0,imax):
-        Mr0 = Lvalues['Mr'][i]
-        FeH0 = Lvalues['FeH'][i]
-        L0 = L[(L['FeH']>FeH0-0.025)&(L['FeH']<FeH0+0.025)&(L['Mr']>Mr0-0.005)&(L['Mr']<Mr0+0.005)]
-        if (np.size(L0)>0):
-            for color in SDSScolors:
-                Lvalues[color][i] = L0[color][0]
-        else:
-            print('did not find Mr =', Mr0,' and FeH =', FeH0)
-            Lvalues[color][i] = -9.999
-        # print(i, FeH0, Mr0, np.size(L0))
-
-### numerical analysis ### 
-
+ 
+        
 # given a grid of model colors, Mcolors, compute chi2
 # for a given set of observed colors Ocolors, with errors Oerrors 
 # colors to be used in chi2 computation are listed in colorNames
-def getLocusChi2colorsSLOW(colorNames, Mcolors, Ocolors, Oerrors):
-    chi2 = 0*Mcolors[colorNames[0]]
-    for i in range(0,np.size(chi2)):
-        for color in colorNames:   
-            chi2[i] += ((Ocolors[color]-Mcolors[color][i])/Oerrors[color])**2 
-    return chi2
-
-
+# Mcolors is astropy Table 
 def getLocusChi2colors(colorNames, Mcolors, Ocolors, Oerrors):
     chi2 = 0*Mcolors[colorNames[0]]
     for color in colorNames:   
@@ -541,7 +519,6 @@ def logLfromObsColors(Mr, FeH, ObsColors, ObsColErrors, gridProperties, SDSScolo
     chi2 = getLocusChi2colors(SDSScolors, myModelColors, ObsColors, ObsColErrors)
     # note that logL = -1/2 * chi2 (for gaussian errors)
     return (-0.5*chi2)
-
 
 
 ## for testing procedures 
@@ -655,6 +632,171 @@ def getPhotoDchi2map(i, colors, data2fit, locus):
         return getLocusChi2colors(colors, locus, ObsColor, ObsColorErr)
 
 
+
+## similar to getPhotoDchi2map, but adding the 3rd dimension (Ar) to model (locus) colors
+## the upper limit on Ar comes from an external Ar (e.g. ArSFD for obs, or used Ar in sims)
+## NB the grid for Ar is defined here 
+def getPhotoDchi2map3D(i, colors, colorReddCoeffs, data2fit, locus, ArCoeff, masterLocus=False):
+
+        # first adopt, or generate, 3D model locus
+        if masterLocus:
+            locus3D = locus 
+        else:
+            # extend 2D Mr-FeH grid in zero-reddening locus (astropy Table), to a 3D color grid by
+            # adding reddening grid to each entry in locus (which corresponds to ArGrid[0] = 0)
+            ArMax = ArCoeff[0]*data2fit['Ar'][i] + ArCoeff[1]
+            nArGrid = int(ArMax/ArCoeff[2]) + 1
+            if (nArGrid>1000):
+                print('resetting nArGrid to 1000 in getPhotoDchi2map3D, from:', nArGrid)
+                nArGrid = 1000
+            if (1):
+                ArGrid = np.linspace(0, ArMax, nArGrid)
+            else:
+                # this is for testing performance when Ar prior is delta function centered on true value
+                ArGrid = np.linspace(data2fit['Ar'][i], data2fit['Ar'][i], 1)
+
+            # color corrections due to dust reddening (for each Ar in the grid for this particular star) 
+            colorCorrection = {}
+            for color in colors:
+               colorCorrection[color] = ArGrid * colorReddCoeffs[color]
+            locus3D = make3Dlocus(locus, ArGrid, colors, colorCorrection)
+        
+        # set up colors for fitting (for this star specified by input "i") 
+        ObsColor = {}
+        ObsColorErr = {}
+        for color in colors:
+            # print('    color=', color)
+            ObsColor[color] = data2fit[color][i]
+            errname = color + 'Err'
+            ObsColorErr[color] = data2fit[errname][i]
+
+        ## return chi2map (data cube) for each grid point in locus3D 
+        if masterLocus:
+            return getLocusChi2colors(colors, locus3D, ObsColor, ObsColorErr)
+        else:
+            return ArGrid, getLocusChi2colors(colors, locus3D, ObsColor, ObsColorErr)
+
+
+def get3DmodelList(locusData, fitColors):
+
+    ## AGRESSIVE 
+    # for small 3D locus: 
+    ArGridSmall = np.linspace(0,0.5,101)   # step 0.005 mag
+    # for medium 3D locus: 
+    ArGridMedium = np.linspace(0,2.0,201)  # step 0.01 mag
+    # for large 3D locus: 
+    ArGridLarge = np.linspace(0,5.0,251)   # step 0.02 mag
+    
+    ## LESS AGRESSIVE
+    if (1):
+        ArGridSmall = np.linspace(0,0.3,31)    # step 0.01 mag
+        ArGridMedium = np.linspace(0,0.8,81)   # step 0.01 mag
+        ArGridLarge = np.linspace(0,2.5,126)   # step 0.02 mag
+
+    AGList = []
+    AGList.append(ArGridSmall)
+    AGList.append(ArGridMedium)
+    AGList.append(ArGridLarge)
+
+    ### call the workhorse 
+    L3Dlist = make3DlocusList(locusData, fitColors, AGList)
+    
+    # repack
+    ArGridList = {}
+    locus3DList = {}
+    locus3DList['ArSmall'] = L3Dlist[0]
+    ArGridList['ArSmall'] = ArGridSmall
+    locus3DList['ArMedium'] = L3Dlist[1] 
+    ArGridList['ArMedium'] = ArGridMedium
+    locus3DList['ArLarge'] = L3Dlist[2] 
+    ArGridList['ArLarge'] = ArGridLarge
+    return ArGridList, locus3DList
+
+
+## VOLATILE: assumes order of colors in locus3D0 (that must be consistent with colCorr
+##      NB IT WILL BREAK WHEN ANOTHER COLOR IS ADDED!  (e.g. z-y for LSST data) 
+## given 2D numpy array, make a 3D numpy array by replicating it for each element 
+## in ArGrid and apply reddening corrections
+## n.b. colors is not used (place holder to fix VOLATILE problem...)
+def make3DlocusFast(locus3D0, ArGrid, colors, colorCorrection, FeH1d, Mr1d):
+
+    N3rd = np.size(ArGrid)
+    locus3D = np.repeat(locus3D0[:, :, np.newaxis], N3rd, axis=2)
+    for i in range(0,np.size(FeH1d)):
+        for j in range(0,np.size(Mr1d)):
+            for k in range(0,np.size(ArGrid)):
+                locus3D[i,j,k][2] = locus3D[i,j,k][2] + colorCorrection['ug'][k] 
+                locus3D[i,j,k][3] = locus3D[i,j,k][3] + colorCorrection['gr'][k] 
+                locus3D[i,j,k][4] = locus3D[i,j,k][4] + colorCorrection['ri'][k] 
+                locus3D[i,j,k][5] = locus3D[i,j,k][5] + colorCorrection['iz'][k] 
+                locus3D[i,j,k][8] = ArGrid[k]   
+    return locus3D 
+
+
+### make 3Dlocus list for provided list of Ar grids
+def make3DlocusList(locusData, fitColors, ArGridList):
+
+    # color corrections due to dust reddening 
+    # for finding extinction, too
+    C = extcoeff()
+    reddCoeffs = {}
+    reddCoeffs['ug'] = C['u']-C['g']
+    reddCoeffs['gr'] = C['g']-C['r']
+    reddCoeffs['ri'] = C['r']-C['i']
+    reddCoeffs['iz'] = C['i']-C['z']
+
+    # intrinsic table sizes
+    xLabel = 'FeH'
+    yLabel = 'Mr'
+    FeHGrid = locusData[xLabel]
+    MrGrid = locusData[yLabel]
+    FeH1d = np.sort(np.unique(FeHGrid))
+    Mr1d = np.sort(np.unique(MrGrid))
+    
+    # turn astropy table into numpy array
+    locusData['Ar'] = 0*locusData['Mr']
+    LocusNP = np.array(locusData) 
+    # the repeating block 
+    locus3D0 = LocusNP.reshape(np.size(FeH1d), np.size(Mr1d))
+
+    locus3DList = []
+    for ArGrid in ArGridList:
+        colCorr = {}
+        for color in fitColors:
+            colCorr[color] = ArGrid * reddCoeffs[color]
+        locus3D = make3DlocusFast(locus3D0, ArGrid, fitColors, colCorr, FeH1d, Mr1d)
+        locus3DList.append(locus3D)
+    return locus3DList 
+
+
+### WHY IS THIS CODE SCALING WITH THE SQUARE OF ArGrid LENGTH???    
+# replace each row in locus (astropy Table) with np.size(ArGrid) rows where colors in colors
+# are reddened using the values in colCorr and return the resulting astropy Table
+def make3Dlocus(locus, ArGrid, colors, colCorr):
+    
+    # initialize the first block of 3D table that corresponds to Ar=0 and the input table 
+    locus3D = Table((locus['Mr'], locus['FeH']), copy=True)
+    for color in colors: locus3D.add_column(locus[color])
+    # the first point in Ar grid is usually, but NOT necessarily, equal to 0
+    locus3D['Ar'] = 0*locus3D['Mr'] + ArGrid[0]
+    for color in colors:
+        locus3D[color] = locus3D[color] + colCorr[color][0]
+    
+    # loop over all >0 reddening values 
+    for k in range(1, np.size(ArGrid)):
+        # new block, start with a copy of the input table
+        locusAr = Table((locus['Mr'], locus['FeH']), copy=True)
+        # add a column with the corresponding value of Ar
+        locusAr['Ar'] = 0*locusAr['Mr'] + ArGrid[k]
+        # and now redden zero-reddening colors with provided reddening corrections 
+        cRed = {}
+        for color in colors:
+            cRed[color] = locus[color] + colCorr[color][k]
+            locusAr.add_column(cRed[color])
+        # now vstack the segment for this Ar value to locus3D table:  
+        locus3D = vstack([locus3D, locusAr])
+ 
+    return locus3D 
 
 
 # given vectors x and y, fit medians in bins from xMin to xMax, with Nbin steps,
