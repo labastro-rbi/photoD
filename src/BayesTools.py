@@ -561,11 +561,6 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
     priorGrid = readPriors(rootname=priorsRootName, locusData=locusData)
     # get prior map indices using observed r band mags
     priorind = getPriorMapIndex(catalog['rmag'])
-
-    ### TEST
-    p = priorGrid[0]
-    print('prior shape:', p.shape)
-    print('locusData size:', np.size(locusData)) 
               
     # properties of Ar grid for prior and likelihood
     bc = getBayesConstants()
@@ -673,6 +668,10 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
         margpostMr[1], margpostFeH[1], margpostAr[1] = getMargDistr3D(likeCube, dMr, dFeH, dAr) 
         margpostMr[2], margpostFeH[2], margpostAr[2] = getMargDistr3D(postCube, dMr, dFeH, dAr) 
 
+        margpostMr[0], margpostFeH[0], margpostAr[0] = getMargDistr3D(priorCube, dMr, dFeH, dAr)
+        margpostMr[1], margpostFeH[1], margpostAr[1] = getMargDistr3D(likeCube, dMr, dFeH, dAr) 
+        margpostMr[2], margpostFeH[2], margpostAr[2] = getMargDistr3D(postCube, dMr, dFeH, dAr) 
+
         # stats
         catalog['MrEst'][i], catalog['MrEstUnc'][i] = getStats(Mr1d, margpostMr[2])
         catalog['FeHEst'][i], catalog['FeHEstUnc'][i] = getStats(FeH1d, margpostFeH[2])
@@ -739,21 +738,25 @@ def writeBayesEstimates(catalog, outfile, iStart, iEnd, do3D=False):
 ### toosl for testing Bayes results
 
 ## test Bayes estimates
-def checkBayes(infile1, infile2, chi2max=10, umagMax=99.9, chiTest=False, cmd=False, fitQ=False):
+# chiTest: if True, read noise-free stellar locus colors in lt.readTRILEGALLSST
+# cmd: if True, in qpB, called by plotAll, plot umag vs. g-i instead of FeH vs. Mr diagram  
+# fitQ: if true, call qpBcmd in plotAll and plot mean values of Mr, FeH and Ar in umag vs. g-i diagrams
+# b3D: 3D Bayes version with Ar results
+def checkBayes(infile1, infile2, chi2max=10, umagMax=99.9, chiTest=False, cmd=False, fitQ=False, b3D=False):
     
     ## input simulation
     if (umagMax < 99):
         simsAll = lt.readTRILEGALLSST(inTLfile=infile1, chiTest=chiTest)
         sims = simsAll[simsAll['umag']<umagMax]
-        print('from', np.size(simsAll),' selected', np.size(sims))
+        print('from', np.size(simsAll),' selected with u <', umagMax, np.size(sims))
         ## file with Bayes estimates
-        simsBayesAll = lt.readTRILEGALLSSTestimates(infile=infile2)
+        simsBayesAll = lt.readTRILEGALLSSTestimates(infile=infile2, b3D=b3D)
         # volatile: assumes the same order 
         simsBayes = simsBayesAll[simsAll['umag']<umagMax]
     else:
-        sims = lt.readTRILEGALLSST(inTLfile=infile1, chiTest=chiTest)
+        sims = lt.readTRILEGALLSST(inTLfile=infile1, chiTest=chiTest, b3D=b3D)
         ## file with Bayes estimates
-        simsBayes = lt.readTRILEGALLSSTestimates(infile=infile2)
+        simsBayes = lt.readTRILEGALLSSTestimates(infile=infile2, b3D=b3D)
 
     # these are dust-reddened colors and thus dust-extincted magnitudes
     sims['gmag'] = sims['rmag'] + sims['gr']  
@@ -766,19 +769,20 @@ def checkBayes(infile1, infile2, chi2max=10, umagMax=99.9, chiTest=False, cmd=Fa
     sims['dMrNorm'] = sims['dMr'] / simsBayes['MrUnc'] 
     sims['dFeH'] = sims['FeH'] - simsBayes['FeHEst']
     sims['dFeHNorm'] = sims['dFeH'] / simsBayes['FeHUnc'] 
+    sims['dAr'] = sims['Ar'] - simsBayes['ArEst']
+    sims['dArNorm'] = sims['dAr'] / simsBayes['ArUnc'] 
     sims['MrML'] = simsBayes['MrEst']
     sims['FeHML'] = simsBayes['FeHEst']
+    sims['ArML'] = simsBayes['ArEst']
     sims['chi2min'] = simsBayes['chi2min']
     
-    ## dummies - Bayes cannot do Ar (yet)
-    sims['dAr'] = 0*sims['Ar'] + 0.1
-    sims['dArNorm'] = 0*sims['dAr'] + 0.1
-    sims['ArML'] = sims['Ar']
+    ## dummy 
     sims['test_set'] = 1 + 0*sims['Ar']
 
     # entropy change
     sims['MrdS'] = simsBayes['MrdS'] 
     sims['FeHdS'] = simsBayes['FeHdS'] 
+    sims['ArdS'] = simsBayes['ArdS'] 
 
     ## extract testing sample
     simsTest = sims[simsBayes['chi2min']<chi2max]   
@@ -807,8 +811,10 @@ def plotAll(dfName, cmd=False, fitQ=False):
         pt.qpB(dfName, 'dMr', Dname='Mr', cmd=cmd)
         print('calling qpB FeH')
         pt.qpB(dfName, 'dFeH', Dname='FeH', cmd=cmd)
-        # pt.qpB(dfName, 'dAr', Dname='Ar', cmd=cmd)
+        print('calling qpB Ar')
+        pt.qpB(dfName, 'dAr', Dname='Ar', cmd=cmd)
 
+        
     
 ## quick comparison of Karlo's NN estimates for Mr, FeH, Ar
 def cK(infile1, infile2, sim3=False, simtype='a'):

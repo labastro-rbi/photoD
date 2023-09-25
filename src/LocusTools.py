@@ -294,9 +294,11 @@ def readTRILEGALLSST(inTLfile='default', chiTest=False):
         return sims
 
 
-def readTRILEGALLSSTestimates(infile='../data//TRILEGAL_three_pix_triout_BayesEstimates.txt'):
+def readTRILEGALLSSTestimates(infile='../data//TRILEGAL_three_pix_triout_BayesEstimates.txt', b3D=False):
         ## read FeH and Mr estimates and their uncertainties 
-        colnames = ['glon', 'glat', 'FeHEst', 'FeHUnc', 'MrEst', 'MrUnc', 'chi2min', 'MrdS', 'FeHdS']
+        colnames = ['glon', 'glat', 'FeHEst', 'FeHUnc', 'MrEst', 'MrUnc', 'chi2min', 'MrdS', 'FeHdS']  
+        if b3D:
+            colnames = ['glon', 'glat', 'FeHEst', 'FeHUnc', 'MrEst', 'MrUnc', 'ArEst', 'ArUnc', 'chi2min', 'MrdS', 'FeHdS', 'ArdS', 'counter']
         simsEst = Table.read(infile, format='ascii', names=colnames)
         print(np.size(simsEst), 'read from', infile)
         return simsEst
@@ -846,6 +848,49 @@ def getMedianSigG(basicStatsLine):
     med = "%.3f" % basicStatsLine[3]
     sigG = "%.2f" % basicStatsLine[4]
     return [med, sigG, basicStatsLine[0]]
+
+def makeStatsTable3D(df, dMrname='dMr', dFeHname='dFeH', magName='umag', magThresh=25.0, FeHthresh=-1.0, Mr1=4.0, Mr2=8.0):
+
+    # first mag threshold
+    dfm = df[df[magName]<=magThresh]
+    
+    # split along Mr sequence: giants, main-sequence blue and red stars
+    dfG = dfm[dfm['Mr']<=Mr1]
+    dfB = dfm[(dfm['Mr']>Mr1)&(dfm['Mr']<=Mr2)]
+    dfR = dfm[dfm['Mr']>Mr2]
+    
+    # and finally split by metallicity, both because FeH sensitivity to u-g, and because halo vs. disk distinction
+    #    "h" is for "halo", not "high" 
+    dfGh = dfG[dfG['FeH']<=FeHthresh]
+    dfGd = dfG[dfG['FeH']>FeHthresh]
+    dfBh = dfB[dfB['FeH']<=FeHthresh]
+    dfBd = dfB[dfB['FeH']>FeHthresh]
+    dfRh = dfR[dfR['FeH']<=FeHthresh]
+    dfRd = dfR[dfR['FeH']>FeHthresh]
+
+    # and for all (without Mr split):
+    dfh = dfm[dfm['FeH']<=FeHthresh]
+    dfd = dfm[dfm['FeH']>FeHthresh]
+ 
+    print('---------------------------------------------------------------------------------------------------')
+    print('      FULL SAMPLE:          ', dMrname, '                    ', dFeHname, '                        Ar')
+    print('             all:', getMedianSigG(basicStats(df, dMrname)), getMedianSigG(basicStats(df, dFeHname)), getMedianSigG(basicStats(df, 'dAr')))
+    print('    mag selected:', getMedianSigG(basicStats(dfm, dMrname)), getMedianSigG(basicStats(dfm, dFeHname)), getMedianSigG(basicStats(dfm, 'dAr')))
+    print('---------------------------------------------------------------------------------------------------')
+    print('       low [FeH]:          ', dMrname, '                ', dFeHname)
+    print('             all:', getMedianSigG(basicStats(dfh, dMrname)), getMedianSigG(basicStats(dfh, dFeHname)), getMedianSigG(basicStats(dfh, 'dAr')))
+    print('          giants:', getMedianSigG(basicStats(dfGh, dMrname)), getMedianSigG(basicStats(dfGh, dFeHname)), getMedianSigG(basicStats(dfGh, 'dAr')))
+    print('         blue MS:', getMedianSigG(basicStats(dfBh, dMrname)), getMedianSigG(basicStats(dfBh, dFeHname)), getMedianSigG(basicStats(dfBh, 'dAr')))
+    print('          red MS:', getMedianSigG(basicStats(dfRh, dMrname)), getMedianSigG(basicStats(dfRh, dFeHname)), getMedianSigG(basicStats(dfRh, 'dAr')))
+    print('      high [FeH]:          ', dMrname, '                ', dFeHname)
+    print('             all:', getMedianSigG(basicStats(dfd, dMrname)), getMedianSigG(basicStats(dfd, dFeHname)), getMedianSigG(basicStats(dfd, 'dAr')))
+    print('          giants:', getMedianSigG(basicStats(dfGd, dMrname)), getMedianSigG(basicStats(dfGd, dFeHname)), getMedianSigG(basicStats(dfGd, 'dAr')))
+    print('         blue MS:', getMedianSigG(basicStats(dfBd, dMrname)), getMedianSigG(basicStats(dfBd, dFeHname)), getMedianSigG(basicStats(dfBd, 'dAr')))
+    print('          red MS:', getMedianSigG(basicStats(dfRd, dMrname)), getMedianSigG(basicStats(dfRd, dFeHname)), getMedianSigG(basicStats(dfRd, 'dAr')))
+    print('---------------------------------------------------------------------------------------------------')
+
+    return
+
 
 def makeStatsTable0(df, dMrname='dMr', dFeHname='dFeH', magName='umag', magThresh=25.0, FeHthresh=-1.0, Mr1=4.0, Mr2=8.0):
 

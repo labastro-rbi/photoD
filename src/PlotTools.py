@@ -421,20 +421,20 @@ def qpB(df, Qname, Dname='Mr', cmd=False):
         plt.xlim(xedges[0], xedges[-1])
         plt.ylim(yedges[0], yedges[-1])
 
-    if (cmd):
-        cb = plt.colorbar(ticks=np.linspace(-0.2, 0.2, 5), pad=0.22, format=r'$%.1f$', orientation='horizontal')
-        plt.clim(-0.2, 0.2)
-    else:
-        cb = plt.colorbar(ticks=np.linspace(-0.5, 0.5, 5), pad=0.22, format=r'$%.1f$', orientation='horizontal')
-        plt.clim(-0.5, 0.5)
+        
     if (Dname=='Mr'):
+        cb = plt.colorbar(ticks=np.linspace(-0.4, 0.4, 5), pad=0.22, format=r'$%.1f$', orientation='horizontal')
         cb.set_label(r'$\mathrm{mean\ \Delta M_r\ in\ pixel}$')
+        plt.clim(-0.4, 0.4)
     else:
         if (Dname=='Ar'):
+            cb = plt.colorbar(ticks=np.linspace(-0.3, 0.3, 7), pad=0.22, format=r'$%.1f$', orientation='horizontal')
             cb.set_label(r'$\mathrm{mean\ \Delta A_r\ in\ pixel}$')
+            plt.clim(-0.15, 0.15)
         else:
+            cb = plt.colorbar(ticks=np.linspace(-0.4, 0.4, 5), pad=0.22, format=r'$%.1f$', orientation='horizontal')
             cb.set_label(r'$\mathrm{mean\ \Delta Fe/H]\ in\ pixel}$') 
-
+            plt.clim(-0.4, 0.4)
 
     # density contours 
     levels = np.linspace(0, np.log10(dFeH_count.max()), 5)[2:]
@@ -457,18 +457,17 @@ def qpB(df, Qname, Dname='Mr', cmd=False):
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
  
-    if (cmd):
-        cb = plt.colorbar(ticks=np.linspace(0, 0.5, 6), pad=0.22, format=r'$%.1f$', orientation='horizontal')
-        plt.clim(0, 0.5)
-    else:
-        cb = plt.colorbar(ticks=np.linspace(0, 0.5, 6), pad=0.22, format=r'$%.1f$', orientation='horizontal')
-        plt.clim(0, 0.5)
+    cb = plt.colorbar(ticks=np.linspace(0, 0.5, 6), pad=0.22, format=r'$%.1f$', orientation='horizontal')
+
     if (Dname=='Mr'):
+        plt.clim(0, 0.5)
         cb.set_label(r'$\mathrm{\sigma_G(M_r)\ in\ pixel}$')
     else:
         if (Dname=='Ar'):
+            plt.clim(0, 0.2)
             cb.set_label(r'$\mathrm{\sigma_G(A_r)\ in\ pixel}$')     
         else:
+            plt.clim(0, 0.5)
             cb.set_label(r'$\mathrm{\sigma_G[Fe/H]\ in\ pixel}$')
   
     # density contours 
@@ -578,13 +577,13 @@ def qpBcmd(df, color='gi', mag='umag', scatter=False):
         plt.xlim(xedges[0], xedges[-1])
         plt.ylim(yedges[0], yedges[-1])
 
-    cb = plt.colorbar(ticks=np.linspace(-2, 10, 7), pad=0.22,
+    cb = plt.colorbar(ticks=np.linspace(-1, 13, 8), pad=0.22,
                   format=r'$%.1f$', orientation='horizontal')
     if (scatter):
         cb.set_label(r'$\mathrm{\sigma_G(M_r)\ in\ pixel}$')
     else:
         cb.set_label(r'$\mathrm{mean\ M_r\ in\ pixel}$')
-    plt.clim(-2, 10)
+    plt.clim(-1, 13)
 
     # density contours 
     levels = np.linspace(0, np.log10(dFeH_count.max()), 5)[2:]
