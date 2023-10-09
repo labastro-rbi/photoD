@@ -158,7 +158,9 @@ def getPriorMapIndex(rObs):
     rind = np.arange(rmagNsteps)
     zint = np.interp(rObs, rGrid, rind) + bc['rmagBinWidth']
     return zint.astype(int) 
-    
+
+
+# probably obsolete
 def getMetadataLikelihood(locusData=""):
     if (locusData==""):
         raise Exception("you must specify locus as it is not uniquely determined!")
@@ -552,12 +554,16 @@ def make3Dlikelihood(likeGrid):
 
  
 def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList, priorsRootName, outfile, iStart=0, iEnd=-1, myStars=[], verbose=False):
-   
+
+    # this is for prototype testing, set to False for production
+    # if set to True, it works only for the star i = 100592  
+    restrictLocus = False 
+    
     if (iEnd < iStart):
         iStart = 0
         iEnd = np.size(catalog)
      
-    # read maps with priors (and interpolate on the locus Mr-FeH grid which is same for all stars)
+    # read maps with priors (and interpolate on the Mr-FeH grid given by locusData, which is same for all stars)
     priorGrid = readPriors(rootname=priorsRootName, locusData=locusData)
     # get prior map indices using observed r band mags
     priorind = getPriorMapIndex(catalog['rmag'])
@@ -588,8 +594,14 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
     # grid step
     dFeH = FeH1d[1]-FeH1d[0]
     dMr = Mr1d[1]-Mr1d[0]
-    # Mr and DeH axis limits and # of points used with likelihood maps
-    mdLocus = getMetadataLikelihood(locusData)
+    # metadata for plotting likelihood maps below
+    FeHmin = np.min(FeH1d)
+    FeHmax = np.max(FeH1d)
+    FeHNpts = FeH1d.size  
+    MrFaint = np.max(Mr1d)
+    MrBright = np.min(Mr1d)
+    MrNpts = Mr1d.size 
+    mdLocus = np.array([FeHmin, FeHmax, FeHNpts, MrFaint, MrBright, MrNpts])
 
     # setup arrays for holding results
     catalog['MrEst'] = 0*catalog['Mr'] - 99 
@@ -603,30 +615,35 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
     catalog['FeHdS'] = 0*catalog['Mr'] - 1 
     catalog['ArdS'] = 0*catalog['Mr'] - 1 
 
-    #######################################################################
-    ### test with master locus from Wed evening
+    ### maximum grid values for Ar from master locus 
     ArGridSmallMax = np.max(ArGridList['ArSmall'])
     ArGridMediumMax = np.max(ArGridList['ArMedium'])
-    # loop over all stars (could be parallelized) 
+
+    #######################################################################
+    ## loop over all stars (can be trivially parallelized) 
     for i in range(iStart, iEnd):
         if (verbose):
             if (int(i/10000)*10000 == i): 
                 print('working on star', i)
 
-        #############################################################################################
-        ### call the main workhorse! 
-        ### chi2 map for this star, for provided isochrones and star's Ar prior: the slowest step! 
+        ######## NEED TO SORT ALL INPUT AND WRITE & CALL makeLikelihoodCube()         
+        # chi2min, likeCube = makeLikelihoodCube(...inputs...)    
+        # input: i, catalog, ArCoeff, 
+
+                
+        ### produce likelihood array for this star, using provided locus color model 
         if (0):
-            ### THIS BLOCK GENERATES A 3D MODEL LOCUS FOR EACH STAR 
+            ### THIS BLOCK GENERATES A 3D MODEL LOCUS FOR EACH STAR (obsolete)
             Ar1d, chi2map = lt.getPhotoDchi2map3D(i, fitColors, reddCoeffs, catalog, locusData, ArCoeff)
             # likelihood map 
             likeGrid = np.exp(-0.5*chi2map)
             L3d = likeGrid.reshape(np.size(Ar1d), np.size(FeH1d), np.size(Mr1d))
             likeCube = make3Dlikelihood(L3d)
         else:
-            ### THIS BLOCK USES A LIST OF THREE 3D MODEL LOCII
+            ### THIS BLOCK USES A LIST OF THREE 3D MODEL LOCII, with 3 different resolutions for Ar
+            # note that here true Ar is used (catalog['Ar'][i]); for real stars, need to use SFD or another extinction map
             ArMax = ArCoeff[0]*catalog['Ar'][i] + ArCoeff[1]
-            # depending on ArMax, pick the adequate resolution of locus3D
+            # depending on ArMax, pick the adequate Ar resolution of locus3D
             if (ArMax < ArGridSmallMax):
                 ArGrid = ArGridList['ArSmall']
                 locus3D = locus3DList['ArSmall']
@@ -637,11 +654,37 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
                 else:
                     ArGrid = ArGridList['ArLarge']
                     locus3D = locus3DList['ArLarge']
-            # subselect from chosen 3D locus 
+            # subselect from chosen 3D locus (simply to have fewer Ar points and thus faster execution) 
             Ar1d = ArGrid[ArGrid<=ArMax]
-            locus3Dok = locus3D[locus3D['Ar']<=ArMax]
+ 
+            if restrictLocus: 
+                ######### TEST: can we subsample in 3D? ################
+                # *** based on 3D Bayes results for star i= 100592: 
+                minMr = 4.521381434007792  -  3*0.30204335173302443
+                maxMr = 4.521381434007792  +  3*0.30204335173302443
+                minFeH = -0.9864917239302899  -  3*0.10189896142866414
+                maxFeH = -0.9864917239302899  +  3*0.10189896142866414
+                minAr = 0.38892432982611685  -  3*0.06565803528930408
+                maxAr = 0.38892432982611685  +  3*0.06565803528930408
+
+                L = locus3D
+                locus3Dok = L[(L['Ar']<=ArMax)&(L['Mr']>minMr)&(L['Mr']<maxMr)&(L['FeH']>minFeH)&(L['FeH']<maxFeH)]
+                print('Locus from', np.size(L), 'to', np.size(locus3Dok))
+
+                # also need to reset grids 
+                FeH1d = np.sort(np.unique(locus3Dok['FeH']))
+                Mr1d = np.sort(np.unique(locus3Dok['Mr']))  
+                print('grid sizes:', np.size(FeH1d), np.size(Mr1d), np.size(Ar1d)) 
+                mdLocus = np.array([minFeH, maxFeH, np.size(FeH1d), maxMr, minMr, np.size(Mr1d)])
+                ################### this works, but 2-pass implemention TBW 
+            else:
+                # simply limit by maximum plausible extinction Ar
+                locus3Dok = locus3D[locus3D['Ar']<=ArMax]
+
+                
+            ### compute chi2 map using provided 3D model locus (locus3Dok)
             chi2map = lt.getPhotoDchi2map3D(i, fitColors, reddCoeffs, catalog, locus3Dok, ArCoeff, masterLocus=True)
-            # likelihood map
+            ## likelihood map
             likeGrid = np.exp(-0.5*chi2map)
             likeCube = likeGrid.reshape(np.size(FeH1d), np.size(Mr1d), np.size(Ar1d)) 
         #############################################################################################
@@ -652,7 +695,16 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
             dAr = 0.01
         catalog['chi2min'][i] = np.min(chi2map)
         
-        # prior map interpolated onto the same Mr-FeH-Ar grid as likelihood map
+        # 2D Mr-FeH prior map replicated to get the same Mr-FeH-Ar grid as likelihood map
+        if (restrictLocus):
+            #### NEED TO RESAMPLE PRIOR
+            # read maps with priors (and interpolate on the Mr-FeH grid given by locusData, which is same for all stars)
+            L = locusData 
+            smallLocus = L[(L['Ar']<=ArMax)&(L['Mr']>minMr)&(L['Mr']<maxMr)&(L['FeH']>minFeH)&(L['FeH']<maxFeH)]
+            priorGrid = readPriors(rootname=priorsRootName, locusData=smallLocus)
+            # get prior map indices using observed r band mags
+            priorind = getPriorMapIndex(catalog['rmag'])
+        # and proceed...
         prior2d = priorGrid[priorind[i]].reshape(np.size(FeH1d), np.size(Mr1d))
         priorCube = make3Dprior(prior2d, np.size(Ar1d))
 
@@ -668,10 +720,6 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
         margpostMr[1], margpostFeH[1], margpostAr[1] = getMargDistr3D(likeCube, dMr, dFeH, dAr) 
         margpostMr[2], margpostFeH[2], margpostAr[2] = getMargDistr3D(postCube, dMr, dFeH, dAr) 
 
-        margpostMr[0], margpostFeH[0], margpostAr[0] = getMargDistr3D(priorCube, dMr, dFeH, dAr)
-        margpostMr[1], margpostFeH[1], margpostAr[1] = getMargDistr3D(likeCube, dMr, dFeH, dAr) 
-        margpostMr[2], margpostFeH[2], margpostAr[2] = getMargDistr3D(postCube, dMr, dFeH, dAr) 
-
         # stats
         catalog['MrEst'][i], catalog['MrEstUnc'][i] = getStats(Mr1d, margpostMr[2])
         catalog['FeHEst'][i], catalog['FeHEstUnc'][i] = getStats(FeH1d, margpostFeH[2])
@@ -683,6 +731,7 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
         if (i in myStars):
             # plot 
             print(' *** 3D Bayes results for star i=', i)
+            print('r mag:', catalog['rmag'][i], 'g-r:', catalog['gr'][i])
             print('Mr:', catalog['MrEst'][i], ' +- ', catalog['MrEstUnc'][i])
             print('FeH:', catalog['FeHEst'][i], ' +- ', catalog['FeHEstUnc'][i])
             print('Ar:', catalog['ArEst'][i], ' +- ', catalog['ArEstUnc'][i])
@@ -817,9 +866,11 @@ def plotAll(dfName, cmd=False, fitQ=False):
         
     
 ## quick comparison of Karlo's NN estimates for Mr, FeH, Ar
-def cK(infile1, infile2, sim3=False, simtype='a'):
+def cK(infile1, infile2, sim3=False, simtype='a', chiTest=True):
     ## input simulation
-    sims = lt.readTRILEGALLSST(inTLfile=infile1)
+    # sims = lt.readTRILEGALLSST(inTLfile=infile1)
+    sims = lt.readTRILEGALLSST(inTLfile=infile1, chiTest=chiTest)
+    
     # these are dust-reddened colors and thus dust-extincted magnitudes
     sims['gmag'] = sims['rmag'] + sims['gr']  
     sims['umag'] = sims['gmag'] + sims['ug']
@@ -827,7 +878,10 @@ def cK(infile1, infile2, sim3=False, simtype='a'):
     sims['zmag'] = sims['imag'] - sims['iz'] 
     ## Karlo's file
     if sim3 == False:
-        simsML = lt.readKarloMLestimates(multiMethod=False, inKfile=infile2)  
+        # old version
+        # simsML = lt.readKarloMLestimates(multiMethod=False, inKfile=infile2)
+        # final version
+        simsML = lt.readKarloMLestimates3D(inKfile=infile2)  
     else: 
         simsML = lt.readKarloMLestimates3(inKfile=infile2, simtype=simtype) 
     # define quantities for testing
@@ -836,14 +890,15 @@ def cK(infile1, infile2, sim3=False, simtype='a'):
     sims['dFeH'] = sims['FeH'] - simsML['simple_single_FeH']
     sims['dFeHNorm'] = sims['dFeH'] / simsML['simple_single_FeHErr'] 
     sims['dAr'] = sims['Ar'] - simsML['simple_single_Ar']
-    sims['dArNorm'] = sims['dAr'] / simsML['simple_single_ArErr'] 
+    sims['dArNorm'] = sims['dAr'] / simsML['simple_single_ArErr']
     sims['MrML'] = simsML['simple_single_Mr']
     sims['FeHML'] = simsML['simple_single_FeH']
     sims['ArML'] = simsML['simple_single_Ar']
     sims['test_set'] = simsML['test_set']                           
+    
     ## extract testing sample        
     simsTest = sims[sims['test_set']==1]   
-    print(np.size(simsTest))  
+    print('from:', np.size(sims), 'selected in testset:', np.size(simsTest))  
     
     plotAll(simsTest)
     return sims, simsTest 

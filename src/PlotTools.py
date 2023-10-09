@@ -278,7 +278,7 @@ def show3Flat2Dmaps(Z1, Z2, Z3, md, xLab, yLab, x0=-99, y0=-99, logScale=False, 
     for ax in axs.flat:
         ax.set(xlabel=xLab, ylabel=yLab)
 
-    # plt.savefig('../plots/bayesPanels.png')
+    plt.savefig('../plots/bayesPanels.png')
     plt.show() 
 
     

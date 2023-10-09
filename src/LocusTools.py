@@ -409,6 +409,27 @@ def readKarloMLestimates3(inKfile, simtype):
         return simsML
 
 
+## finalized format for reading simCatalog files (after implementing 3D case with free Ar)              
+def readKarloMLestimates3D(inKfile):
+        print('READING FROM', inKfile)
+        file = inKfile
+        ## file includes:
+        colnames = ['glon', 'glat', 'comp', 'logg', 'FeH', 'Mr', 'DM', 'Ar', 'rmag0', 'ug0', 'gr0', 'ri0', 'iz0']
+        colnames = colnames + ['rmag', 'ug', 'gr', 'ri', 'iz', 'uErr', 'gErr', 'rErr', 'iErr', 'zErr']
+        colnames = colnames + ['ugSL', 'grSL', 'riSL', 'izSL', 'ugErrSL', 'grErrSL', 'riErrSL', 'izErrSL'] 
+        colnames = colnames + ['gi0', 'gi', 'test_set']
+        colnames = colnames + ['simple_single_Mr', 'simple_single_MrErr', 'simple_single_Ar', 'simple_single_ArErr', 'simple_single_FeH', 'simple_single_FeHErr']
+           
+        ## read FeH and Mr estimates and fake their uncertainties 
+        simsML = Table.read(file, format='ascii', names=colnames)
+        simsML['MrEstML'] = simsML['simple_single_Mr']
+        simsML['MrUnc'] = simsML['simple_single_MrErr']
+        simsML['FeHEstML'] = simsML['simple_single_FeH']
+        simsML['FeHUnc'] = simsML['simple_single_FeHErr']
+             
+        print(np.size(simsML), 'read from', file)
+        return simsML
+  
         
 def LSSTsimsLocus(fixForStripe82=True): 
         ## Mr, as function of [Fe/H], along the SDSS/LSST stellar 
@@ -679,18 +700,19 @@ def getPhotoDchi2map3D(i, colors, colorReddCoeffs, data2fit, locus, ArCoeff, mas
             return ArGrid, getLocusChi2colors(colors, locus3D, ObsColor, ObsColorErr)
 
 
-def get3DmodelList(locusData, fitColors):
+def get3DmodelList(locusData, fitColors, agressive=False):
 
-    ## AGRESSIVE 
-    # for small 3D locus: 
-    ArGridSmall = np.linspace(0,0.5,101)   # step 0.005 mag
-    # for medium 3D locus: 
-    ArGridMedium = np.linspace(0,2.0,201)  # step 0.01 mag
-    # for large 3D locus: 
-    ArGridLarge = np.linspace(0,5.0,251)   # step 0.02 mag
-    
-    ## LESS AGRESSIVE
-    if (1):
+
+    if agressive:
+        ## AGRESSIVE 
+        # for small 3D locus: 
+        ArGridSmall = np.linspace(0,0.5,101)   # step 0.005 mag
+        # for medium 3D locus: 
+        ArGridMedium = np.linspace(0,2.0,201)  # step 0.01 mag
+        # for large 3D locus: 
+        ArGridLarge = np.linspace(0,5.0,251)   # step 0.02 mag
+    else:
+        ## LESS AGRESSIVE
         ArGridSmall = np.linspace(0,0.3,31)    # step 0.01 mag
         ArGridMedium = np.linspace(0,0.8,81)   # step 0.01 mag
         ArGridLarge = np.linspace(0,2.5,126)   # step 0.02 mag
@@ -714,25 +736,6 @@ def get3DmodelList(locusData, fitColors):
     ArGridList['ArLarge'] = ArGridLarge
     return ArGridList, locus3DList
 
-
-## VOLATILE: assumes order of colors in locus3D0 (that must be consistent with colCorr
-##      NB IT WILL BREAK WHEN ANOTHER COLOR IS ADDED!  (e.g. z-y for LSST data) 
-## given 2D numpy array, make a 3D numpy array by replicating it for each element 
-## in ArGrid and apply reddening corrections
-## n.b. colors is not used (place holder to fix VOLATILE problem...)
-def make3DlocusFast(locus3D0, ArGrid, colors, colorCorrection, FeH1d, Mr1d):
-
-    N3rd = np.size(ArGrid)
-    locus3D = np.repeat(locus3D0[:, :, np.newaxis], N3rd, axis=2)
-    for i in range(0,np.size(FeH1d)):
-        for j in range(0,np.size(Mr1d)):
-            for k in range(0,np.size(ArGrid)):
-                locus3D[i,j,k][2] = locus3D[i,j,k][2] + colorCorrection['ug'][k] 
-                locus3D[i,j,k][3] = locus3D[i,j,k][3] + colorCorrection['gr'][k] 
-                locus3D[i,j,k][4] = locus3D[i,j,k][4] + colorCorrection['ri'][k] 
-                locus3D[i,j,k][5] = locus3D[i,j,k][5] + colorCorrection['iz'][k] 
-                locus3D[i,j,k][8] = ArGrid[k]   
-    return locus3D 
 
 
 ### make 3Dlocus list for provided list of Ar grids
@@ -771,6 +774,26 @@ def make3DlocusList(locusData, fitColors, ArGridList):
     return locus3DList 
 
 
+## VOLATILE: assumes order of colors in locus3D0 (that must be consistent with colCorr
+##      NB IT WILL BREAK WHEN ANOTHER COLOR IS ADDED!  (e.g. z-y for LSST data) 
+## given 2D numpy array, make a 3D numpy array by replicating it for each element 
+## in ArGrid and apply reddening corrections
+## n.b. colors is not used (place holder to fix VOLATILE problem...)
+def make3DlocusFast(locus3D0, ArGrid, colors, colorCorrection, FeH1d, Mr1d):
+
+    N3rd = np.size(ArGrid)
+    locus3D = np.repeat(locus3D0[:, :, np.newaxis], N3rd, axis=2)
+    for i in range(0,np.size(FeH1d)):
+        for j in range(0,np.size(Mr1d)):
+            for k in range(0,np.size(ArGrid)):
+                locus3D[i,j,k][2] = locus3D[i,j,k][2] + colorCorrection['ug'][k] 
+                locus3D[i,j,k][3] = locus3D[i,j,k][3] + colorCorrection['gr'][k] 
+                locus3D[i,j,k][4] = locus3D[i,j,k][4] + colorCorrection['ri'][k] 
+                locus3D[i,j,k][5] = locus3D[i,j,k][5] + colorCorrection['iz'][k] 
+                locus3D[i,j,k][8] = ArGrid[k]   
+    return locus3D 
+
+
 ### WHY IS THIS CODE SCALING WITH THE SQUARE OF ArGrid LENGTH???    
 # replace each row in locus (astropy Table) with np.size(ArGrid) rows where colors in colors
 # are reddened using the values in colCorr and return the resulting astropy Table
@@ -800,6 +823,32 @@ def make3Dlocus(locus, ArGrid, colors, colCorr):
  
     return locus3D 
 
+## subsample locusData along Mr and FeH grids by factors kMr and kFeH (if both are 1, no subsampling)
+def subsampleLocusData(locusData, kMr, kFeH, verbose=True):
+    xLabel = 'FeH'
+    yLabel = 'Mr'
+    FeHGrid = locusData[xLabel]
+    MrGrid = locusData[yLabel]
+    FeH1d = np.sort(np.unique(FeHGrid))
+    Mr1d = np.sort(np.unique(MrGrid))
+    # original grid sizes
+    nFeH = FeH1d.size
+    nMr = Mr1d.size
+    # subsampled grid sizes
+    nFeHs = int(nFeH/kFeH)
+    nMrs = int(nMr/kMr)
+    if verbose: print('subsampled locus 2D grid in FeH and Mr from', nFeH, nMr, 'to:', nFeHs, nMrs)
+    subsampled = locusData[:0].copy()
+    # now add subsampled rows from the input table
+    for j in range(0,nFeHs):
+        for i in range(0,nMrs):
+            k = i*kMr + j*kFeH*nMr
+            subsampled.add_row(locusData[k]) 
+    return subsampled
+
+
+#########
+## some statistics helpers...
 
 # given vectors x and y, fit medians in bins from xMin to xMax, with Nbin steps,
 # and return xBin, medianBin, medianErrBin 
