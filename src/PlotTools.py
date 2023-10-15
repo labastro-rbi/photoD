@@ -372,7 +372,7 @@ def plot3qp(df, q, Dname='Mr'):
 
     
 # like qp but add the third panel with chi2 
-def qpB(df, Qname, Dname='Mr', cmd=False):
+def qpB(df, Qname, Dname='Mr', cmd=False, estQ=False):
     # define custom colormaps: Set pixels with no sources to white
     cmap = plt.cm.copper
     cmap.set_bad('w', 1.)
@@ -387,11 +387,18 @@ def qpB(df, Qname, Dname='Mr', cmd=False):
         xlabel = '$\mathrm{g-i}$'
         ylabel = '$\mathrm{u mag}$'
     else:
-        xAxis = 'Mr'
-        yAxis = 'FeH'
-        yTicks = [-2.0, -1.5, -1.0, -0.5, 0.0, 0.5] 
-        xlabel = '$\mathrm{Mr}$'
-        ylabel = '$\mathrm{[Fe/H]}$'
+        if estQ:
+            xAxis = 'MrEst'
+            yAxis = 'FeHEst'
+            yTicks = [-2.0, -1.5, -1.0, -0.5, 0.0, 0.5] 
+            xlabel = '$\mathrm{Mr estimate}$'
+            ylabel = '$\mathrm{[Fe/H] estimate}$'
+        else:
+            xAxis = 'Mr'
+            yAxis = 'FeH'
+            yTicks = [-2.0, -1.5, -1.0, -0.5, 0.0, 0.5] 
+            xlabel = '$\mathrm{Mr}$'
+            ylabel = '$\mathrm{[Fe/H]}$'
         
     # counts
     dFeH_count, xedges, yedges = binned_statistic_2d(df[xAxis], df[yAxis], df[Qname], 'count', bins=50)

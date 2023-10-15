@@ -824,6 +824,8 @@ def checkBayes(infile1, infile2, chi2max=10, umagMax=99.9, chiTest=False, cmd=Fa
     sims['FeHML'] = simsBayes['FeHEst']
     sims['ArML'] = simsBayes['ArEst']
     sims['chi2min'] = simsBayes['chi2min']
+    sims['MrEst'] = simsBayes['MrEst']
+    sims['FeHEst'] = simsBayes['FeHEst']
     
     ## dummy 
     sims['test_set'] = 1 + 0*sims['Ar']
@@ -858,10 +860,13 @@ def plotAll(dfName, cmd=False, fitQ=False):
     else:
         print('calling qpB Mr')
         pt.qpB(dfName, 'dMr', Dname='Mr', cmd=cmd)
+        pt.qpB(dfName, 'dMr', Dname='Mr', cmd=cmd, estQ=True)
         print('calling qpB FeH')
         pt.qpB(dfName, 'dFeH', Dname='FeH', cmd=cmd)
+        pt.qpB(dfName, 'dFeH', Dname='FeH', cmd=cmd, estQ=True)
         print('calling qpB Ar')
         pt.qpB(dfName, 'dAr', Dname='Ar', cmd=cmd)
+        pt.qpB(dfName, 'dAr', Dname='Ar', cmd=cmd, estQ=True)
 
         
     
