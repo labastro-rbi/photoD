@@ -224,6 +224,92 @@ def Entropy(p):
     
 ######  plotting tools to support Bayes method ###### 
 
+def getQmap(cube, FeH1d, Mr1d, Ar1d):
+    Smax = -1
+    # interpolate 3D cube(FeH, Mr, Ar) onto Qr=Mr+Ar vs. FeH 2D grid 
+    Qmap = 0*cube[:,:,0]
+    # Q grid, same size as Mr1d array 
+    Qr1d = np.linspace(np.min(Mr1d), (np.max(Ar1d)+np.max(Mr1d)), np.size(Mr1d))
+    for i in range(0,np.size(FeH1d)):
+        for j in range(0,np.size(Qr1d)):
+            # summation
+            Ssum = 0.0
+            for k in range(0,np.size(Ar1d)):
+                Mr = Qr1d[j] - Ar1d[k]
+                # now need to get the value of index for this Mr
+                jk = np.int((Mr-Mr1d[0])/(Mr1d[1]-Mr1d[0])) 
+                if ((jk>=0)&(jk<np.size(Mr1d))):
+                    Ssum += cube[i,jk,k]
+            Qmap[i,j] = Ssum
+    return Qmap, Qr1d
+
+
+# bt.showQrCornerPlot(postCube, Mr1d, FeH1d, Ar1d, x0=FeHStar, y0=MrStar, z0=ArStar, logScale=True)
+def showQrCornerPlot(postCube, Mr1d, FeH1d, Ar1d, x0=-99, y0=-99, z0=-99, logScale=False, cmap='Blues'):
+
+    def oneImage(ax, image, extent, title, showTrue, x0, y0, origin, logScale=True, cmap='Blues'):
+        im = image/image.max()
+        if (logScale):
+            cmap = ax.imshow(im.T,
+               origin=origin, aspect='auto', extent=extent,
+               cmap=cmap, norm=LogNorm(im.max()/100, vmax=im.max()))
+        else:
+            cmap = ax.imshow(im.T, origin='upper', aspect='auto', extent=extent, cmap=cmap)
+        ax.set_title(title)
+        if (showTrue):
+            ax.scatter(x0, y0, s=150, c='red', alpha=0.3) 
+            ax.scatter(x0, y0, s=40, c='yellow', alpha=0.3) 
+        return cmap
+    
+    # 2-D distribution in the Qr vs. FeH plane
+    Qmap, Qr1d = getQmap(postCube, FeH1d, Mr1d, Ar1d)
+
+    # 1-D marginal distribution for Qr
+    dFeH = FeH1d[1]-FeH1d[0]
+    dQr = Qr1d[1]-Qr1d[0]
+    margQr, margFeH = getMargDistr(Qmap, dFeH, dQr)
+
+    # map plotting limits
+    xMin = np.min(FeH1d)  
+    xMax = np.max(FeH1d)  
+    yMin = np.min(Qr1d) 
+    yMax = np.max(Qr1d)   
+
+    showTrue = False
+    if ((x0>-99)&(y0>-99)):
+        showTrue = True
+        
+    ### plot  
+    fig, axs = plt.subplots(1,3,figsize=(10,3))
+    fig.subplots_adjust(wspace=0.25, left=0.1, right=0.95, bottom=0.12, top=0.95)
+
+    myExtent=[xMin, xMax, yMax, yMin]
+    cmap = oneImage(axs[0], Qmap, myExtent, '', showTrue, x0, y0+z0, origin='upper', logScale=logScale)
+    axs[0].set(xlabel='FeH', ylabel='Qr = Mr + Ar')
+    axs[1].plot(Qr1d, margQr, 'r', lw=3)
+    axs[1].plot([y0+z0, y0+z0], [0, 1.1*np.max(margQr)], '--k', lw=1)
+    axs[1].set(xlabel='Qr', ylabel='p(Qr)')
+    axs[2].plot(FeH1d, margFeH, 'r', lw=3)
+    axs[2].plot([x0, x0], [0, 1.1*np.max(margFeH)], '--k', lw=1)
+    axs[2].set(xlabel='FeH', ylabel='p(FeH)')
+    
+    cax = fig.add_axes([0.84, 0.1, 0.1, 0.75])
+    cax.set_axis_off()
+    #cb = fig.colorbar(cmap, ax=cax)
+    #if (logScale):
+        #cb.set_label("density on log scale")
+    #else:
+        #cb.set_label("density on linear scale")
+
+    #for ax in axs.flat:
+        # ax.set(xlabel=xLab, ylabel=yLab)
+        # print('pero')
+        
+    plt.savefig('../plots/QrCornerPlot.png')
+    plt.show()
+    return Qr1d, margQr
+     
+
 
 
 # bt.showCornerPlot3(postCube, Mr1d, FeH1d, Ar1d, mdLocus, xLabel, yLabel, logScale=True, x0=FeHStar, y0=MrStar, z0=ArStar)
@@ -610,6 +696,8 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
     catalog['FeHEstUnc'] = 0*catalog['Mr'] - 1 
     catalog['ArEst'] = 0*catalog['Mr'] - 99 
     catalog['ArEstUnc'] = 0*catalog['Mr'] -1 
+    catalog['QrEst'] = 0*catalog['Mr'] - 99 
+    catalog['QrEstUnc'] = 0*catalog['Mr'] -1 
     catalog['chi2min'] = 0*catalog['Mr'] + 999
     catalog['MrdS'] = 0*catalog['Mr'] - 1 
     catalog['FeHdS'] = 0*catalog['Mr'] - 1 
@@ -730,14 +818,6 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
 
         if (i in myStars):
             # plot 
-            print(' *** 3D Bayes results for star i=', i)
-            print('r mag:', catalog['rmag'][i], 'g-r:', catalog['gr'][i])
-            print('Mr:', catalog['MrEst'][i], ' +- ', catalog['MrEstUnc'][i])
-            print('FeH:', catalog['FeHEst'][i], ' +- ', catalog['FeHEstUnc'][i])
-            print('Ar:', catalog['ArEst'][i], ' +- ', catalog['ArEstUnc'][i])
-            print('Mr drop in entropy:', catalog['MrdS'][i])
-            print('FeH drop in entropy:', catalog['FeHdS'][i])
-            print('Ar drop in entropy:', catalog['ArdS'][i])
             FeHStar = catalog['FeH'][i]
             MrStar = catalog['Mr'][i]
             ArStar = catalog['Ar'][i]
@@ -746,10 +826,23 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
             showMargPosteriors3D(Mr1d, margpostMr, 'Mr', 'p(Mr)', FeH1d, margpostFeH, 'FeH', 'p(FeH)', Ar1d, margpostAr, 'Ar', 'p(Ar)', MrStar, FeHStar, ArStar)
             # these show marginal 2D and 1D distributions (aka "corner plot")
             showCornerPlot3(postCube, Mr1d, FeH1d, Ar1d, mdLocus, xLabel, yLabel, logScale=True, x0=FeHStar, y0=MrStar, z0=ArStar)
+            # Qr vs. FeH posterior and marginal 1D distributions for Qr and FeH
+            Qr1d, margpostQr = showQrCornerPlot(postCube, Mr1d, FeH1d, Ar1d, x0=FeHStar, y0=MrStar, z0=ArStar, logScale=True)
+            catalog['QrEst'][i], catalog['QrEstUnc'][i] = getStats(Qr1d, margpostQr)
+            # basic info 
+            print(' *** 3D Bayes results for star i=', i)
+            print('r mag:', catalog['rmag'][i], 'g-r:', catalog['gr'][i], 'chi2min:', catalog['chi2min'][i])
+            print('Mr: true=', MrStar, 'estimate=', catalog['MrEst'][i], ' +- ', catalog['MrEstUnc'][i])
+            print('FeH: true=', FeHStar, 'estimate=', catalog['FeHEst'][i], ' +- ', catalog['FeHEstUnc'][i])
+            print('Ar: true=', ArStar, 'estimate=', catalog['ArEst'][i], ' +- ', catalog['ArEstUnc'][i])
+            print('Qr: true=', MrStar+ArStar, 'estimate=', catalog['QrEst'][i], ' +- ', catalog['QrEstUnc'][i])
+            print('Mr drop in entropy:', catalog['MrdS'][i])
+            print('FeH drop in entropy:', catalog['FeHdS'][i])
+            print('Ar drop in entropy:', catalog['ArdS'][i])
 
     # store results 
     writeBayesEstimates(catalog, outfile, iStart, iEnd, do3D=True)
-    return
+    return postCube, Mr1d, FeH1d, Ar1d
 
 
 def writeBayesEstimates(catalog, outfile, iStart, iEnd, do3D=False):
