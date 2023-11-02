@@ -1,33 +1,4 @@
-%% Beginning of file 'sample631.tex'
-%%
-%% Modified 2021 March
-%%
-%% This is a sample manuscript marked up using the
-%% AASTeX v6.31 LaTeX 2e macros.
-%%
-%% AASTeX is now based on Alexey Vikhlinin's emulateapj.cls 
-%% (Copyright 2000-2015).  See the classfile for details.
 
-%% AASTeX requires revtex4-1.cls and other external packages such as
-%% latexsym, graphicx, amssymb, longtable, and epsf.  Note that as of 
-%% Oct 2020, APS now uses revtex4.2e for its journals but remember that 
-%% AASTeX v6+ still uses v4.1. All of these external packages should 
-%% already be present in the modern TeX distributions but not always.
-%% For example, revtex4.1 seems to be missing in the linux version of
-%% TexLive 2020. One should be able to get all packages from www.ctan.org.
-%% In particular, revtex v4.1 can be found at 
-%% https://www.ctan.org/pkg/revtex4-1.
-
-%% The first piece of markup in an AASTeX v6.x document is the \documentclass
-%% command. LaTeX will ignore any data that comes before this command. The 
-%% documentclass can take an optional argument to modify the output style.
-%% The command below calls the preprint style which will produce a tightly 
-%% typeset, one-column, single-spaced document.  It is the default and thus
-%% does not need to be explicitly stated.
-%%
-%% using aastex version 6.3
-
-%\documentclass[linenumbers]{aastex631}
 \documentclass[linenumbers, twocolumn, trackchanges]{aastex631}
 
 %% The default is a single spaced, 10 point font, single spaced article.
@@ -94,17 +65,21 @@
 %% using \newcommand. Your macros should appear before
 %% the \begin{document} command.
 %%
+
+\usepackage{xspace}
+
 \newcommand{\vdag}{(v)^\dagger}
 \newcommand\aastex{AAS\TeX}
 \newcommand\latex{La\TeX}
 \newcommand{\magcom}[1]{\textcolor{magenta}{#1}} % {\textbf{#1}}}
 \newcommand{\redcom}[1]{\textcolor{red}{#1}} % {\textbf{#1}}}
 \newcommand{\yelcom}[1]{\colorbox{yellow}{#1}} % {\textbf{#1}}}
-\newcommand{\pd}{\texttt{photoD}}
-\newcommand{\mh}{[M/H]}
-\newcommand{\Mb}{\textit{M\textsubscript{b}}}
-\newcommand{\logg}{\textit{log(g)}}
-\newcommand{\teff}{\textit{T\textsubscript{eff}}}
+\newcommand{\pd}{\texttt{photoD}\xspace}
+\newcommand{\mh}{[M/H]\xspace}
+\newcommand{\Mb}{\textit{M\textsubscript{b}}\xspace}
+\newcommand{\logg}{\textit{log(g)}\xspace}
+\newcommand{\teff}{\textit{T\textsubscript{eff}}\xspace}
+\newcommand{\RV}{\textit{R\textsubscript{V}}\xspace}
 
 %% Reintroduced the \received and \accepted commands from AASTeX v5.2
 %\received{March 1, 2021}
@@ -270,7 +245,7 @@ Thanks to the \textit{Vera C. Rubin} observatory's \textit{Legacy Survey of Spac
 
 There are a variety of astronomical methods to estimate distances to stars, ranging from direct geometric (trigonometric) methods for nearby stars to indirect methods based on astrophysics for more distant stars. 
 
-\magcom{Mention \citet{bailer-jones_estimating_2021}, \cite{green_measuring_2014,green_three-dimensional_2015,green_3d_2019}, \citet{juric_milky_2008} and \citet{lallement_3d_2014}, \citet{queiroz_starhorse_2018}}.
+\magcom{Mention \cite{bailer-jones_estimating_2021}, \cite{gordon_panchromatic_2016}, \cite{green_measuring_2014,green_three-dimensional_2015,green_3d_2019}, \cite{juric_milky_2008} and \cite{lallement_3d_2014}, \cite{queiroz_starhorse_2018}}.
 
 Layout of the paper is...
 
@@ -285,7 +260,7 @@ The distributions that describe these correlations are obtained either from mode
 	\caption{Color-color diagram. \magcom{Add a version with overlaid evolutionary tracks in order to emphasize the required precision of the photometry required to disentangle the dwarfs and giants and different metallicities. \textbf{Are ev. tracks with different metallicities overlapping}? Can there be a situation where there is confusion between giants and dwarfs with different metallicities?} \label{fig:2c_example}}
 \end{figure}
 
-Metallicity is an important factor in these correlations, as it has a strong effect on the luminosity of the stars. This is reflected in the width of the main stellar loci of the color-magnitude diagrams (CMD) of the stellar populations observed at the same distance and the two-color diagrams (\magcom{quantify}), as seen in Figure \ref{fig:metallicity}. The best photometric estimators of metallicity are colors whose shorter-wavelength component includes the metal absorbtion bands at near-UV wavelengths, short of Balmer break. Therefore, the LSST has a comparative advantage over the surveys lacking \textit{u}-band measurements, and could provide accurate distances within the range of 5-10\%. \magcom{A plot of model spectra, fixed, \textit{log(g)} and \textit{T\textsubscript{eff}}, several different metallicities?}
+Metallicity is an important factor in these correlations, as it has a strong effect on the luminosity of the stars. This is reflected in the width of the main stellar loci of the color-magnitude diagrams (CMD) of the stellar populations observed at the same distance and the two-color diagrams (\magcom{quantify}), as seen in Figure \ref{fig:metallicity}. The best photometric estimators of metallicity are colors whose shorter-wavelength component includes the metal absorbtion bands at near-UV wavelengths, short of Balmer break (300 $\lessapprox\lambda$ [nm] $\lessapprox$ 400). Therefore, the LSST has a comparative advantage over the surveys lacking \textit{u}-band measurements, and could provide accurate distances within the range of 5-10\%. \magcom{A plot of model spectra, fixed, \textit{log(g)} and \textit{T\textsubscript{eff}}, several different metallicities?}
 
 \begin{figure}[ht!]
 	\plotone{Fdtez8.png}
@@ -293,6 +268,8 @@ Metallicity is an important factor in these correlations, as it has a strong eff
 \end{figure}
 
 Extinction is a major source of systematic errors in the process of luminosity and distance determination. The fact that the extinction vector is nearly parallel to the main stellar locus in the two-color diagrams gives rise to degeneracies that complicate the determination of the stellar type. An example is displayed in Fig. \ref{fig:degeneracies}, where in the left panel any of the different star types designated as 1,2 and 3 can have the same observed colors as the star marked as "Obs". This degeneracy is a result of the combination of colors chosen for the two-color diagram and depends on the adopted extinction curve \textit{R\textsubscript{V}} and the position on the stellar locus. The degeneracy can be broken if several different colors are used, particularly those towards the infrared, where the stellar locus is not kinked and the extinction vector is not parallel to it (as shown in the right panel of the Figure \ref{fig:degeneracies}).
+
+\magcom{Explain the choice of \RV.}
 
 \begin{figure}[ht!]
 	\plotone{BYiR7o.png}
@@ -305,9 +282,41 @@ $L=4\pi \sigma \frac{GM}{g} T^4$\\
 $\mu = m_b - M_b {\ }(- A_b)$\\
 $log(d) = 1 + \frac{\mu}{5}$\\
 
+Another important degeneracy arises from the fact that even for a fixed \teff and \mh, the \logg thus luminosity are not uniquely determined. A way to mitigate this issue is to adopt a Bayesian framework 
+
+
+overlap in the color-color diagrams (e.g. Figure \ref{fig:2c_example}). This effectively means that for a fixed \teff proxy ($g-r$), 
+
 Given the observed colors, and assuming small errors, the estimation of stellar parameters is relatively straight forward and follows one of the two possible approaches: empirical or model-based. In the former case, the case the underlying distribution to which the observations are matched is obtained from (ideally) spectroscopic and photometric observations, while in the latter case the distributions are generated from population synthesis models.
 
 \magcom{Advantages \& disadvantages of the model-based and empirical approaches, how model based approaches can be improved by adding empirical information for specific cases}.
+
+\magcom{\cite{gordon_panchromatic_2016} na \href{https://beast.readthedocs.io/en/latest/beast\_graphical\_model.html}{BEAST webu} imaju zgodne diagrame; možda bi i mi mogli nešto tog tipa napraviti, bar za draft, primjer }
+
+\begin{figure}[ht!]
+	\plottwo{beast-graphic-text.png}{beast-graphic-math.png}
+	\caption{BEAST. \label{fig:BEAST}}
+\end{figure}
+
+% -- modeli za boje moraju biti savršeni
+% -- novi prior iz trilegala
+% -- robustni framework koji može obraditi 10B zvijezda, i da nije spor
+% -- probali smo s MCMC, exhaustive locus search, i neuronske mreže koje su bile najbrže (drugi članak)
+
+
+\section{Testing}
+
+% -- aginst Rich et al. BDSD survey ugriz podaci
+% -- Bailer-Jones i S82
+% -- Trilegal simulacije s SDSS SED modelima (validacija)
+% -- kuglasti skupovi
+
+\section{Discussion}
+
+% -- popraviti modele
+% -- dovući model s mladim zvijezdama
+% -- dodati modele za WD, BHB, unresolved binaries, RRL i druge populacije
+
 
 % Here we provide a layout of our method that simultaneously provides distance estimates as well as the three-dimensional estimation of the dust distribution. The distance modulus of a star can be estimated given its absolute and apparent magnitudes and the extinction along the line of sight. Therefore, given the observed colors it is necessary to simultaneously estimate the effective temperature, metallicity and extinction.  
 
