@@ -1,0 +1,324 @@
+%% Beginning of file 'sample631.tex'
+%%
+%% Modified 2021 March
+%%
+%% This is a sample manuscript marked up using the
+%% AASTeX v6.31 LaTeX 2e macros.
+%%
+%% AASTeX is now based on Alexey Vikhlinin's emulateapj.cls 
+%% (Copyright 2000-2015).  See the classfile for details.
+
+%% AASTeX requires revtex4-1.cls and other external packages such as
+%% latexsym, graphicx, amssymb, longtable, and epsf.  Note that as of 
+%% Oct 2020, APS now uses revtex4.2e for its journals but remember that 
+%% AASTeX v6+ still uses v4.1. All of these external packages should 
+%% already be present in the modern TeX distributions but not always.
+%% For example, revtex4.1 seems to be missing in the linux version of
+%% TexLive 2020. One should be able to get all packages from www.ctan.org.
+%% In particular, revtex v4.1 can be found at 
+%% https://www.ctan.org/pkg/revtex4-1.
+
+%% The first piece of markup in an AASTeX v6.x document is the \documentclass
+%% command. LaTeX will ignore any data that comes before this command. The 
+%% documentclass can take an optional argument to modify the output style.
+%% The command below calls the preprint style which will produce a tightly 
+%% typeset, one-column, single-spaced document.  It is the default and thus
+%% does not need to be explicitly stated.
+%%
+%% using aastex version 6.3
+
+%\documentclass[linenumbers]{aastex631}
+\documentclass[linenumbers, twocolumn, trackchanges]{aastex631}
+
+%% The default is a single spaced, 10 point font, single spaced article.
+%% There are 5 other style options available via an optional argument. They
+%% can be invoked like this:
+%%
+%% \documentclass[arguments]{aastex631}
+%% 
+%% where the layout options are:
+%%
+%%  twocolumn   : two text columns, 10 point font, single spaced article.
+%%                This is the most compact and represent the final published
+%%                derived PDF copy of the accepted manuscript from the publisher
+%%  manuscript  : one text column, 12 point font, double spaced article.
+%%  preprint    : one text column, 12 point font, single spaced article.  
+%%  preprint2   : two text columns, 12 point font, single spaced article.
+%%  modern      : a stylish, single text column, 12 point font, article with
+%% 		  wider left and right margins. This uses the Daniel
+%% 		  Foreman-Mackey and David Hogg design.
+%%  RNAAS       : Supresses an abstract. Originally for RNAAS manuscripts 
+%%                but now that abstracts are required this is obsolete for
+%%                AAS Journals. Authors might need it for other reasons. DO NOT
+%%                use \begin{abstract} and \end{abstract} with this style.
+%%
+%% Note that you can submit to the AAS Journals in any of these 6 styles.
+%%
+%% There are other optional arguments one can invoke to allow other stylistic
+%% actions. The available options are:
+%%
+%%   astrosymb    : Loads Astrosymb font and define \astrocommands. 
+%%   tighten      : Makes baselineskip slightly smaller, only works with 
+%%                  the twocolumn substyle.
+%%   times        : uses times font instead of the default
+%%   linenumbers  : turn on lineno package.
+%%   trackchanges : required to see the revision mark up and print its output
+%%   longauthor   : Do not use the more compressed footnote style (default) for 
+%%                  the author/collaboration/affiliations. Instead print all
+%%                  affiliation information after each name. Creates a much 
+%%                  longer author list but may be desirable for short 
+%%                  author papers.
+%% twocolappendix : make 2 column appendix.
+%%   anonymous    : Do not show the authors, affiliations and acknowledgments 
+%%                  for dual anonymous review.
+%%
+%% these can be used in any combination, e.g.
+%%
+%% \documentclass[twocolumn,linenumbers,trackchanges]{aastex631}
+%%
+%% AASTeX v6.* now includes \hyperref support. While we have built in specific
+%% defaults into the classfile you can manually override them with the
+%% \hypersetup command. For example,
+%%
+%% \hypersetup{linkcolor=red,citecolor=green,filecolor=cyan,urlcolor=magenta}
+%%
+%% will change the color of the internal links to red, the links to the
+%% bibliography to green, the file links to cyan, and the external links to
+%% magenta. Additional information on \hyperref options can be found here:
+%% https://www.tug.org/applications/hyperref/manual.html#x1-40003
+%%
+%% Note that in v6.3 "bookmarks" has been changed to "true" in hyperref
+%% to improve the accessibility of the compiled pdf file.
+%%
+%% If you want to create your own macros, you can do so
+%% using \newcommand. Your macros should appear before
+%% the \begin{document} command.
+%%
+\newcommand{\vdag}{(v)^\dagger}
+\newcommand\aastex{AAS\TeX}
+\newcommand\latex{La\TeX}
+\newcommand{\magcom}[1]{\textcolor{magenta}{#1}} % {\textbf{#1}}}
+\newcommand{\redcom}[1]{\textcolor{red}{#1}} % {\textbf{#1}}}
+\newcommand{\yelcom}[1]{\colorbox{yellow}{#1}} % {\textbf{#1}}}
+\newcommand{\pd}{\texttt{photoD}}
+\newcommand{\mh}{[M/H]}
+\newcommand{\Mb}{\textit{M\textsubscript{b}}}
+\newcommand{\logg}{\textit{log(g)}}
+\newcommand{\teff}{\textit{T\textsubscript{eff}}}
+
+%% Reintroduced the \received and \accepted commands from AASTeX v5.2
+%\received{March 1, 2021}
+%\revised{April 1, 2021}
+%\accepted{\today}
+
+%% Command to document which AAS Journal the manuscript was submitted to.
+%% Adds "Submitted to " the argument.
+%\submitjournal{PSJ}
+
+%% The following command can be used to set the latex table counters.  It
+%% is needed in this document because it uses a mix of latex tabular and
+%% AASTeX deluxetables.  In general it should not be needed.
+%\setcounter{table}{1}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% The following section outlines numerous optional output that
+%% can be displayed in the front matter or as running meta-data.
+%%
+%% If you wish, you may supply running head information, although
+%% this information may be modified by the editorial offices.
+\shorttitle{PhotoD}
+\shortauthors{Schwarz et al.}
+%%
+%% You can add a light gray and diagonal water-mark to the first page 
+%% with this command:
+%% \watermark{text}
+%% where "text", e.g. DRAFT, is the text to appear.  If the text is 
+%% long you can control the water-mark size with:
+%% \setwatermarkfontsize{dimension}
+%% where dimension is any recognized LaTeX dimension, e.g. pt, in, etc.
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\graphicspath{{./}{figures/}}
+
+
+\begin{document}
+
+\title{PhotoD: LSST photometric distances out to 100 kpc.}
+
+%% LaTeX will automatically break titles if they run longer than
+%% one line. However, you may use \\ to force a line break if
+%% you desire. In v6.31 you can include a footnote in the title.
+
+%%
+%% The \author command is the same as before except it now takes an optional
+%% argument which is the 16 digit ORCID. The syntax is:
+%% \author[xxxx-xxxx-xxxx-xxxx]{Author Name}
+
+%% Use \affiliation for affiliation information. The old \affil is now aliased
+%% to \affiliation. AASTeX v6.31 will automatically index these in the header.
+%% When a duplicate is found its index will be the same as its previous entry.
+%%
+%% Note that \altaffilmark and \altaffiltext have been removed and thus 
+%% can not be used to document secondary affiliations. If they are used latex
+%% will issue a specific error message and quit. Please use multiple 
+%% \affiliation calls for to document more than one affiliation.
+%%
+%% The new \altaffiliation can be used to indicate some secondary information
+%% such as fellowships. This command produces a non-numeric footnote that is
+%% set away from the numeric \affiliation footnotes.  NOTE that if an
+%% \altaffiliation command is used it must come BEFORE the \affiliation call,
+%% right after the \author command, in order to place the footnotes in
+%% the proper location.
+%%
+%% Use \email to set provide email addresses. Each \email will appear on its
+%% own line so you can put multiple email address in one \email call. A new
+%% \correspondingauthor command is available in V6.31 to identify the
+%% corresponding author of the manuscript. It is the author's responsibility
+%% to make sure this name is also in the author list.
+%%
+%% While authors can be grouped inside the same \author and \affiliation
+%% commands it is better to have a single author for each. This allows for
+%% one to exploit all the new benefits and should make book-keeping easier.
+%%
+%% If done correctly the peer review system will be able to
+%% automatically put the author and affiliation information from the manuscript
+%% and save the corresponding author the trouble of entering it by hand.
+
+\correspondingauthor{August Muench}
+\email{greg.schwarz@aas.org, gus.muench@aas.org}
+
+\author[0000-0002-0786-7307]{Greg J. Schwarz}
+\affiliation{American Astronomical Society \\
+1667 K Street NW, Suite 800 \\
+Washington, DC 20006, USA}
+
+\author{August Muench}
+\affiliation{American Astronomical Society \\
+1667 K Street NW, Suite 800 \\
+Washington, DC 20006, USA}
+
+\collaboration{6}{(AAS Journals Data Editors)}
+
+\author{Butler Burton}
+\affiliation{Leiden University}
+\affiliation{AAS Journals Associate Editor-in-Chief}
+
+\author{Amy Hendrickson}
+\altaffiliation{AASTeX v6+ programmer}
+\affiliation{TeXnology Inc.}
+
+\author{Julie Steffen}
+\affiliation{AAS Director of Publishing}
+\affiliation{American Astronomical Society \\
+1667 K Street NW, Suite 800 \\
+Washington, DC 20006, USA}
+
+\author{Magaret Donnelly}
+\affiliation{IOP Publishing, Washington, DC 20005}
+
+%% Mark off the abstract in the ``abstract'' environment. 
+\begin{abstract}
+
+This example manuscript is intended to serve as a tutorial and template for
+authors to use when writing their own AAS Journal articles. The manuscript
+includes a history of \aastex\ and documents the new features in the
+previous versions as well as the bug fixes in version 6.31. This
+manuscript includes many figure and table examples to illustrate these new
+features.  Information on features not explicitly mentioned in the article
+can be viewed in the manuscript comments or more extensive online
+documentation. Authors are welcome replace the text, tables, figures, and
+bibliography with their own and submit the resulting manuscript to the AAS
+Journals peer review system.  The first lesson in the tutorial is to remind
+authors that the AAS Journals, the Astrophysical Journal (ApJ), the
+Astrophysical Journal Letters (ApJL), the Astronomical Journal (AJ), and
+the Planetary Science Journal (PSJ) all have a 250 word limit for the 
+abstract\footnote{Abstracts for Research Notes of the American Astronomical 
+Society (RNAAS) are limited to 150 words}.  If you exceed this length the
+Editorial office will ask you to shorten it. This abstract has 182 words.
+
+\end{abstract}
+
+%% Keywords should appear after the \end{abstract} command. 
+%% The AAS Journals now uses Unified Astronomy Thesaurus concepts:
+%% https://astrothesaurus.org
+%% You will be asked to selected these concepts during the submission process
+%% but this old "keyword" functionality is maintained in case authors want
+%% to include these concepts in their preprints.
+\keywords{Distance measure (395) --- Interstellar extinction (841) --- Photometry (1234) --- Stellar distance (1595) --- Two-color diagrams (1724)}
+
+%% From the front matter, we move on to the body of the paper.
+%% Sections are demarcated by \section and \subsection, respectively.
+%% Observe the use of the LaTeX \label
+%% command after the \subsection to give a symbolic KEY to the
+%% subsection for cross-referencing in a \ref command.
+%% You can use LaTeX's \ref and \label commands to keep track of
+%% cross-references to sections, equations, tables, and figures.
+%% That way, if you change the order of any elements, LaTeX will
+%% automatically renumber them.
+%%
+%% We recommend that authors also use the natbib \citep
+%% and \citet commands to identify citations.  The citations are
+%% tied to the reference list via symbolic KEYs. The KEY corresponds
+%% to the KEY in the \bibitem in the reference list below. 
+
+\section{Introduction} \label{sec:intro}
+
+Thanks to the \textit{Vera C. Rubin} observatory's \textit{Legacy Survey of Space and Time} (LSST), for the first time in history, an astronomical catalog will contain more Milky Way stars than there are living people on Earth -- of the order 10-20 billion, depending on model assumptions. In order to map the Milky Way in three dimensions, distances to these stars must be accurately  estimated. In this paper we describe a method that will deliver LSST-based stellar distance estimations complementary to \textit{Gaia's} state-of-the-art trigonometric parallaxes and reach about 10 times further, to approximately 100 kpc. These results will be transformative for the studies of the Milky Way in general, and the stellar and the dark matter halo in particular as never before was there a survey that simultaneously observed roughly two thirds of the sky, to the co-added depth of \textit{r}$\approx$26 mag. 
+
+\magcom{A bit about the importance of the distance estimation in the MW, dust implications (for extragalactic science too).}
+
+There are a variety of astronomical methods to estimate distances to stars, ranging from direct geometric (trigonometric) methods for nearby stars to indirect methods based on astrophysics for more distant stars. 
+
+\magcom{Mention \citet{bailer-jones_estimating_2021}, \cite{green_measuring_2014,green_three-dimensional_2015,green_3d_2019}, \citet{juric_milky_2008} and \citet{lallement_3d_2014}, \citet{queiroz_starhorse_2018}}.
+
+Layout of the paper is...
+
+\section{Method} \label{sec:method}
+
+The photometric distance estimation method (hereafter \pd) is conceptually quite simple and relies on the strong correlations between the stellar colors and spectral energy distributions (SED) for dominant stellar populations. The stellar spectral energy distributions, and consequently colors, are determined by the effective temperature (\textit{T\textsubscript{eff}}), the surface gravity (\textit{g}), and the metallicity ([M/H]), or alternatively, by the absolute magnitude in band \textit{b} (\textit{M\textsubscript{b}}), [M/H] and age.
+
+The distributions that describe these correlations are obtained either from models or from observations. For example, the distribution of stellar SEDs in the color-color diagram in Figure \ref{fig:2c_example} provides key insights in stellar evolution and classification of different stellar populations such as main-sequence stars, giant stars, white dwarf stars, a majority of unresolved binary stars and even extragalactic objects. Analogous distributions are responsible for the abundant structure seen in the Hertzsprung-Russell diagram (HRD).
+
+\begin{figure}[ht!]
+	\plotone{GOOZvV.png}
+	\caption{Color-color diagram. \magcom{Add a version with overlaid evolutionary tracks in order to emphasize the required precision of the photometry required to disentangle the dwarfs and giants and different metallicities. \textbf{Are ev. tracks with different metallicities overlapping}? Can there be a situation where there is confusion between giants and dwarfs with different metallicities?} \label{fig:2c_example}}
+\end{figure}
+
+Metallicity is an important factor in these correlations, as it has a strong effect on the luminosity of the stars. This is reflected in the width of the main stellar loci of the color-magnitude diagrams (CMD) of the stellar populations observed at the same distance and the two-color diagrams (\magcom{quantify}), as seen in Figure \ref{fig:metallicity}. The best photometric estimators of metallicity are colors whose shorter-wavelength component includes the metal absorbtion bands at near-UV wavelengths, short of Balmer break. Therefore, the LSST has a comparative advantage over the surveys lacking \textit{u}-band measurements, and could provide accurate distances within the range of 5-10\%. \magcom{A plot of model spectra, fixed, \textit{log(g)} and \textit{T\textsubscript{eff}}, several different metallicities?}
+
+\begin{figure}[ht!]
+	\plotone{Fdtez8.png}
+	\caption{Yadayada. \label{fig:metallicity}}
+\end{figure}
+
+Extinction is a major source of systematic errors in the process of luminosity and distance determination. The fact that the extinction vector is nearly parallel to the main stellar locus in the two-color diagrams gives rise to degeneracies that complicate the determination of the stellar type. An example is displayed in Fig. \ref{fig:degeneracies}, where in the left panel any of the different star types designated as 1,2 and 3 can have the same observed colors as the star marked as "Obs". This degeneracy is a result of the combination of colors chosen for the two-color diagram and depends on the adopted extinction curve \textit{R\textsubscript{V}} and the position on the stellar locus. The degeneracy can be broken if several different colors are used, particularly those towards the infrared, where the stellar locus is not kinked and the extinction vector is not parallel to it (as shown in the right panel of the Figure \ref{fig:degeneracies}).
+
+\begin{figure}[ht!]
+	\plotone{BYiR7o.png}
+	\caption{Extinction \& degeneracies. \label{fig:degeneracies}}
+\end{figure}
+
+$L=4\pi\sigma R^2 T^4$\\
+$g = \frac{GM}{R^2}$\\
+$L=4\pi \sigma \frac{GM}{g} T^4$\\
+$\mu = m_b - M_b {\ }(- A_b)$\\
+$log(d) = 1 + \frac{\mu}{5}$\\
+
+Given the observed colors, and assuming small errors, the estimation of stellar parameters is relatively straight forward and follows one of the two possible approaches: empirical or model-based. In the former case, the case the underlying distribution to which the observations are matched is obtained from (ideally) spectroscopic and photometric observations, while in the latter case the distributions are generated from population synthesis models.
+
+\magcom{Advantages \& disadvantages of the model-based and empirical approaches, how model based approaches can be improved by adding empirical information for specific cases}.
+
+% Here we provide a layout of our method that simultaneously provides distance estimates as well as the three-dimensional estimation of the dust distribution. The distance modulus of a star can be estimated given its absolute and apparent magnitudes and the extinction along the line of sight. Therefore, given the observed colors it is necessary to simultaneously estimate the effective temperature, metallicity and extinction.  
+
+
+\appendix
+
+\bibliography{PhotoD}{}
+\bibliographystyle{aasjournal}
+
+%% Include this line if you are using the \added, \replaced, \deleted
+%% commands to see a summary list of all changes at the end of the article.
+%\listofchanges
+
+\end{document}
