@@ -2,6 +2,7 @@ import numpy as np
 from scipy.interpolate import griddata
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
+from scipy.stats import gaussian_kde
 import LocusTools as lt 
 import PlotTools as pt
 
@@ -10,7 +11,7 @@ import PlotTools as pt
 def getBayesConstants():
     
     BayesConst = {}
-    # parameters for stellar locus (main sequence and red giants) table
+    # parameters for stellar locus (main sequence and red giants) table, as well as priors 
     BayesConst['FeHmin'] = -2.5       # the range of considered [Fe/H], in priors and elsewhere
     BayesConst['FeHmax'] = 1.0
     BayesConst['FeHNpts'] = 36        # defines the grid step for [Fe/H]
@@ -35,7 +36,7 @@ def getBayesConstants():
 ### IMPLEMENTATION OF MAP-BASED PRIORS
 def getMetadataPriors(priorMap=""):
     if (priorMap==""):
-        bc = bt.getBayesConstants()
+        bc = getBayesConstants()
         FeHmin = bc['FeHmin']
         FeHmin = bc['FeHmin']
         FeHNpts = bc['FeHNpts']
@@ -69,11 +70,15 @@ def get2Dmap(sample, labels, metadata):
     Z = kde.evaluate(np.vstack([Xgrid.ravel(), Ygrid.ravel()]))
     return (Xgrid, Ygrid, Z)
 
-def dumpPriorMaps(sample, rmagMin, rmagMax, rmagNsteps, fileRootname):
+def dumpPriorMaps(sample, fileRootname):
+
+    ## data frame called "sample" here must have the following columns: 'FeH', 'Mr', 'rmag'
+    labels = ['FeH', 'Mr', 'rmag']
+
     ## numerical model specifications and constants for Bayesian PhotoD method
-    bc = bt.getBayesConstants()
+    bc = getBayesConstants()
     FeHmin = bc['FeHmin']
-    FeHmin = bc['FeHmin']
+    FeHmax = bc['FeHmax']
     FeHNpts = bc['FeHNpts']
     MrFaint = bc['MrFaint']
     MrBright = bc['MrBright'] 
@@ -84,7 +89,6 @@ def dumpPriorMaps(sample, rmagMin, rmagMax, rmagNsteps, fileRootname):
     rmagNsteps = bc['rmagNsteps']  
 
     # -------
-    labels = ['FeH', 'Mr']
     metadata = np.array([FeHmin, FeHmax, FeHNpts, MrFaint, MrBright, MrNpts])
     rGrid = np.linspace(rmagMin, rmagMax, rmagNsteps)
     for rind, r in enumerate(rGrid):
@@ -92,7 +96,7 @@ def dumpPriorMaps(sample, rmagMin, rmagMax, rmagNsteps, fileRootname):
         rMin = r - rmagBinWidth
         rMax = r + rmagBinWidth
         # select subsample
-        tS = sample[(sample['rmag']>rMin)&(sample['rmag']<rMax)]
+        tS = sample[(sample[labels[2]]>rMin)&(sample[labels[2]]<rMax)]
         tSsize = np.size(tS)
         print('r=', rMin, 'to', rMax, 'N=', np.size(sample), 'Ns=', np.size(tS))
         # this is work horse, where data are binned and map arrays produced
