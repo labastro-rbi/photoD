@@ -67,6 +67,7 @@
 %%
 
 \usepackage{xspace}
+\usepackage{amsmath}
 
 \newcommand{\vdag}{(v)^\dagger}
 \newcommand\aastex{AAS\TeX}
@@ -76,10 +77,29 @@
 \newcommand{\yelcom}[1]{\colorbox{yellow}{#1}} % {\textbf{#1}}}
 \newcommand{\pd}{\texttt{photoD}\xspace}
 \newcommand{\mh}{[M/H]\xspace}
-\newcommand{\Mb}{\textit{M\textsubscript{b}}\xspace}
+\newcommand{\mhm}{[\mathrm{M} / \mathrm{H}]\xspace}
+\newcommand{\Mb}{\ensuremath{M{\mathrm{_b}}}\xspace}
+\newcommand{\Ar}{\ensuremath{A{\mathrm{_r}}}\xspace}
+
+% \newcommand{\Mb}{\textit{M\textsubscript{b}}\xspace}
 \newcommand{\logg}{\textit{log(g)}\xspace}
 \newcommand{\teff}{\textit{T\textsubscript{eff}}\xspace}
 \newcommand{\RV}{\textit{R\textsubscript{V}}\xspace}
+%\newcommand{\AV}{\textit{A\textsubscript{V}}\xspace}
+
+\newcommand{\ul}{\ensuremath{u}\xspace}
+\newcommand{\gl}{\ensuremath{g}\xspace}
+\newcommand{\rl}{\ensuremath{r}\xspace}
+\newcommand{\il}{\ensuremath{i}\xspace}
+\newcommand{\zl}{\ensuremath{z}\xspace}
+\newcommand{\yl}{\ensuremath{y}\xspace}
+
+\renewcommand{\arg}[1]{\! \left( #1 \right)}
+\newcommand{\Pcond}[2]{P \arg{ #1 \, | \, #2 }}
+% \newcommand{\yps}{\ensuremath{y_{\mathrm{P1}}}\xspace}
+%\newcommand{\EBV}{\ensuremath{E \left( B \! - \! V \right)}\xspace}
+%\newcommand{\Egr}{\ensuremath{E \left( g \! - \! r \right)}\xspace}
+%\newcommand{\EBPRP}{\ensuremath{E \left( BP \! - \! RP \right)}\xspace}
 
 %% Reintroduced the \received and \accepted commands from AASTeX v5.2
 %\received{March 1, 2021}
@@ -267,7 +287,20 @@ Metallicity is an important factor in these correlations, as it has a strong eff
 	\caption{Yadayada. \label{fig:metallicity}}
 \end{figure}
 
-Extinction is a major source of systematic errors in the process of luminosity and distance determination. The fact that the extinction vector is nearly parallel to the main stellar locus in the two-color diagrams gives rise to degeneracies that complicate the determination of the stellar type. An example is displayed in Fig. \ref{fig:degeneracies}, where in the left panel any of the different star types designated as 1,2 and 3 can have the same observed colors as the star marked as "Obs". This degeneracy is a result of the combination of colors chosen for the two-color diagram and depends on the adopted extinction curve \textit{R\textsubscript{V}} and the position on the stellar locus. The degeneracy can be broken if several different colors are used, particularly those towards the infrared, where the stellar locus is not kinked and the extinction vector is not parallel to it (as shown in the right panel of the Figure \ref{fig:degeneracies}).
+Extinction is another major source of systematic errors in the process of luminosity and distance determination. The fact that the extinction vector is nearly parallel to the main stellar locus in the two-color diagrams gives rise to degeneracies that complicate the determination of the stellar type. An example is displayed in Fig. \ref{fig:degeneracies}, where in the left panel any of the different star types designated as 1,2 and 3 can have the same observed colors as the star marked as "Obs". This degeneracy is a result of the combination of colors chosen for the two-color diagram and depends on the position on the stellar locus and the adopted extinction curve parametrized by a single parameter \textit{R\textsubscript{V}}
+
+\begin{equation}
+	R_V = \frac{A_V}{E(B-V)},
+\end{equation}
+
+where $A_V$ stands for extinction in \textit{V}-band and \textit{E(B-V)} is the color excess. This relationship can be extended to an arbitrary photometric bandpass $\lambda$:
+
+\begin{equation}
+	A_{\lambda} = C_{\lambda}(R_V)A_r,
+\end{equation}
+
+with $A_r$ designating extinction in \textit{r}-band and $C_{\lambda}(R_V)$ describing the shape of the extinction curve. The degeneracy from the left panel in Fig. \ref{fig:degeneracies} can be broken if several different colors are used, particularly those towards the infrared, where the stellar locus is not kinked and the extinction vector is not parallel to it (as shown in the right panel of the Figure \ref{fig:degeneracies}), where $r-i$ and $i-z$ colors are used, and assuming a fixed extinction law a unique solution for the extinction is possible. 
+
 
 \magcom{Explain the choice of \RV.}
 
@@ -276,18 +309,33 @@ Extinction is a major source of systematic errors in the process of luminosity a
 	\caption{Extinction \& degeneracies. \label{fig:degeneracies}}
 \end{figure}
 
-$L=4\pi\sigma R^2 T^4$\\
-$g = \frac{GM}{R^2}$\\
-$L=4\pi \sigma \frac{GM}{g} T^4$\\
-$\mu = m_b - M_b {\ }(- A_b)$\\
-$log(d) = 1 + \frac{\mu}{5}$\\
+Another important degeneracy arises from the fact that even for a fixed \teff and \mh, the \logg and thus the luminosity are not uniquely determined by the colors: a degeneracy may exist between the giant branch and the main sequence as the colors constructed from \textit{ugrizy} bands are not sensitive to \logg (\magcom{As evident from ŽI's gr-ri plot.}). We treat this issue by adopting a prior based on bins in apparent magnitude.
 
-Another important degeneracy arises from the fact that even for a fixed \teff and \mh, the \logg thus luminosity are not uniquely determined. A way to mitigate this issue is to adopt a Bayesian framework 
+We adopt a Bayesian framework in which we simultaneously fit for \Mb, \mh and \Ar, assuming a fixed \RV value of 3.1\footnote{In principle \RV could be also fitted for.} The posterior for each individual star with LSST photometry is then given as:
+
+\begin{equation} \label{eq:likelihood}
+	\begin{split}
+		    &\Pcond{\Mb, \, \mh, \, \Ar}{\vec{c}} = \\
+		& \frac{\Pcond{\vec{c}}{\Mb, \, \mh, \, \Ar} P\arg{\Mb, \, \mh, \, \Ar}}{P\arg{\vec{c}}} \,
+	\end{split}
+\end{equation}
 
 
-overlap in the color-color diagrams (e.g. Figure \ref{fig:2c_example}). This effectively means that for a fixed \teff proxy ($g-r$), 
+with \ensuremath{\vec{c}} standing for the vector of input colors (\ul-\gl, \gl-\rl and so on). The log-likelihood is given by:
 
-Given the observed colors, and assuming small errors, the estimation of stellar parameters is relatively straight forward and follows one of the two possible approaches: empirical or model-based. In the former case, the case the underlying distribution to which the observations are matched is obtained from (ideally) spectroscopic and photometric observations, while in the latter case the distributions are generated from population synthesis models.
+\begin{equation}
+	ln \mathcal{L} = {-1 \over \sqrt{2\pi}} \,\sum_{i=1}^N \left({ c^{obs}_i - c^{mod}_i  \over \sigma_i } \right)^2 \,
+\end{equation}
+
+where \ensuremath{c^{obs}_i} are the observed colors and \ensuremath{c^{mod}_i} model colors. The values of model colors and the priors are extracted from from TRILEGAL (\citet{dal_tio_simulating_2022}). In order to extract the priors (i.e. prior maps), we divide TRILEGAL data in healpix bins, and further subdivide them in one-magnitude wide bins in apparent magnitude. The latter subdivision is helpful in breaking the degeneracies between the giant and dwarf stars, as intrinsically luminous stars become strongly disfavored at faint magnitudes\footnote{In other words, an apparently faint giant star would imply a very large distance. For example a moderately bright giant star with \ensuremath{M_r}=0 mag and \ensuremath{r}=22 mag would imply a distance modulus of 22 mag, or distance of approximately 251 kpc.}.
+
+\magcom{Add plots describing the method, and go through one example like in Željko's slides. }
+
+Our method is basically brute-force fitting with some intelligent tricks leveraged to obtain faster execution that will be required for 10B LSST stars. We use \cite{schlegel_maps_1998} (SFD98) maps in order to limit the range of the extinction. This is usually a valid assumption because the SFD98 maps provide \textit{total} extinction along a line of sight. Our fitting procedure is also executed on an adaptive grid, a coarse search over the parameter space is performed first in order to establish the layout of the manifold. However, care is taken that any possible local minima are not missed by appropriately adjusting the step size \magcom{how?}. The located maxima are then explored with a smaller step size (\magcom{adjusted how?}).
+
+In addition to the approach described here, we also tested Markov Chain Monte Carlo and neural network approaches that will be/are described in forthcoming/published papers.
+
+%Under the assumptions that the locus of the color-color diagram is representative of the stellar SEDs, that the shape of the extinction curve can be parametrized with a single parameter \RV
 
 \magcom{Advantages \& disadvantages of the model-based and empirical approaches, how model based approaches can be improved by adding empirical information for specific cases}.
 
@@ -298,11 +346,16 @@ Given the observed colors, and assuming small errors, the estimation of stellar 
 	\caption{BEAST. \label{fig:BEAST}}
 \end{figure}
 
+
 % -- modeli za boje moraju biti savršeni
 % -- novi prior iz trilegala
 % -- robustni framework koji može obraditi 10B zvijezda, i da nije spor
 % -- probali smo s MCMC, exhaustive locus search, i neuronske mreže koje su bile najbrže (drugi članak)
 
+%$L=4\pi\sigma R^2 T^4=4\pi \sigma \frac{GM}{g} T^4$\\
+%$g = \frac{GM}{R^2}$\\
+%$\mu = m_b - M_b {\ }(+ A_b)$\\
+%$log(d) = 1 + \frac{\mu}{5}$\\
 
 \section{Testing}
 
