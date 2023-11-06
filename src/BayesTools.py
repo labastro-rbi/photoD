@@ -28,6 +28,10 @@ def getBayesConstants():
     # where 1.3 <= ArCoef0, 0.1 <= ArCoef1 and 0.01 mag <= ArCoef2 are set here (or user supplied)
     BayesConst['ArCoeff0'] = 1.3
     BayesConst['ArCoeff1'] = 0.1
+    BayesConst['ArCoeff2'] = 0.01
+    
+    BayesConst['ArCoeff0'] = 1.4
+    BayesConst['ArCoeff1'] = 0.3
     BayesConst['ArCoeff2'] = 0.01 
     
     return BayesConst   
@@ -241,7 +245,7 @@ def getQmap(cube, FeH1d, Mr1d, Ar1d):
             for k in range(0,np.size(Ar1d)):
                 Mr = Qr1d[j] - Ar1d[k]
                 # now need to get the value of index for this Mr
-                jk = np.int((Mr-Mr1d[0])/(Mr1d[1]-Mr1d[0])) 
+                jk = int((Mr-Mr1d[0])/(Mr1d[1]-Mr1d[0])) 
                 if ((jk>=0)&(jk<np.size(Mr1d))):
                     Ssum += cube[i,jk,k]
             Qmap[i,j] = Ssum
@@ -702,7 +706,7 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
     catalog['ArEstUnc'] = 0*catalog['Mr'] -1 
     catalog['QrEst'] = 0*catalog['Mr'] - 99 
     catalog['QrEstUnc'] = 0*catalog['Mr'] -1 
-    catalog['chi2min'] = 0*catalog['Mr'] + 999
+    catalog['chi2min'] = 0*catalog['Mr'] - 99
     catalog['MrdS'] = 0*catalog['Mr'] - 1 
     catalog['FeHdS'] = 0*catalog['Mr'] - 1 
     catalog['ArdS'] = 0*catalog['Mr'] - 1 

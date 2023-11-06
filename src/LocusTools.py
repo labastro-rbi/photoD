@@ -431,11 +431,12 @@ def readKarloMLestimates3D(inKfile):
         return simsML
   
         
-def LSSTsimsLocus(fixForStripe82=True): 
+def LSSTsimsLocus(fixForStripe82=True, datafile=""): 
         ## Mr, as function of [Fe/H], along the SDSS/LSST stellar 
         ## for more details see the file header
         colnames = ['Mr', 'FeH', 'ug', 'gr', 'ri', 'iz', 'zy']
-        LSSTlocus = Table.read('../data/LocusData/MSandRGBcolors_v1.3.txt', format='ascii', names=colnames)
+        if (datafile==""): datafile = '../data/LocusData/MSandRGBcolors_v1.3.txt'
+        LSSTlocus = Table.read(datafile, format='ascii', names=colnames)
         LSSTlocus['gi'] = LSSTlocus['gr'] + LSSTlocus['ri']
         if (fixForStripe82):
             print('Fixing input Mr-FeH-colors grid to agree with the SDSS v4.2 catalog')
@@ -701,7 +702,6 @@ def getPhotoDchi2map3D(i, colors, colorReddCoeffs, data2fit, locus, ArCoeff, mas
 
 
 def get3DmodelList(locusData, fitColors, agressive=False):
-
 
     if agressive:
         ## AGRESSIVE 

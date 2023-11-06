@@ -37,7 +37,7 @@ def makeDMhistogram(x, xMin=1, xMax=22):
 
 
 def plot2Dmap(x, y, xMin, xMax, nXbin, yMin, yMax, nYbin, xLabel, yLabel, addMedians=True, logScale=False):
-
+   
     data = np.vstack([x, y])
     kde = gaussian_kde(data)
 
@@ -67,7 +67,13 @@ def plot2Dmap(x, y, xMin, xMax, nXbin, yMin, yMax, nYbin, xLabel, yLabel, addMed
         
     plt.xlabel(xLabel)
     plt.ylabel(yLabel)
+    plt.xlim(xMin, xMax)
+    plt.ylim(yMin, yMax)
 
+    if (0):
+         # plt.plot([3, 11.5], [3, 11.5], ls='--', lw=1, c='red')
+         plt.plot([2.5, 10.5], [0, 0], ls='--', lw=1, c='red')
+   
     if (addMedians):     
         xBin, nPts, medianBin, sigGbin = lt.fitMedians(x, y, xMin, xMax, 60)
         plt.scatter(xBin, medianBin, s=40, c='red')
@@ -76,6 +82,10 @@ def plot2Dmap(x, y, xMin, xMax, nXbin, yMin, yMax, nYbin, xLabel, yLabel, addMed
         plt.plot([xMin, xMax], [0,0], c='black')   
         return (xBin, medianBin)
     else:
+        # save
+        plt.savefig('../plots/2Dmap.png')
+        print('made ../plots/2Dmap.png')
+        plt.show() 
         return 
 
 def replot2Dmap(Xgrid, Ygrid, Z, xMin, xMax, nXbin, yMin, yMax, nYbin, xLabel, yLabel, logScale=False):
