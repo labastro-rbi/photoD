@@ -39,7 +39,7 @@ with $A_r$ designating extinction in \textit{r}-band and $C_{\lambda}(R_V)$ desc
 
 \magcom{Explain the choice of \RV.}
 
-Another important degeneracy arises from the fact that even for a fixed \teff and \feh, the \logg and thus the luminosity are not uniquely determined by the colors: a degeneracy may exist between the giant branch and the main sequence as the colors constructed from \textit{ugrizy} bands are not sensitive to \logg. We treat this issue by adopting a prior based on bins in apparent magnitude.
+Another important degeneracy arises from the fact that even for a fixed \teff and \feh, the \logg and thus the luminosity are not uniquely determined by the colors: a degeneracy may exist between the giant branch and the main sequence as the colors constructed from \textit{ugrizy} bands are not sensitive to \logg. 
 
 We adopt a Bayesian framework in which we simultaneously fit for \Mb, \feh and \Ar, assuming a fixed \RV value of 3.1\footnote{In principle \RV could be also fitted for.} The posterior for each individual star with LSST photometry is then given as:
 
@@ -57,19 +57,17 @@ with \ensuremath{\vec{c}} standing for the vector of input colors (\ul-\gl, \gl-
 	ln (\mathcal{L}) = C - {1 \over 2} \,\sum_{i=1}^N \left({ c^{obs}_i - c^{mod}_i  \over \sigma_i } \right)^2 \,
 \end{equation}
 
-where \ensuremath{c^{obs}_i} are the observed colors and \ensuremath{c^{mod}_i} model colors. The values of model colors and the priors are extracted from from TRILEGAL (\citet{dal_tio_simulating_2022}). In order to extract the priors (i.e. prior maps), we divide TRILEGAL data in healpix bins, and further subdivide them in one-magnitude wide bins in apparent magnitude. The latter subdivision is helpful in breaking the degeneracies between the giant and dwarf stars, as intrinsically luminous stars become strongly disfavored at faint magnitudes\footnote{In other words, an apparently faint giant star would imply a very large distance. For example a moderately bright giant star with \ensuremath{M_r}=0 mag and \ensuremath{r}=22 mag would imply a distance modulus of 22 mag, or distance of approximately 251 kpc.}.
+where \ensuremath{c^{obs}_i} are the observed colors and \ensuremath{c^{mod}_i} the model colors. The priors are established by partitioning the TRILEGAL galaxy model \citep{dal_tio_simulating_2022} in healpixels, and each of the pixel in one-magnitude wide bins in apparent magnitude. The model colors are then obtained from models based on SDSS results (\magcom{reference}), where the input for the models are the \Mr and the \feh obtained from TRILEGAL. Given the assumed extinction curve, these colors are then reddened up to the maximum reddening which is estimated from \cite{schlegel_maps_1998} (SFD98) maps. The latter upper limit is used in order to provide a realistic stop condition on the amount of extinction and reduce the processing time. This is usually a valid assumption because the SFD98 maps provide \textit{total} extinction along a line of sight. In order to account for the eventual underestimation in the SFD98 maps we increase the SFD98 extinctions by 20\%.
 
-\magcom{Add plots describing the method, and go through one example like in Željko's slides. }
+% We extract the priors based on position and apparent magnitude from TRILEGAL (\citet{dal_tio_simulating_2022}). Ideally, we would In order to extract the priors (i.e. prior maps), we divide TRILEGAL data in healpix bins, and further subdivide them in one-magnitude wide bins in apparent magnitude. The latter subdivision is helpful in breaking the degeneracies between the giant and dwarf stars, as intrinsically luminous stars become strongly disfavored at faint magnitudes\footnote{In other words, an apparently faint giant star would imply a very large distance. For example a moderately bright giant star with \ensuremath{M_r}=0 mag and \ensuremath{r}=22 mag would imply a distance modulus of 22 mag, or distance of approximately 251 kpc.}.
 
-Our method is basically brute-force fitting with some intelligent tricks leveraged to obtain faster execution that will be required for 10B LSST stars. We use \cite{schlegel_maps_1998} (SFD98) maps in order to limit the range of the extinction. This is usually a valid assumption because the SFD98 maps provide \textit{total} extinction along a line of sight. Our fitting procedure is also executed on an adaptive grid, a coarse search over the parameter space is performed first in order to establish the layout of the manifold. However, care is taken that any possible local minima are not missed by appropriately adjusting the step size \magcom{how?}. The located maxima are then explored with a smaller step size (\magcom{adjusted how?}).
+%Our method is basically brute-force fitting with some intelligent tricks leveraged to obtain faster execution that will be required for 10B LSST stars. 
+
+Our fitting procedure is also executed on an adaptive grid, a coarse search over the parameter space is performed first in order to establish the layout of the manifold. However, care is taken that any possible local minima are not missed by appropriately adjusting the step size \magcom{how?}. The located maxima are then explored with a smaller step size (\magcom{adjusted how?}).
 
 In addition to the approach described here, we also tested Markov Chain Monte Carlo and neural network approaches that will be/are described in forthcoming/published papers.
 
 %Under the assumptions that the locus of the color-color diagram is representative of the stellar SEDs, that the shape of the extinction curve can be parametrized with a single parameter \RV
-
-\magcom{Advantages \& disadvantages of the model-based and empirical approaches, how model based approaches can be improved by adding empirical information for specific cases}.
-
-\magcom{\cite{gordon_panchromatic_2016} na \href{https://beast.readthedocs.io/en/latest/beast\_graphical\_model.html}{BEAST webu} imaju zgodne diagrame; možda bi i mi mogli nešto tog tipa napraviti, bar za draft, primjer }
 
 %%% METHODOLOGY
 
