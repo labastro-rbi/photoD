@@ -1,18 +1,29 @@
 
 \section{Method} \label{sec:method}
 
-The photometric distance estimation method (hereafter \pd) is conceptually quite simple and relies on the strong correlations between the stellar colors and spectral energy distributions (SED) for dominant stellar populations. The stellar spectral energy distributions, and consequently colors, are determined by the effective temperature (\textit{T\textsubscript{eff}}), the surface gravity (\textit{g}), and the metallicity ([M/H]), or alternatively, by the absolute magnitude in band \textit{b} (\textit{M\textsubscript{b}}), [M/H] and age.
+The photometric distance estimation method (hereafter \pd) is conceptually quite simple and relies on the strong correlations between the stellar colors and spectral energy distributions (SED) for dominant stellar populations. The SEDs, and consequently colors, are determined by the effective temperature (\teff), the surface gravity (usually denoted as \logg), and the metallicity (\mh), or alternatively, by the absolute magnitude in band \textit{b} (\Mb), \mh and age.
 
-The distributions that describe these correlations are obtained either from models or from observations. For example, the distribution of stellar SEDs in the color-color diagram in Figure \ref{fig:2c_example} provides key insights in stellar evolution and classification of different stellar populations such as main-sequence stars, giant stars, white dwarf stars, a majority of unresolved binary stars and even extragalactic objects. Analogous distributions are responsible for the abundant structure seen in the Hertzsprung-Russell diagram (HRD).
+The distributions that describe these correlations are obtained either from models or from observations. For example, the distribution of stellar SEDs in the color-color diagram in the middle and left panels of Figure~\ref{fig:3dataDiags} provide key insights in stellar evolution and classification of different stellar populations such as main-sequence stars, giant stars, white dwarf stars, a majority of unresolved binary stars and even extragalactic objects. Analogous distributions are responsible for the abundant structure seen in the Hertzsprung-Russell diagram (HRD).
 
 \begin{figure*}[ht!]
 	\plotone{plot3diagsData.png}
-	\caption{Copy caption from email} \label{fig:3dataDiags}
+	\caption{The blue dots in the left panel show color-magnitude diagram for 841,000 stars from the SDSS Stripe 82 Standard Star Catalog that have Gaia matches within 0.15 arcsec (after correcting for proper motion using Gaia measurements). A subset	of 415,000 stars with $r < 22$ and $u<22$ are shown as red dots, and 409,000 of those that also have $0.2 < g-i < 3.5$ are shown as cyan dots. Finally, 63,000 stars that have signal-to-noise ratio for Gaia’s parallax measurements of at least 20 are shown as green dots. The same color scheme is used in other two panels. The three yellow lines in the middle panel show stellar locus parametrization used by Green et al. (2014) for three values of metallicity (left to right): $[Fe/H] = -2.0, -1.0, 0.0$. In the right panel, the impact of metallicity on color-color tracks is negligible and all three are indistinguishable from each other. } \label{fig:3dataDiags}
 \end{figure*}
 
-Metallicity is an important factor in these correlations, as it has a strong effect on the luminosity of the stars. This is reflected in the width of the main stellar loci of the color-magnitude diagrams (CMD) of the stellar populations observed at the same distance and the two-color diagrams (\magcom{quantify}), as seen in Figure \ref{fig:metallicity}. The best photometric estimators of metallicity are colors whose shorter-wavelength component includes the metal absorbtion bands at near-UV wavelengths, short of Balmer break (300 $\lessapprox\lambda$ [nm] $\lessapprox$ 400). Therefore, the LSST has a comparative advantage over the surveys lacking \textit{u}-band measurements, and could provide accurate distances within the range of 5-10\%. \magcom{A plot of model spectra, fixed, \textit{log(g)} and \textit{T\textsubscript{eff}}, several different metallicities?}
+Metallicity is an important factor in these correlations, as it has a strong effect on the luminosity of the stars. This is reflected in the width of the main stellar loci of the two-color diagrams (middle and right hand panels in Figure~\ref{fig:3dataDiags} and the color-absolute magnitude diagrams (CAMD) in Figure~\ref{fig:3HRdiags}. The best photometric estimators of metallicity are colors whose shorter-wavelength component includes the metal absorbtion bands at near-UV wavelengths, short of Balmer break (300 $\lessapprox\lambda$ [nm] $\lessapprox$ 400). Therefore, the LSST has a comparative advantage over the surveys lacking \textit{u}-band measurements, and could provide accurate distances within the range of 5-10\%. \magcom{A plot of model spectra, fixed, \textit{log(g)} and \textit{T\textsubscript{eff}}, several different metallicities?}
 
-Extinction is another major source of systematic errors in the process of luminosity and distance determination. The fact that the extinction vector is nearly parallel to the main stellar locus in the two-color diagrams gives rise to degeneracies that complicate the determination of the stellar type. An example is displayed in Fig. \ref{fig:degeneracies}, where in the left panel any of the different star types designated as 1,2 and 3 can have the same observed colors as the star marked as "Obs". This degeneracy is a result of the combination of colors chosen for the two-color diagram and depends on the position on the stellar locus and the adopted extinction curve parametrized by a single parameter \textit{R\textsubscript{V}}
+\begin{figure*}[ht!]
+	\plotone{plot3HRdiags.png}
+	\caption{The left panel shows the absolute magnitude vs. color parametrization for main sequence and red giant stars. The symbols are color-coded by metallicity, ranging from $[Fe/H] = -2.5$ to 0.0 (blue to red). The three lines correspond to three values of metallicity: $[Fe/H] = -2.0, -1.0, 0.0$ (dot-dashed, solid and dashed, respectively). The middle panel shows a sample of 63,000 stars that have signal-to-noise ratio for Gaia’s parallax measurements of at least 20 (white dwarfs can be seen in the lower left corner). The dot-dashed, solid and dashed black lines are the same as in the left panel. For comparison, the dotted lines were computed using eqs. A2 and A7 from Ivezic et al. (2008). The right panel shows a sample of 415,000 stars with $r < 22$ and $u<22$ as red dots, and 409,000 of those that also have  $0.2 < g-i < 3.5$ as cyan dots. Their absolute magnitudes were computed using the so-called “photo-geometric” distances from Bailer-Jones et al. (2021). The dot-dashed, solid and dashed black lines are the same as in the left and middle panels. About 10,000 outliers seen at $g-i = 0.4$ and $Mr > 7$ are predominantly found at the faint end ($r>20$).}
+	\label{fig:3HRdiags}
+\end{figure*}
+
+Extinction is another major source of systematic errors in the process of luminosity and distance determination. The fact that the extinction vector is nearly parallel to the main stellar locus in the two-color diagrams gives rise to degeneracies that complicate the determination of the stellar type. An example is displayed in Figure~\ref{fig:extinction}, where in the left panel any of the different star types designated as 1,2 and 3 can have the same observed colors as the star marked as "Obs". This degeneracy is a result of the combination of colors chosen for the two-color diagram and depends on the position on the stellar locus and the adopted extinction curve parametrized by a single parameter \textit{R\textsubscript{V}}
+
+\begin{figure}[ht!]
+	\plotone{BYiR7o.png}
+	\caption{Add caption.} \label{fig:extinction}
+\end{figure}
 
 \begin{equation}
 	R_V = \frac{A_V}{E(B-V)},
@@ -24,11 +35,11 @@ where $A_V$ stands for extinction in \textit{V}-band and \textit{E(B-V)} is the 
 	A_{\lambda} = C_{\lambda}(R_V)A_r,
 \end{equation}
 
-with $A_r$ designating extinction in \textit{r}-band and $C_{\lambda}(R_V)$ describing the shape of the extinction curve. The degeneracy from the left panel in Fig. \ref{fig:degeneracies} can be broken if several different colors are used, particularly those towards the infrared, where the stellar locus is not kinked and the extinction vector is not parallel to it (as shown in the right panel of the Figure \ref{fig:degeneracies}), where $r-i$ and $i-z$ colors are used, and assuming a fixed extinction law a unique solution for the extinction is possible. 
+with $A_r$ designating extinction in \textit{r}-band and $C_{\lambda}(R_V)$ describing the shape of the extinction curve. The degeneracy from the left panel in Figure~\ref{fig:extinction} can be broken if several different colors are used, particularly those towards the infrared. There the stellar locus is not as kinked and the extinction vector is not parallel to it. A possible example is shown in the right-hand panel of the Fig.~\ref{fig:extinction}, where $r-i$ and $i-z$ colors are used, and assuming a fixed extinction law a unique solution for the extinction is possible. 
 
 \magcom{Explain the choice of \RV.}
 
-Another important degeneracy arises from the fact that even for a fixed \teff and \feh, the \logg and thus the luminosity are not uniquely determined by the colors: a degeneracy may exist between the giant branch and the main sequence as the colors constructed from \textit{ugrizy} bands are not sensitive to \logg (\magcom{As evident from ŽI's gr-ri plot.}). We treat this issue by adopting a prior based on bins in apparent magnitude.
+Another important degeneracy arises from the fact that even for a fixed \teff and \feh, the \logg and thus the luminosity are not uniquely determined by the colors: a degeneracy may exist between the giant branch and the main sequence as the colors constructed from \textit{ugrizy} bands are not sensitive to \logg. We treat this issue by adopting a prior based on bins in apparent magnitude.
 
 We adopt a Bayesian framework in which we simultaneously fit for \Mb, \feh and \Ar, assuming a fixed \RV value of 3.1\footnote{In principle \RV could be also fitted for.} The posterior for each individual star with LSST photometry is then given as:
 
@@ -60,21 +71,7 @@ In addition to the approach described here, we also tested Markov Chain Monte Ca
 
 \magcom{\cite{gordon_panchromatic_2016} na \href{https://beast.readthedocs.io/en/latest/beast\_graphical\_model.html}{BEAST webu} imaju zgodne diagrame; možda bi i mi mogli nešto tog tipa napraviti, bar za draft, primjer }
 
-\begin{figure}[ht!]
-	\plottwo{beast-graphic-text.png}{beast-graphic-math.png}
-	\caption{BEAST. \label{fig:BEAST}}
-\end{figure}
-
 %%% METHODOLOGY
-
-% 1) astrophysics
-
-\begin{figure*}[ht!]
-\plotone{plot3HRdiags.png}
-\caption{Copy caption from email} \label{fig:3HRdiags}
-\end{figure*}
-
-
 
 % 2) statistics:
 
