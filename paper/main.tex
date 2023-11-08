@@ -68,6 +68,7 @@
 
 \usepackage{xspace}
 \usepackage{amsmath}
+\usepackage[T1]{fontenc}
 
 \newcommand{\vdag}{(v)^\dagger}
 \newcommand\aastex{AAS\TeX}
@@ -76,16 +77,15 @@
 \newcommand{\redcom}[1]{\textcolor{red}{#1}} % {\textbf{#1}}}
 \newcommand{\yelcom}[1]{\colorbox{yellow}{#1}} % {\textbf{#1}}}
 \newcommand{\pd}{\texttt{photoD}\xspace}
-\newcommand{\mh}{[M/H]\xspace}
-\newcommand{\mhm}{[\mathrm{M} / \mathrm{H}]\xspace}
+\newcommand{\feh}{\ensuremath{[Fe/H]}\xspace}
 \newcommand{\Mb}{\ensuremath{M{\mathrm{_b}}}\xspace}
+\newcommand{\Mr}{\ensuremath{M{\mathrm{_r}}}\xspace}
 \newcommand{\Ar}{\ensuremath{A{\mathrm{_r}}}\xspace}
-
-% \newcommand{\Mb}{\textit{M\textsubscript{b}}\xspace}
-\newcommand{\logg}{\textit{log(g)}\xspace}
-\newcommand{\teff}{\textit{T\textsubscript{eff}}\xspace}
-\newcommand{\RV}{\textit{R\textsubscript{V}}\xspace}
-%\newcommand{\AV}{\textit{A\textsubscript{V}}\xspace}
+\newcommand{\EBV}{\ensuremath{E \left( B \! - \! V \right)}\xspace}
+\newcommand{\logg}{\ensuremath{log(g)}\xspace}
+\newcommand{\teff}{\ensuremath{T\mathrm{eff}}\xspace}
+\newcommand{\RV}{\ensuremath{R\mathrm{V}}\xspace}
+\newcommand{\AV}{\ensuremath{A{\mathrm{_V}}}\xspace}
 
 \newcommand{\ul}{\ensuremath{u}\xspace}
 \newcommand{\gl}{\ensuremath{g}\xspace}
@@ -97,9 +97,8 @@
 \renewcommand{\arg}[1]{\! \left( #1 \right)}
 \newcommand{\Pcond}[2]{P \arg{ #1 \, | \, #2 }}
 % \newcommand{\yps}{\ensuremath{y_{\mathrm{P1}}}\xspace}
-%\newcommand{\EBV}{\ensuremath{E \left( B \! - \! V \right)}\xspace}
-%\newcommand{\Egr}{\ensuremath{E \left( g \! - \! r \right)}\xspace}
-%\newcommand{\EBPRP}{\ensuremath{E \left( BP \! - \! RP \right)}\xspace}
+
+
 
 %% Reintroduced the \received and \accepted commands from AASTeX v5.2
 %\received{March 1, 2021}
@@ -183,8 +182,8 @@
 \correspondingauthor{Lovro Palaversa}
 \email{lp@irb.hr}
 
-\author[0000-0012-3245-123X]{LokiZg}
-\affiliation{IRB}
+\author[0000-0003-3710-0331]{Lovro Palaversa}
+\affiliation{Ru{\dj}er Bo\v{s}kovi\'{c} Institute, Bijeni\v{c}ka cesta 54, 10000 Zagreb, Croatia }
 
 \author[0000-0012-3245-123X]{\v{Z}eljko Ivezi\'{c}}
 \affiliation{Department of Astronomy, University of Washington, Box 351580, Seattle, WA 98195, USA}
