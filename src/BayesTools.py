@@ -30,10 +30,6 @@ def getBayesConstants():
     BayesConst['ArCoeff1'] = 0.1
     BayesConst['ArCoeff2'] = 0.01
     
-    BayesConst['ArCoeff0'] = 1.4
-    BayesConst['ArCoeff1'] = 0.3
-    BayesConst['ArCoeff2'] = 0.01 
-    
     return BayesConst   
 
 

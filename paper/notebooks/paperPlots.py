@@ -13,10 +13,10 @@ def plot3diagsData(df1, df2, df3, df4, L0, L1, L2):
     plt.rcParams['font.size'] = 12
 
     def plotPanel(ax, df1, df2, df3, df4, Xname, Yname, xLabel, yLabel, xMin, xMax, yMin, yMax):
-        ax.scatter(df1[Xname], df1[Yname],s=0.01, c='blue')
-        ax.scatter(df2[Xname], df2[Yname],s=0.01, c='red')
-        ax.scatter(df3[Xname], df3[Yname],s=0.01, c='cyan')
-        ax.scatter(df4[Xname], df4[Yname],s=0.01, c='green')
+        ax.scatter(df1[Xname], df1[Yname],s=0.01, c='red')
+        ax.scatter(df2[Xname], df2[Yname],s=0.012, c='blue')
+        ax.scatter(df3[Xname], df3[Yname],s=0.014, c='cyan')
+        ax.scatter(df4[Xname], df4[Yname],s=0.016, c='green')
         ax.set_xlabel(xLabel)
         ax.set_ylabel(yLabel)
         ax.set_xlim(xMin, xMax)
