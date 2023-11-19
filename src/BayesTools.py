@@ -70,7 +70,7 @@ def get2Dmap(sample, labels, metadata):
     Z = kde.evaluate(np.vstack([Xgrid.ravel(), Ygrid.ravel()]))
     return (Xgrid, Ygrid, Z)
 
-def dumpPriorMaps(sample, fileRootname):
+def dumpPriorMaps(sample, fileRootname, show2Dmap=True, verbose=True):
 
     ## data frame called "sample" here must have the following columns: 'FeH', 'Mr', 'rmag'
     labels = ['FeH', 'Mr', 'rmag']
@@ -91,31 +91,44 @@ def dumpPriorMaps(sample, fileRootname):
     # -------
     metadata = np.array([FeHmin, FeHmax, FeHNpts, MrFaint, MrBright, MrNpts])
     rGrid = np.linspace(rmagMin, rmagMax, rmagNsteps)
+    # summary file 
+    outsumfile = fileRootname + '-SummaryStats.txt'
+    foutsum = open(outsumfile, "w")
+    foutsum.write(" rMin    Amin    Amed    Amax     Ntotal \n")
     for rind, r in enumerate(rGrid):
         # r magnitude limits for this subsample
         rMin = r - rmagBinWidth
         rMax = r + rmagBinWidth
         # select subsample
         tS = sample[(sample[labels[2]]>rMin)&(sample[labels[2]]<rMax)]
-        tSsize = np.size(tS)
-        print('r=', rMin, 'to', rMax, 'N=', np.size(sample), 'Ns=', np.size(tS))
+        if verbose: print('r=', rMin, 'to', rMax, 'N=', len(sample), 'Ns=', len(tS))
         # this is work horse, where data are binned and map arrays produced
         # it takes about 2 mins on Mac OS Apple M1 Pro
         # so about 70 hours for 2,000 healpix samples 
         # maps per healpix are about 2 MB, total 4 GB
         xGrid, yGrid, Z = get2Dmap(tS, labels, metadata)
-        # display for sanity tests, it can be turned off 
-        pt.show2Dmap(xGrid, yGrid, Z, metadata, labels[0], labels[1], logScale=True)
+        # display for sanity tests, it can be turned off
+        if show2Dmap: pt.show2Dmap(xGrid, yGrid, Z, metadata, labels[0], labels[1], logScale=True)
         # store this particular map (given healpix and r band magnitude slice) 
         extfile = "-%02d" % (rind)
         # it is assumed that fileRootname knows which healpix is being processed,
         # as well as the magnitude range specified by rmagMin and rmagMax
         outfile = fileRootname + extfile + '.npz' 
         Zrshp = Z.reshape(xGrid.shape)
+        tSsize = np.size(tS)
         mdExt = np.concatenate((metadata, np.array([rmagMin, rmagMax, rmagNsteps, rmagBinWidth, tSsize, r])))
         np.savez(outfile, xGrid=xGrid, yGrid=yGrid, kde=Zrshp, metadata=mdExt, labels=labels)
+        # summary info
+        A1 = np.min(tS['av'])
+        A2 = np.median(tS['av'])
+        A3 = np.max(tS['av'])
+        s = str("%5.1f  " % rMin) + str("%6.2f  " % A1) + str("%6.2f  " % A2) + str("%6.2f" % A3) + str("%10.0f  " % len(tS)) + "\n"
+        foutsum.write(s)
+    foutsum.close() 
+    return 
+ 
 
-
+        
 def readPriors(rootname, locusData):
     # TRILEGAL-based maps were pre-computed for this range...
     bc = getBayesConstants()

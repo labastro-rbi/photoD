@@ -232,6 +232,190 @@ def CoveyMSlocus():
         return coveyMS 
 
 
+def readAllDSED(DSEDdatadir):
+
+    filelist = []
+   
+    filelist.append('FeH_p0.5/tmp1700021767.iso')
+    filelist.append('FeH_p0.4/tmp1700344425.iso')
+    filelist.append('FeH_p0.3/tmp1700344398.iso')
+    filelist.append('FeH_p0.2/tmp1700344369.iso') 
+    filelist.append('FeH_p0.1/tmp1700344339.iso')
+    filelist.append('FeH_0.0/tmp1700022361.iso')
+    filelist.append('FeH_m0.1/tmp1700344315.iso')
+    filelist.append('FeH_m0.2/tmp1700344285.iso')
+    filelist.append('FeH_m0.3/tmp1700344211.iso')
+    filelist.append('FeH_m0.4/tmp1700344134.iso')
+    filelist.append('FeH_m0.5/tmp1700022296.iso')
+    filelist.append('FeH_m0.6/tmp1700344107.iso')
+    filelist.append('FeH_m0.7/tmp1700344079.iso')
+    filelist.append('FeH_m0.8/tmp1700344052.iso')
+    filelist.append('FeH_m0.9/tmp1700344021.iso')
+    filelist.append('FeH_m1.0/tmp1700022252.iso')
+    filelist.append('FeH_m1.1/tmp1700343994.iso')
+    filelist.append('FeH_m1.2/tmp1700343965.iso')
+    filelist.append('FeH_m1.3/tmp1700343938.iso')
+    filelist.append('FeH_m1.4/tmp1700343910.iso')
+    filelist.append('FeH_m1.5/tmp1700022217.iso')
+    filelist.append('FeH_m1.6/tmp1700343881.iso')
+    filelist.append('FeH_m1.7/tmp1700343849.iso')
+    filelist.append('FeH_m1.8/tmp1700343811.iso')
+    filelist.append('FeH_m1.9/tmp1700343780.iso')
+    filelist.append('FeH_m2.0/tmp1700022179.iso')
+    filelist.append('FeH_m2.1/tmp1700343727.iso')
+    filelist.append('FeH_m2.2/tmp1700343691.iso')
+    filelist.append('FeH_m2.3/tmp1700343642.iso')
+    filelist.append('FeH_m2.4/tmp1700343568.iso')
+    filelist.append('FeH_m2.5/tmp1700021652.iso')
+    FeHlist = [0.5, 0.4, 0.3, 0.2, 0.1, 0.0, -0.1, -0.2, -0.3, -0.4, -0.5, \
+              -0.6, -0.7, -0.8, -0.9, -1.0, -1.1, -1.2, -1.3, -1.4, -1.5, \
+              -1.6, -1.7, -1.8, -1.9, -2.0, -2.1, -2.2, -2.3, -2.4, -2.5]
+    
+    # age list
+    ages = getDSEDages(DSEDdatadir, filelist[0])
+    # first read all files (each file contains all ages)
+    DSEDlist = []
+    for DSEDfile in filelist:
+        DSEDlist.append(processDSEDfile(DSEDdatadir, DSEDfile))
+    # now extract required ages
+    # each entry in DSEDiso is for an isocrone, and this entry 
+    # is a list of tables for all 31 metallicities
+    DSEDiso = []
+    for age in ages:
+        DSEDFeHlist = []
+        for DSED in DSEDlist:
+            DSEDFeHlist.append(DSED[DSED['ageGyr']==age])
+        DSEDiso.append(DSEDFeHlist)             
+
+    return ages, FeHlist, DSEDiso 
+ 
+
+    
+def addFeHtoDSEDiso(FeHlist, DSEDiso):
+    for i in range(0, len(DSEDiso)):
+        DSEDlist = DSEDiso[i]
+        for j in range(0, len(FeHlist)):
+            if (len(DSEDlist)==len(FeHlist)):
+                DSED = DSEDlist[j]
+                DSED['FeH'] = FeHlist[j]
+            else:
+                print('the lists lengths do not match!')
+    return 
+
+
+def DSEDlist2locus(DSEDlist):
+    # given a list of DSED tables (e.g. 31 for different FeH values)
+    # make a table with (Mr, FeH, {colors}), such as SDSS master locus
+    d = DSEDlist[0]
+    sublist = (d['Mr'], d['FeH'], d['ug'], d['gr'], d['ri'], d['iz'], d['gi'])
+    DSEDlocus = Table(sublist, copy=True)
+    # loop 
+    for i in range(1,len(DSEDlist)):
+        d = DSEDlist[i]
+        sublist = (d['Mr'], d['FeH'], d['ug'], d['gr'], d['ri'], d['iz'], d['gi'])
+        locus = Table(sublist, copy=True)
+        DSEDlocus = vstack([DSEDlocus, locus])
+        
+    return DSEDlocus 
+
+
+def makeDSEDlocii(DSEDiso):
+    DSEDlocii = []
+    for i in range(0, len(DSEDiso)):
+        DSEDlist = DSEDiso[i]
+        DSEDlocii.append(DSEDlist2locus(DSEDlist))
+    return DSEDlocii
+
+
+def interpolateDSED2masterLocus(DSEDlocii, masterLocus):
+    DSEDlociiInterp = []
+    for i in range(0, len(DSEDlocii)):
+        DSEDlocus = DSEDlocii[i]
+        DSEDlociiInterp.append(interpolateLocusGrid(DSEDlocus, masterLocus))  
+    return DSEDlociiInterp 
+
+
+def readDSED(DSEDdatadir, DSEDfile):
+    colnames = ['EEP', 'MMo', 'logTeff', 'logg', 'LLo', 'Mu', 'Mg', 'Mr', 'Mi', 'Mz']
+    DSED = Table.read(DSEDdatadir+DSEDfile, format='ascii', names=colnames)
+    DSED['ug'] = DSED['Mu'] - DSED['Mg'] 
+    DSED['gr'] = DSED['Mg'] - DSED['Mr'] 
+    DSED['ri'] = DSED['Mr'] - DSED['Mi'] 
+    DSED['iz'] = DSED['Mi'] - DSED['Mz']
+    DSED['gi'] = DSED['gr'] + DSED['ri']
+    return DSED
+
+def processDSEDfile(DSEDdatadir, DSEDfile):    
+    DSED = readDSED(DSEDdatadir, DSEDfile)
+    ages = getDSEDages(DSEDdatadir, DSEDfile)
+    assignAges(DSED, ages)
+    return DSED
+
+def isStr(line, string):
+    if line[0:len(string)]==string:
+        return True
+    else:
+        return False
+    
+def getDSEDages(DSEDdatadir, DSEDfile):
+    f = open(DSEDdatadir+DSEDfile, 'r')
+    ages = []
+    for L in f:
+        if isStr(L, '#AGE='): 
+            ages.append(float(L.split('=')[1][0:5])) 
+    return ages
+
+def assignAges(DSED, ages):
+    k = 0
+    DSED['ageGyr'] = DSED['logTeff']
+    for i in range(0, len(DSED)):
+        if i==0: 
+            DSED['ageGyr'][i] = ages[k]
+        else:
+            if DSED['EEP'][i]>DSED['EEP'][i-1]:
+                DSED['ageGyr'][i] = ages[k]
+            else:
+                k += 1
+                DSED['ageGyr'][i] = ages[k]
+
+def PARSEClocus(datafile, masterLocusData=""): 
+        ## STELLAR ISOCHRONES IN THE SDSS-2MASS PHOTOMETRIC SYSTEM
+        ## downloaded from
+        ## http://stev.oapd.inaf.it/cgi-bin/cmd_3.7
+        colnames = ['Zini', 'FeH', 'logAge', 'Mini', 'int_IMF', 'Mass', 'logL', 'logTe', 'logg', 'label', 'McoreTP', 'C_O', \
+                     'P0', 'P1', 'P2', 'P3', 'P4', 'Pmode', 'Mloss', 'tau1m',  'X', 'Y', 'Xc', 'Xn', 'Xo', 'Cexcess', 'Z',  \
+                      'mbolmag', 'umag', 'gmag', 'rmag', 'imag', 'zmag', 'Jmag', 'Hmag', 'Ksmag']
+        Piso = Table.read(datafile, format='ascii', names=colnames)
+        Piso['Mr'] = Piso['rmag']
+        Piso['ug'] = Piso['umag'] - Piso['gmag'] 
+        Piso['gr'] = Piso['gmag'] - Piso['rmag'] 
+        Piso['ri'] = Piso['rmag'] - Piso['imag'] 
+        Piso['iz'] = Piso['imag'] - Piso['zmag'] 
+        Piso['gi'] = Piso['gmag'] - Piso['imag']
+
+        d = Piso
+        sublist = (d['Mr'], d['FeH'], d['ug'], d['gr'], d['ri'], d['iz'], d['gi']) 
+        PisoClean = Table(sublist, copy=True)
+        if masterLocusData=="":
+            return PisoClean
+        else:
+            return interpolateLocusGrid(PisoClean, masterLocusData)
+    
+def interpolateLocusGrid(inLocus, masterLocus): 
+
+        colors = ['ug', 'gr', 'ri', 'iz', 'gi']                                       
+        sublist = (masterLocus['Mr'], masterLocus['FeH'])
+        interpLocus = Table(sublist, copy=True)
+        iCol = 1
+        points = np.array((inLocus['FeH'].flatten(), inLocus['Mr'].flatten())).T
+        for c in colors:
+            values = inLocus[c].flatten()
+            # actual (linear) interpolation
+            interpColor = griddata(points, values, (masterLocus['FeH'], masterLocus['Mr']), method='linear', fill_value=-99.99)
+            interpLocus.add_column(interpColor, name=c)
+        return interpLocus
+
+
 def readTRILEGAL(infile=''):
         if (infile == ''):
                 # Dani Chao's example file produced using TRILEGAL simulation

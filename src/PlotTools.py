@@ -114,6 +114,65 @@ def replot2Dmap(Xgrid, Ygrid, Z, xMin, xMax, nXbin, yMin, yMax, nYbin, xLabel, y
 
 
 
+def makePriorMosaic(priors, rObs, mapIndex, rootname, Npriors, Nrmag, titles, coords, xLabel='[Fe/H]', yLabel='$M_r$', logScale=False):
+
+    import matplotlib.cm as cm
+    
+    if (logScale):
+        from matplotlib.colors import LogNorm
+
+    maps = {}
+    for i in range(0, Npriors):
+        prior = priors[i]
+        for j in range(0, Nrmag):
+             npz = prior[mapIndex[j]]
+             maps[i,j] = npz['kde'].reshape(npz['xGrid'].shape)
+             if ((i==0)&(j==0)):
+                xMin = npz['metadata'][0]
+                xMax = npz['metadata'][1]
+                nXbin = npz['metadata'][2]
+                yMin = npz['metadata'][3]
+                yMax = npz['metadata'][4]
+                nYbin = npz['metadata'][5]
+
+    fig, axs = plt.subplots(Npriors, Nrmag, figsize=(9, 6))
+    plt.subplots_adjust(bottom=0.15, top=0.9, left=0.15, right=0.98, wspace=0.1, hspace=0.1)
+     
+    # cb = plt.colorbar()
+    # plt.colorbar(cmap=cm.hot, vmin=1.2, vmax=4.3)
+
+    for i in range(0, Npriors):
+        for j in range(0, Nrmag):
+            if (logScale):
+                # plot image
+                axs[i,j].imshow(maps[i,j],
+                               origin='lower', aspect='auto',
+                               extent=[xMin, xMax, yMin, yMax], cmap='Blues',                             
+                               norm=LogNorm(0.001, vmax=maps[0,0].max()))
+            else: 
+                axs[i,j].imshow(maps[i,j],
+                               origin='lower', aspect='auto',
+                               extent=[xMin, xMax, yMin, yMax], cmap='Blues') 
+            axs[i,j].plot([xMin, xMax], [5.0, 5.0], c='red', ls='--', lw=1)
+            axs[i,j].plot([0, 0], [yMin, yMax], c='red', ls='--', lw=1)
+            axs[i,j].set_xticks([])
+            axs[i,j].set_yticks([])
+            if (i==Npriors-1):
+                axs[i,j].set(xlabel=xLabel)
+                axs[i,j].set_xticks([-2, -1, 0])
+            if (j==0):
+                axs[i,j].set(ylabel=yLabel)
+                axs[i,j].set_yticks([0, 5, 10, 15])
+                axs[i,j].text(-2.4, 15.2, coords[i])
+            if (i==0):
+                axs[i,j].set(title=titles[j])
+
+    plt.savefig(rootname+'priorMosaic.png')
+    plt.show() 
+    return 
+
+
+
 def restore2Dmap(npz, logScale=False):
     
     im = npz['kde'].reshape(npz['xGrid'].shape)
