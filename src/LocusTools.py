@@ -1,6 +1,8 @@
 import numpy as np
 from astropy.table import Table, vstack
 from scipy.stats import gaussian_kde
+from scipy import interpolate
+from scipy.interpolate import CubicSpline
 from scipy.interpolate import griddata
 import BayesTools as bt
 import PlotTools as pt
@@ -278,17 +280,74 @@ def readAllDSED(DSEDdatadir):
     for DSEDfile in filelist:
         DSEDlist.append(processDSEDfile(DSEDdatadir, DSEDfile))
     # now extract required ages
-    # each entry in DSEDiso is for an isocrone, and this entry 
+    # each entry in DSEDiso is for an isochrone, and this entry 
     # is a list of tables for all 31 metallicities
     DSEDiso = []
     for age in ages:
         DSEDFeHlist = []
         for DSED in DSEDlist:
+            if (age > 5.0):
+                DSED = fixLocus10Gyr(DSED)
             DSEDFeHlist.append(DSED[DSED['ageGyr']==age])
         DSEDiso.append(DSEDFeHlist)             
 
-    return ages, FeHlist, DSEDiso 
+    addFeHtoDSEDiso(FeHlist, DSEDiso)
+    DSEDlocii = makeDSEDlocii(DSEDiso)
+    
+    return ages, FeHlist, DSEDiso, DSEDlocii 
  
+
+ 
+
+def fixDSEDlist(DSEDlist, Mr1, Mr2):
+    fixedList = {}
+    for i in range(0, len(DSEDlist)):
+        DSED = DSEDlist[i]
+        fixedList[i] = fixDSED(DSED, Mr1, Mr2)
+    return fixedList
+
+
+def fixDSED(df, Mr1, Mr2):
+    fixedDSED = df[df['Mr']<100]
+    colors = ['ug', 'gr', 'ri', 'iz']
+    for c in colors:
+        c1 = nnInterp(Mr1, df['Mr'], df[c])
+        c2 = nnInterp(Mr2, df['Mr'], df[c])
+        for k in range(0, len(df['Mr'])):
+            Mk = df['Mr'][k]
+            if ((Mk>Mr1)&(Mk<Mr2)):
+                fixedDSED[c][k] = c1 + (Mk-Mr1)*(c2-c1)/(Mr2-Mr1)
+    fixedDSED['gi'] = fixedDSED['gr'] + fixedDSED['ri'] 
+    return fixedDSED
+
+
+# hack 
+def fixLocus10Gyr(df, giMax=2.0): 
+    fixedLocus = df[df['Mr']<100]
+    colors = ['ug', 'gr', 'ri', 'iz']
+    for c in colors:
+         notFirst = True
+         for k in range(0, len(df['Mr'])):
+            Mk = df['Mr'][k]
+            gik = df['gi'][k]
+            if ((Mk<3.0)&(gik>giMax)):
+                if notFirst:
+                    colorMax = df[c][k]
+                    notFirst = False
+                fixedLocus[c][k] = colorMax
+    fixedLocus['gi'] = fixedLocus['gr'] + fixedLocus['ri'] 
+    return fixedLocus
+
+
+
+def nnInterp(Mr1, Mr, color):
+    cNearest = color[0]
+    dMmin = np.abs(Mr1-Mr[0])
+    for k in range(1, len(color)):
+        if (np.abs(Mr1-Mr[k])<dMmin):
+            dMmin = np.abs(Mr1-Mr[k])
+            cNearest = color[k]
+    return cNearest
 
     
 def addFeHtoDSEDiso(FeHlist, DSEDiso):
@@ -315,8 +374,76 @@ def DSEDlist2locus(DSEDlist):
         sublist = (d['Mr'], d['FeH'], d['ug'], d['gr'], d['ri'], d['iz'], d['gi'])
         locus = Table(sublist, copy=True)
         DSEDlocus = vstack([DSEDlocus, locus])
-        
     return DSEDlocus 
+
+
+def DSEDlist2locusAugmented(DSEDlist):
+    # similar to DSEDlist2locus, but interpolates to a finer Mr grid
+    MrGrid = np.linspace(-1, 16, 1701)
+    colors = ['ug', 'gr', 'ri', 'iz']
+    # loop
+    for i in range(0, len(DSEDlist)): 
+        d = DSEDlist[i]
+        FeHGrid = d['FeH'][0] + 0*MrGrid
+        sublist = (MrGrid, FeHGrid)
+        locus = Table(sublist, copy=True)
+        locus.rename_column('col0', 'Mr')     
+        locus.rename_column('col1', 'FeH')     
+        for c in colors:
+            locus[c] = interpolateColorMr(d['Mr'], d[c], MrGrid)
+            # locus[c] = interpolateColorMrLinear(d['Mr'], d[c], MrGrid)
+        locus['gi'] = locus['gr'] + locus['ri'] 
+        if (i==0):
+            DSEDlocus = locus
+        else:
+            DSEDlocus = vstack([DSEDlocus, locus])
+        ## AUGMENT HERE, PERHAPS FIT/SMOOTH colors vs. Mr, or add more Mr values... ##
+              
+        ###########################
+    return DSEDlocus 
+
+def makeDSEDlociiAugmented(DSEDiso):
+    DSEDlocii = []
+    for i in range(0, len(DSEDiso)):
+        print('augmenting isochrone:', i, '(out of', len(DSEDiso), ')')
+        DSEDlist = DSEDiso[i]
+        DSEDlocii.append(DSEDlist2locusAugmented(DSEDlist))
+    return DSEDlocii
+
+
+
+def interpolateColorMrLinear(InMr, InColor, MrGrid):
+    # interpFunc = interpolate.interp1d(InMr, InColor, kind='nearest-up')
+    # return interpFunc(MrGrid)
+    return np.interp(MrGrid, InMr, InColor)
+
+
+def interpolateColorMr(InMr, InColor, MrGrid):
+    ColorGrid = 0*MrGrid
+    # grid for linear interpolation 
+    distanceGrid = np.linspace(-0.1, 1.1, 1000)
+    # first cubic spline on a fine grid, parametrized by distance along the "curve"
+    points = np.vstack((InMr, InColor)).T
+    distance = np.cumsum(np.sqrt(np.sum( np.diff(points, axis=0)**2, axis=1)))
+    fixDistance(distance)
+    distance = np.insert(distance, 0, 0)/distance[-1]
+    cs = CubicSpline(distance, InMr)
+    MrFit = cs(distanceGrid)
+    cs = CubicSpline(distance, InColor)
+    ColorFit = cs(distanceGrid)
+    # interpolating function
+    interpFunc = interpolate.interp1d(MrFit, ColorFit, kind='nearest-up')
+    for k in range(0, len(MrGrid)):
+        if ((MrGrid[k]>=np.min(MrFit))&(MrGrid[k]<=np.max(MrFit))):
+            ColorGrid[k] = interpFunc(MrGrid[k])
+        else:
+            ColorGrid[k] = ColorGrid[k-1]
+    return ColorGrid
+
+def fixDistance(d):
+    for i in range(1, len(d)):
+        if (d[i]/d[i-1]<=1.0): d[i] = 1.00001*d[i-1]
+    return
 
 
 def makeDSEDlocii(DSEDiso):
@@ -403,17 +530,90 @@ def PARSEClocus(datafile, masterLocusData=""):
     
 def interpolateLocusGrid(inLocus, masterLocus): 
 
-        colors = ['ug', 'gr', 'ri', 'iz', 'gi']                                       
+        colors = ['ug', 'gr', 'ri', 'iz']                                       
         sublist = (masterLocus['Mr'], masterLocus['FeH'])
         interpLocus = Table(sublist, copy=True)
         iCol = 1
         points = np.array((inLocus['FeH'].flatten(), inLocus['Mr'].flatten())).T
         for c in colors:
             values = inLocus[c].flatten()
-            # actual (linear) interpolation
-            interpColor = griddata(points, values, (masterLocus['FeH'], masterLocus['Mr']), method='linear', fill_value=-99.99)
+            ## actual (linear) interpolation
+            # method = 'linear'
+            method = 'nearest'
+            # method = 'cubic'
+            interpColor = griddata(points, values, (masterLocus['FeH'], masterLocus['Mr']), method=method, fill_value=-99.99)
             interpLocus.add_column(interpColor, name=c)
+        interpLocus.add_column(interpLocus['gr']+interpLocus['ri'], name='gi')
         return interpLocus
+
+
+def augmentSDSSlocus(locusSDSS, locusDSED, MrStitch=5.0):
+
+    # copy input locus
+    locusSDSSaug = locusSDSS[(locusSDSS['Mr']>-100)&(locusSDSS['Mr']<100)]
+    # colors
+    colors = ['ug', 'gr', 'ri', 'iz', 'gi']
+    # grid properties: 
+    xLabel = 'FeH'
+    yLabel = 'Mr'
+    FeHGrid = locusSDSS[xLabel]
+    MrGrid = locusSDSS[yLabel]
+    FeH1d = np.sort(np.unique(FeHGrid))
+    Mr1d = np.sort(np.unique(MrGrid))
+    Mr1dStep = (Mr1d[1]-Mr1d[0])
+    Mr1dMin = np.min(Mr1d)
+    Mr1dMax = np.max(Mr1d)
+    nStepMr = len(Mr1d) 
+    nStepFeH = len(FeH1d) 
+    jMr0 = int((MrStitch - Mr1dMin)/Mr1dStep)
+    ## loop over tables with FeH=const
+    for i in range(0, nStepFeH):
+        # find SDSS colors at Mr=MrStitch for SDSS locus
+        jMr = jMr0 + i*nStepMr
+        ## copying colors for Mr < MrStitch
+        # loop from the first (min) Mr entry to Mr=MrStitch 
+        for j in range(int(i*nStepMr), jMr+1):
+            for c in colors:
+                # NB correct for SDSS colors at Mr=MrStitch for SDSS locus
+                locusSDSSaug[c][j] = locusDSED[c][j] - locusDSED[c][jMr] + locusSDSSaug[c][jMr]
+    return locusSDSSaug
+
+
+def smoothLocus(locus):
+
+    # copy input locus
+    locusSmooth = locus[(locus['Mr']>-100)&(locus['Mr']<100)]
+    # colors
+    colors = ['ug', 'gr', 'ri', 'iz', 'gi']
+    # grid properties: 
+    xLabel = 'FeH'
+    yLabel = 'Mr'
+    FeHGrid = locusSDSS[xLabel]
+    MrGrid = locusSDSS[yLabel]
+    FeH1d = np.sort(np.unique(FeHGrid))
+    Mr1d = np.sort(np.unique(MrGrid))
+    Mr1dStep = (Mr1d[1]-Mr1d[0])
+    Mr1dMin = np.min(Mr1d)
+    Mr1dMax = np.max(Mr1d)
+    nStepMr = len(Mr1d) 
+    nStepFeH = len(FeH1d) 
+
+    jMr0 = int((MrStitch - Mr1dMin)/Mr1dStep)
+    ## loop over tables with FeH=const
+    for i in range(0, nStepFeH):
+        # find SDSS colors at Mr=MrStich for SDSS locus
+        jMr = jMr0 + i*nStepMr
+        ## copying colors for Mr < MrStitch
+        # loop from the first (min) Mr entry to Mr=MrStitch 
+        for j in range(int(i*nStepMr), jMr+1):
+            for c in colors:
+                # NB correct for SDSS colors at Mr=MrStitch for SDSS locus
+                locusSDSSaug[c][j] = locusDSED[c][j] - locusDSED[c][jMr] + locusSDSSaug[c][jMr]
+
+    return locusSmooth
+
+
+
 
 
 def readTRILEGAL(infile=''):
@@ -613,7 +813,32 @@ def readKarloMLestimates3D(inKfile):
              
         print(np.size(simsML), 'read from', file)
         return simsML
-  
+
+# given a locus table (Mr, FeH, colors), defined at FeH <=0, extend to it FeH=0.5
+# volatile: assumes MSandRGBcolors_v1.3.txt table with a step of 0.05 and FeHmax=0
+# 
+def extendLocusHighFeH(locus, FeHmax=0.0, FeHstep=0.05):
+    locus0 = locus[locus['FeH']==FeHmax]
+    locusm05 = locus[locus['FeH']==(FeHmax-FeHstep)]
+    colors = ['ug', 'gr', 'ri', 'iz']
+    dcolor = {}
+    for c in colors:
+        dcolor[c] = (locus0[c]-locusm05[c])/FeHstep 
+    # linear extrapolation using the color vs. FeH gradient
+    for i in range(0, int((0.5-FeHmax)/FeHstep)):
+        FeH = (i+1)*FeHstep
+        locus0['FeH'] = FeH
+        # fudge factor to avoid extrapolation: take only ff fraction of the gradient
+        ff = 0.7
+        for c in colors:
+            locus0[c] = locus0[c] + dcolor[c]*FeHstep*ff
+        locus0['gi'] = locus0['gr'] + locus0['ri'] 
+        if (i==0):
+            locusE = vstack([locus, locus0])
+        else:
+            locusE = vstack([locusE, locus0])
+    return locusE
+        
         
 def LSSTsimsLocus(fixForStripe82=True, datafile=""): 
         ## Mr, as function of [Fe/H], along the SDSS/LSST stellar 
