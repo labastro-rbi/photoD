@@ -398,9 +398,12 @@ def show4diagsDSED(age, ages, FeHlist, DSEDiso, FeHlocus3vals, Lcomparison, data
 
 
 
-def compare2isocrones(dataDF, isoDF1, isoDF2, alpha1=0.05, alpha2=0.8, title="", plotname='compare2isocrones.png'):
+def compare2isochrones(dataDF, isoDF1, isoDF2, alpha1=0.05, alpha2=0.8, title="", plotname='compare2isochrones.png'):
 
     fig,ax = plt.subplots(3,2,figsize=(12,12))
+
+    plt.rcParams.update({'font.size': 12})
+    plt.rc('axes', labelsize=14)    
 
     ax[0,0].scatter(dataDF['gi'], dataDF['Mr'], s=0.1, c='black')
     ax[0,0].scatter(isoDF1['gi'], isoDF1['Mr'], s=0.1, c=isoDF1['FeH'], cmap=plt.cm.jet, alpha=alpha1)
@@ -408,7 +411,6 @@ def compare2isocrones(dataDF, isoDF1, isoDF2, alpha1=0.05, alpha2=0.8, title="",
     ax[0,0].set_ylim(16.5, -3.2)
     ax[0,0].set_xlabel('g-i')
     ax[0,0].set_ylabel('Mr')
-    ax[0,0].set_title(title)
 
     ax[0,1].scatter(dataDF['gi'], dataDF['Mr'], s=0.1, c='black')
     ax[0,1].scatter(isoDF2['gi'], isoDF2['Mr'], s=0.1, c=isoDF2['FeH'], cmap=plt.cm.jet, alpha=alpha2)
@@ -416,9 +418,15 @@ def compare2isocrones(dataDF, isoDF1, isoDF2, alpha1=0.05, alpha2=0.8, title="",
     ax[0,1].set_ylim(16.5, -3.2)
     ax[0,1].set_xlabel('g-i')
     ax[0,1].set_ylabel('Mr')
- 
+    ax[0,0].set_title(title, loc='center')
+
     ax[1,0].scatter(dataDF['ug'], dataDF['gr'], s=0.1, c='black')
-    ax[1,0].scatter(isoDF1['ug'], isoDF1['gr'], s=0.1, c=isoDF1['FeH'], cmap=plt.cm.jet, alpha=alpha1)
+    if (1):
+        flag = (isoDF1['Mr']>0.5)
+        isoDF1x = isoDF1[flag]
+        ax[1,0].scatter(isoDF1x['ug'], isoDF1x['gr'], s=0.1, c=isoDF1x['FeH'], cmap=plt.cm.jet, alpha=alpha1)
+    else:
+        ax[1,0].scatter(isoDF1['ug'], isoDF1['gr'], s=0.1, c=isoDF1['FeH'], cmap=plt.cm.jet, alpha=alpha1)
     ax[1,0].set_xlim(-1.0,4.2)
     ax[1,0].set_ylim(-0.5, 2.2)
     ax[1,0].set_xlabel('u-g')
@@ -444,6 +452,94 @@ def compare2isocrones(dataDF, isoDF1, isoDF2, alpha1=0.05, alpha2=0.8, title="",
     ax[2,1].set_ylim(-0.5, 2.4)
     ax[2,1].set_xlabel('g-r')
     ax[2,1].set_ylabel('r-i')
+
+    plt.tight_layout()
+    plt.savefig(plotname)
+    print('made plot:', plotname)
+    plt.show() 
+    plt.close("all")
+    return
+
+
+
+
+
+def compare2isochronesColorMr(dataDF, isoDF1, isoDF2, alpha1=0.05, alpha2=0.8, title="", plotname='compare2isochronesColorMr.png'):
+
+    fig,ax = plt.subplots(5,2,figsize=(12,12))
+
+    MrMin = -3.2
+    MrMax = 16.5
+    ax[0,0].scatter(dataDF['Mr'], dataDF['ug'], s=0.1, c='black')
+    ax[0,0].scatter(isoDF1['Mr'], isoDF1['ug'], s=0.1, c=isoDF1['FeH'], cmap=plt.cm.jet, alpha=alpha1)
+    ax[0,0].set_xlim(MrMin, MrMax)
+    ax[0,0].set_ylim(-0.5, 4.0)
+    ax[0,0].set_xlabel('Mr')
+    ax[0,0].set_ylabel('u-g')
+    ax[0,0].set_title(title)
+
+    ax[0,1].scatter(dataDF['Mr'], dataDF['ug'], s=0.1, c='black')
+    ax[0,1].scatter(isoDF2['Mr'], isoDF2['ug'], s=0.1, c=isoDF2['FeH'], cmap=plt.cm.jet, alpha=alpha1)
+    ax[0,1].set_xlim(MrMin, MrMax)
+    ax[0,1].set_ylim(-0.5, 4.0)
+    ax[0,1].set_xlabel('Mr')
+    ax[0,1].set_ylabel('u-g')
+   
+    ax[1,0].scatter(dataDF['Mr'], dataDF['gr'], s=0.1, c='black')
+    ax[1,0].scatter(isoDF1['Mr'], isoDF1['gr'], s=0.1, c=isoDF1['FeH'], cmap=plt.cm.jet, alpha=alpha2)
+    ax[1,0].set_xlim(MrMin, MrMax)
+    ax[1,0].set_ylim(-0.5, 2.2)
+    ax[1,0].set_xlabel('Mr')
+    ax[1,0].set_ylabel('g-r')
+
+    ax[1,1].scatter(dataDF['Mr'], dataDF['gr'], s=0.1, c='black')
+    ax[1,1].scatter(isoDF2['Mr'], isoDF2['gr'], s=0.1, c=isoDF2['FeH'], cmap=plt.cm.jet, alpha=alpha2)
+    ax[1,1].set_xlim(MrMin, MrMax)
+    ax[1,1].set_ylim(-0.5, 2.2)
+    ax[1,1].set_xlabel('Mr')
+    ax[1,1].set_ylabel('g-r')
+
+    ax[2,0].scatter(dataDF['Mr'], dataDF['ri'], s=0.1, c='black')
+    ax[2,0].scatter(isoDF1['Mr'], isoDF1['ri'], s=0.1, c=isoDF1['FeH'], cmap=plt.cm.jet, alpha=alpha1)
+    ax[2,0].set_xlim(MrMin, MrMax)
+    ax[2,0].set_ylim(-0.5, 2.2)
+    ax[2,0].set_xlabel('Mr')
+    ax[2,0].set_ylabel('r-i')
+
+    ax[2,1].scatter(dataDF['Mr'], dataDF['ri'], s=0.1, c='black')
+    ax[2,1].scatter(isoDF2['Mr'], isoDF2['ri'], s=0.1, c=isoDF2['FeH'], cmap=plt.cm.jet, alpha=alpha1)
+    ax[2,1].set_xlim(MrMin, MrMax)
+    ax[2,1].set_ylim(-0.5, 2.2)
+    ax[2,1].set_xlabel('Mr')
+    ax[2,1].set_ylabel('r-i')
+
+    ax[3,0].scatter(dataDF['Mr'], dataDF['iz'], s=0.1, c='black')
+    ax[3,0].scatter(isoDF1['Mr'], isoDF1['iz'], s=0.1, c=isoDF1['FeH'], cmap=plt.cm.jet, alpha=alpha2)
+    ax[3,0].set_xlim(MrMin, MrMax)
+    ax[3,0].set_ylim(-0.5, 1.6)
+    ax[3,0].set_xlabel('Mr')
+    ax[3,0].set_ylabel('i-z')
+
+    ax[3,1].scatter(dataDF['Mr'], dataDF['iz'], s=0.1, c='black')
+    ax[3,1].scatter(isoDF2['Mr'], isoDF2['iz'], s=0.1, c=isoDF2['FeH'], cmap=plt.cm.jet, alpha=alpha2)
+    ax[3,1].set_xlim(MrMin, MrMax)
+    ax[3,1].set_ylim(-0.5, 1.6)
+    ax[3,1].set_xlabel('Mr')
+    ax[3,1].set_ylabel('i-z')
+
+    ax[4,0].scatter(dataDF['Mr'], dataDF['gi'], s=0.1, c='black')
+    ax[4,0].scatter(isoDF1['Mr'], isoDF1['gi'], s=0.1, c=isoDF1['FeH'], cmap=plt.cm.jet, alpha=alpha2)
+    ax[4,0].set_xlim(MrMin, MrMax)
+    ax[4,0].set_ylim(-0.5, 3.8)
+    ax[4,0].set_xlabel('Mr')
+    ax[4,0].set_ylabel('g-i')
+
+    ax[4,1].scatter(dataDF['Mr'], dataDF['gi'], s=0.1, c='black')
+    ax[4,1].scatter(isoDF2['Mr'], isoDF2['gi'], s=0.1, c=isoDF2['FeH'], cmap=plt.cm.jet, alpha=alpha2)
+    ax[4,1].set_xlim(MrMin, MrMax)
+    ax[4,1].set_ylim(-0.5, 3.8)
+    ax[4,1].set_xlabel('Mr')
+    ax[4,1].set_ylabel('g-i')
 
     plt.tight_layout()
     plt.savefig(plotname)
