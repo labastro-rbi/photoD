@@ -135,14 +135,14 @@
 
 %% Mark off the abstract in the ``abstract'' environment. 
 \begin{abstract}
-As demonstrated with SDSS, Pan-STARRS and most recently with Gaia data, broad-band near-UV to near-IR photometry can be used 
-to estimate distances, metallicity and the interstellar dust extinction along the line of sight for stars in the Galaxy. Anticipating
-photometric catalogs with tens of billions of stars from Rubin's Legacy Survey of Space and Time (LSST), we present a fully Bayesian procedure 
+As demonstrated with SDSS, Pan-STARRS and most recently with Gaia data, broad-band near-UV to near-IR stellar photometry can be used 
+to estimate distance, metallicity and interstellar dust extinction along the line of sight for stars in the Galaxy. Anticipating
+photometric catalogs with tens of billions of stars from Rubin's Legacy Survey of Space and Time (LSST), we present a Bayesian procedure 
 and pipeline that build on previous work and can handle LSST-sized datasets. Likelihood computations utilize MIST/Dartmouth isochrones
-and priors are derived from TRILEGAL-based simulated LSST catalogs from Dal Tio et al. (2022). The computation speed is about 10 mas per
-star for both optimized grid search and MCMC methods; we show in a companion paper by Mrakov\v{c}i\'{c} et al. how to utilize neural
-networks to accelerate this performance by an order of magnitude).  We validate our pipeline, named
-PhotoD (in analogy with photo-z, photometric redshifts of galaxies) using both simulated catalogs, and SDSS, DECam, and Gaia data. 
+and priors are derived from TRILEGAL-based simulated LSST catalogs from Dal Tio et al. (2022). The computation speed is about 10 milliseconds per
+star on a single core for both optimized grid search and MCMC methods; we show in a companion paper by Mrakov\v{c}i\'{c} et al. how to utilize neural
+networks to accelerate this performance by an order of magnitude.  We validate our pipeline, named
+PhotoD (in analogy with photo-z, photometric redshifts of galaxies) using both simulated catalogs, and SDSS, DECam and Gaia data. 
 We intend to make LSST-based value-added PhotoD catalogs publicly
 available via Rubin Science Platform with every LSST Data Release. 
 \end{abstract}
@@ -197,48 +197,4 @@ institutions participating in the Gaia Multilateral Agreement.
 
 
 
-
-
-	paper/Makefile
-	paper/aastex.cls
-	paper/aastex63.cls
-	paper/apj.bst
-	paper/appendix.tex
-	paper/deluxetable.sty
-	paper/lsst.sty
-	paper/methodologyZI.tex
-	paper/paper.bib
-	paper/paper.pdf
-	paper/paper.tex
-	paper/results.tex
-
-
-        plots/2Dmap.png
-	plots/2Dmap_Stripe82_MrSDSS_MrGaia.png
-	plots/2Dmap_Stripe82_MrSDSS_MrGaia_piSNR20.png
-	plots/2Dmap_Stripe82_MrdMr_piSNR20.png
-	plots/QrCornerPlot.png
-	plots/bayesPanels.png
-	plots/cornerPlot3.png
-	plots/margPosteriors.png
-	plots/margPosteriors3D.png
-	plots/qpB_Ar.png
-	plots/qpB_FeH.png
-	plots/qpB_Mr.png
-	plots/qpB_chiTest4_3D_Ar.png
-	plots/qpB_chiTest4_3D_FeH.png
-	plots/qpB_chiTest4_3D_Mr.png
-	plots/qpB_chiTest4_FeH.png
-	plots/qpB_chiTest4_Mr.png
-	plots/qpBcmd.png
-	plots/qpBcmd_chiTest4_3D_Ar.png
-	plots/qpBcmd_chiTest4_3D_FeH.png
-	plots/qpBcmd_chiTest4_3D_Mr.png
-	plots/qpBcmd_chiTest4_FeH.png
-	plots/qpBcmd_chiTest4_Mr.png
-	plots/qpBmeans_chiTest4_.png
-	plots/qpBmeans_chiTest4_3D.png
-
-
-
-        
+ 
