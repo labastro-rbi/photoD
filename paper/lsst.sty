@@ -1,0 +1,171 @@
+%\documentclass[12pt,preprint]{aastex}
+
+%\usepackage{xspace}
+%\usepackage{tabularx}
+%\usepackage{deluxetable}
+
+\usepackage{graphicx}
+%\usepackage{epsfig}
+\usepackage{wrapfig}
+%\usepackage{caption}
+%\usepackage{subfig}
+
+\usepackage{url}
+\usepackage{hyperref}
+
+%\usepackage{natbib}
+
+\usepackage{pdflscape}
+\usepackage{afterpage}
+\usepackage{amsmath,amssymb}
+\usepackage{bm}
+
+\bibliographystyle{apj}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% author-defined commands
+%------------------------------------------------------------------------------%
+
+% Macros/definitions:
+
+% Markup:
+\def\XX{{\bf XX}\;}
+
+% General purpose usefulness:
+\def\eg{{e.g.}\xspace}
+\def\ie{{i.e.}\xspace}
+\def\etc{{etc}\xspace}
+\newcommand{\etal}{et al.}
+
+% Journal definitions for bibtex:
+\def\jnl#1{{\it#1\/}}
+\def\apj{\jnl{ApJ}}
+\def\apjl{\jnl{ApJL}}
+\def\apjs{\jnl{ApJS}}
+\def\aj{\jnl{AJ}}
+\def\apss{\jnl{Ap\&SS}}
+\def\mnras{\jnl{MNRAS}}
+\def\aap{\jnl{A\&A}}
+\def\aaps{\jnl{A\&AS}}
+\def\nat{\jnl{Nature}}
+\def\physrep{\jnl{Phys. Rep.}}
+\def\araa{\jnl{ARAA}}
+\def\prd{\jnl{Phys.\ Rev.\ D}}
+\def\pasp{\jnl{PASP}}
+\def\pasj{\jnl{PASJ}}
+\def\aaps{\jnl{A\&AS}}
+\def\an{\jnl{AN}}
+\def\icarus{\jnl{Icarus}}
+
+% Math macros:
+\def\ltsim{\lesssim}
+\def\gtsim{\gtrsim}
+\def\lessim{\lesssim}
+% \newcommand{\bit}[1]{\mbox{\textbf{\emph{#1}}}} % bold italic
+\def\about            {\hbox{$\sim$}}
+\newcommand\x         {\hbox{$\times$}}
+
+% Cosmology:
+\def\Om{\ensuremath{\Omega_{\rm m}}}
+\def\Ob{\ensuremath{\Omega_{\rm b}}}
+\def\OL{\ensuremath{\Omega_{\Lambda}}}
+\def\Ok{\ensuremath{\Omega_{\rm k}}}
+\def\om{\ensuremath{\omega_{\rm m}}}
+\def\ob{\ensuremath{\omega_{\rm b}}}
+\def\w0{\ensuremath{w_0}}
+\def\wa{\ensuremath{w_{\rm a}}}
+\def\lcdm{$\Lambda$CDM}
+\def\wcdm{$w$CDM}
+
+% Astronomy:
+\def\arcsec{''}
+\def\kms{\ensuremath{{\rm km s}^{-1}}}
+\def\hgpcq{\mbox{$h^{-3}$Gpc$^3$}}
+\def\hmpcq{\mbox{$h^{-3}$Mpc$^3$}}
+\def\hmpc{\mbox{$h^{-1}$Mpc}}
+\def\hmpci{\mbox{$h$\,Mpc$^{-1}$}}
+\def\mpc{\mbox{Mpc}}
+\def\mpci{\mbox{Mpc$^{-1}$}}
+%\def\phz{{photo-\emph{z}}}
+%\def\Phz{{Photo-\emph{z}}}
+\def\phz{{photometric redshift}}
+\def\Phz{{Photometric redshift}}
+\def\zp{z_{\rm p}}
+\def\Mo               {\hbox{$M_{\odot}$}}
+\def\Lo               {\hbox{$L_{\odot}$}}
+
+% LSST terminology:
+\newcommand{\LevelTwo}{{Level~2}\xspace}
+\newcommand{\LevelThree}{{Level~3}\xspace}
+\newcommand{\CC}{LSSTComCam\xspace}
+\newcommand{\MultiFit}{{\sc MultiFit}\xspace}
+\newcommand{\photoz}{photo-$z$\xspace}
+
+% Image simulation tools:
+\newcommand{\PhoSim}{{\sc PhoSim}\xspace}
+\newcommand{\OpSim}{{\sc OpSim}\xspace}
+\newcommand{\CatSim}{{\sc CatSim}\xspace}
+\newcommand{\GalSim}{{\sc GalSim}\xspace}
+\newcommand{\simsMafContrib}{\texttt{sim\_maf\_contrib}\xspace}
+\newcommand{\MAF}{{\sc MAF}\xspace}
+
+% Git stuff
+\newcommand{\git}{\texttt{git}\xspace}
+\newcommand{\GitHub}{\texttt{GitHub}\xspace}
+
+
+\newcommand{\code}[1]{\texttt{#1}}
+
+\newcommand{\simsMAFcontrib}[2]{%
+    % Example use: "We used \simsMAFcontrib{SeasonStacker}{mafContrib/seasonStacker.py} to work with seasons."
+    % \simsMAFcontrib{Class}{folder/filename}
+    \href{https://github.com/LSST-nonproject/sims_maf_contrib/blob/master/#2}{\code{#1}}
+}
+
+\newcommand{\simsMAF}[2]{%
+    % Example use: "We used \simsMAF{SeasonStacker}{seasonStacker.py} to work with seasons."
+    % \simsMAF{Class}{folder/filename}
+    \href{https://github.com/LSST/sims_maf/blob/master/#2}{\code{#1}}
+}
+
+
+% OPSIM RUNS
+
+% List of opsim databases, designed to act as a table of contents in
+% the introduction section:
+\newcommand{\listofopsimdbs}{
+  \vskip\baselineskip
+  {\OpSim databases investigated in this section (name format: machineName\_runNumber):}
+  \phantomsection\label{tab:opsimdbnames}
+  \medskip
+  \hrule
+  \@starttoc{opsim.tod}
+  \medskip
+  \hrule
+}
+
+% \opsimdbname is the name of the database, correctly formatted.
+\newcommand{\opsimdbname}[1]{\texttt{#1}}
+
+% \opsimdbref is the function to use when referring to an opsim run.
+% "\opsimdbref{db:baseCadence}"  -> "{\sc OpSim} database \texttt{minion\_1016}"
+\newcommand{\opsimdbref}[1]{\nameref{#1}}
+\newcommand{\fullopsimdbref}[1]{\hyperref[#1]{\OpSim database \nameref{#1}}}
+
+% The opsimdb command itself - make a new opsimdb subsection (which prints
+% a title line and advances the subsection counter) and label it for
+% referring to it elsewhere.
+\newcommand{\opsimdb}[3][]{
+   \vspace{\baselineskip}
+   \hrule
+   \vspace{-0.5\baselineskip}
+   \subsection*{\large\opsimdbname{#2}} % \large is not working...
+   \label{#1}
+   \vspace{-0.5\baselineskip}
+   {\it #3}
+   % Add this project to this section's list of projects:
+   \addcontentsline{opsim.tod}{opsimdb}{\leavevmode\newline\opsimdbref{#1}~---~{\it#3}\hfill}
+ }
+
+%\captionsetup[figure]{labelformat=simple}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
