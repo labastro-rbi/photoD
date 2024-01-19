@@ -1,22 +1,220 @@
 
-\section{Method} \label{sec:method}
+\section{Methodology} \label{sec:method}
 
-The photometric distance estimation method (hereafter \pd) is conceptually quite simple and relies on the strong correlations between the stellar colors and spectral energy distributions (SED) for dominant stellar populations. The SEDs, and consequently colors, are determined by the effective temperature (\teff), the surface gravity (usually denoted as \logg), and the metallicity (\mh), or alternatively, by the absolute magnitude in band \textit{b} (\Mb), \mh and age.
+In this Section we discuss a Bayesian method for stellar photometric distance estimation and its implementation.
+We start with a brief overview of Bayesian methodology and then discuss in detail our choices of likelihoods
+and priors, and how they differ from previous work. We conclude this section with a discussion of numerical
+pipeline implementation and discuss its performance in the next Section. 
 
-The distributions that describe these correlations are obtained either from models or from observations. For example, the distribution of stellar SEDs in the color-color diagram in the middle and left panels of Figure~\ref{fig:3dataDiags} provide key insights in stellar evolution and classification of different stellar populations such as main-sequence stars, giant stars, white dwarf stars, a majority of unresolved binary stars and even extragalactic objects. Analogous distributions are responsible for the abundant structure seen in the Hertzsprung-Russell diagram (HRD).
 
-\begin{figure*}[ht!]
-	\plotone{plot3diagsData.png}
-	\caption{The red dots in the left panel show color-magnitude diagram for 841,000 stars from the SDSS Stripe 82 Standard Star Catalog that have Gaia matches within 0.15 arcsec (after correcting for proper motion using Gaia measurements). A subset of 415,000 stars with $r < 22$ and $u<22$ are overplotted as blue dots, and 409,000 of those that also have $0.2 < g-i < 3.5$ are overplotted as cyan dots. Finally, 63,000 stars that have signal-to-noise ratio for Gaia’s parallax measurements of at least 20 are shown as green dots. The same color scheme is used in other two panels. The three yellow lines in the middle panel show stellar locus parametrization used by Green et al. (2014) for three values of metallicity (left to right): $[Fe/H] = -2.0, -1.0, 0.0$. In the right panel, the impact of metallicity on color-color tracks is negligible and all three are indistinguishable from each other. } \label{fig:3dataDiags}
+\subsection{Bayesian Approach to Stellar Photometric Distance Estimation}
+
+In most general terms, our aim is for each star to estimate an array (a vector) of model parameters $\vec{\theta}$,
+for some model $M$ (e.g., main-sequence stars), using data vector $\vec{D}$ and priors for $M$ and $\vec{\theta}$.
+Data, or observations, include multi-band photometry that is used
+to construct colors, $\vec{c}$. In case of SDSS, colors include $u-g$, $g-r$, $r-i$, $i-z$, and in case of LSST also
+$z-y$. In addition to colors, $\vec{D}$ also includes an apparent magnitude and hereafter we choose the $r$-band
+magnitude. Therefore, $\vec{D}$ = ($r$, $\vec{c}$). Observations also provide stellar sky coordinates and we
+address their role further below when discussing priors.
+
+Models $M$ (either empirical or computational, see below) need to provide stellar colors as functions of model parameters
+$\vec{\theta}$. 
+The three principal parameters that control stellar colors at a fixed stellar age and at the accuracy level relevant here
+($\sim$1 \%) include absolute magnitude (here chosen in the $r$ band, $M_r$), metallicity ($[Fe/H]$) and surface
+gravity. In case of main-sequence stars and red giants, the color tracks can be expressed as functions of $M_r$
+and $[Fe/H]$ along an isochrone, without having to explicitly specify surface gravity. With other populations,
+such as white dwarfs, the roles of metallicity and surface gravity are different; we will
+assume here for notational simplicity that intrinsic stellar colors depend on $M_r$ and $[Fe/H]$. We do not
+consider stellar age as a model parameter and use it as a model label for reasons discussed in detail in the next section. 
+
+
+\begin{figure*}[t!]
+\plotone{plot3diagsData.png}
+\caption{An illustration of multiple stellar populations. The red dots in the left panel show color-magnitude diagram for 841,000 stars from the SDSS Stripe 82 Standard Star Catalog
+(variable stars are excluded, \citealt{2021MNRAS.505.5941T}) that have Gaia matches within 0.15 arcsec (after correcting for proper motion using Gaia measurements). A subset of 415,000 stars with $r < 22$ and $u<22$ are overplotted as blue dots, and 409,000 of those that also have $0.2 < g-i < 3.5$ (dominated by main-sequence stars and red giants) are overplotted as cyan dots. Finally, 63,000 stars that have signal-to-noise ratio for Gaia’s parallax measurements of at least 20 are shown as green dots (these stars can be used for the calibration of luminosity-color relations). The same symbol color scheme is used in other two panels. The three yellow lines in the middle panel show stellar locus parametrization used by Green et al. (2014) for three values of metallicity (left to right): $[Fe/H] = -2, -1, 0$. In the right panel, the impact of metallicity on color-color tracks is negligible and all three are indistinguishable from each other. In the bottom of the middle panel, at $-0.5 < g-r < 0$, the three dark blue sequences correspond to (from left to right) He white dwarfs, H white dwarfs, and blue horizontal branch stars. The clouds of pale blue dots visible above the main stellar locus in the middle and right panels correspond to unresolved binary stars \citep{2004ApJ...615L.141S}.} \label{fig:3dataDiags}
 \end{figure*}
 
-Metallicity is an important factor in these correlations, as it has a strong effect on the luminosity of the stars. This is reflected in the width of the main stellar loci of the two-color diagrams (middle and right hand panels in Figure~\ref{fig:3dataDiags} and the color-absolute magnitude diagrams (CAMD) in Figure~\ref{fig:3HRdiags}. The best photometric estimators of metallicity are colors whose shorter-wavelength component includes the metal absorbtion bands at near-UV wavelengths, short of Balmer break (300 $\lessapprox\lambda$ [nm] $\lessapprox$ 400). Therefore, the LSST has a comparative advantage over the surveys lacking \textit{u}-band measurements, and could provide accurate distances within the range of 5-10\%. \magcom{A plot of model spectra, fixed, \textit{log(g)} and \textit{T\textsubscript{eff}}, several different metallicities?}
+
+The observed stellar colors also depend on the interstellar dust extinction along the line of sight. Hereafter
+we will assume (and justify further below) that dust extinction is fully specified by a single model parameter, $A_r$.
+$A_r$ is extinction in the $r$ band and extinction in other bands is proportional to $A_r$, with known constants
+of proportionality (this assumption can be relaxed, see below). Once $M_r$ and $A_r$ are constrained, distance
+modulus $\Delta$ can be computed from
+\begin{equation}
+  \label{eq:distmod}
+                   r = M_r + A_r + \Delta,
+\end{equation}
+or in probabilistic form
+\begin{equation}
+  \label{eq:distmodpdf}
+                       p(\Delta) = r - p(M_r + A_r). 
+\end{equation}
+
+Therefore, $\vec{D}$ = ($r$, $\vec{c}$) and $\vec{\theta}$ = ($M_r$, $[Fe/H]$, $A_r$). Data $\vec{D}$ and
+model parameters $\vec{\theta}$ are related via the Bayes theorem (see, e.g., Chapter 5 in \citealt{2020sdmm.book.....I}),
+\begin{equation}
+  \label{eq:BayesFull}
+         p(M,\vec{\theta}|D,I) = {  p(D|M,\vec{\theta},I) \, p(M,\vec{\theta}|I) \over p(D|I)}.
+\end{equation}
+where $I$ is prior information. Strictly speaking, the vector $\vec{\theta}$
+should be labeled by $M$ since different models may be described by different parameters (e.g., main-sequence
+stars vs. white dwarfs).  
+
+The result $p(M,\vec{\theta}|D,I)$ is called the {\it posterior} pdf for model $M$ {\it and} parameters
+$\vec{\theta}$, given data $D$ and other prior information $I$. This term is a $(k+1)$-dimensional
+pdf in the space spanned by $k=3$ model parameters and the model index $M$. The term $p(D|M,\vec{\theta},I)$
+is the {\it likelihood} of data {\it given} some model $M$ and given some fixed values of
+parameters $\vec{\theta}$ describing it, and all other prior information $I$. The term $p(M,\vec{\theta}|I)$
+is the a priori joint probability, or simply prior, for model $M$ and its parameters $\vec{\theta}$ in the absence of any
+of the data used to compute likelihood. The prior can be expanded as
+\begin{equation}
+ \label{eq:BayesPriorExpand}
+        p(M,\vec{\theta}|I) = p(\vec{\theta}|M,I) \,p(M|I).
+\end{equation}
+
+The term $p(D|I)$ is the {\it probability of data}, or the prior predictive probability for $D$. 
+It provides proper normalization for the posterior  pdf and usually it is not explicitly computed
+when estimating model parameters: rather, $p(M,\vec{\theta}|D,I)$ for a given $M$
+is simply renormalized so that
+its integral over all model parameters $\vec{\theta}$ is unity. The integral of the prior $p(\vec{\theta}|M,I)$
+over all parameters should also be unity, but for the same reason, calculations of the posterior pdf are
+often done with an arbitrary normalization. An important exception is model selection discussed further
+below, where the correct normalization of the product $p(D|M,\vec{\theta},I) \, p(\vec{\theta}|M,I)$ is crucial.
+
+This approach is essentially the same as used in recent papers\footnote{This approach greatly simplifies when studying
+faint and distant blue halo stars, as in e.g., \cite{2008ApJ...673..864J}. Such stars are beyond the dust layer which is confined close
+to the disk and thus $A_r$ can be obtained from IR maps, have halo metallicities ($[Fe/H] \sim -1.5$), and can be assumed dominated
+by main-sequence stars. As a result, a simple functional relationship, $M_r = f(g-i)$, or its generalized version that
+accounts for the shift of $M_r$ as a function of metallicity \citep{2008ApJ...684..287I} can be used to estimate distance
+in a straightforward manner.}
+by, e.g., \cite{2011MNRAS.411..435B},  \cite{2014ApJ...783..114G},  \cite{green_3d_2019} and \cite{bailer-jones_estimating_2021}.
+The main differences compared to these works include
+\begin{enumerate}
+\item The use of multiple stellar populations, in addition to main-sequence stars and red giants (white dwarfs, unresolved binary stars,
+                potentially quasars and RR Lyrae stars, which can also be recognized and rejected using variability).
+\item Improved color tracks for main-sequence stars and (especially) red giants, including the use of very young ($<$1 Gyr) populations 
+               and an extended $[Fe/H]$ range. 
+\item Priors based on sophisticated TRILEGAL simulations by \cite{2022ApJS..262...22D} that include multiple stellar populations and
+               also account for the Galaxy's bulge component. 
+\end{enumerate}
+             
+We discuss these improvements in detail in the next few sections. 
+
+
+\subsection{Likelihood Computation}
+
+Given chosen model (population) $M$, the likelihood $p(D|M,\vec{\theta},I)$ can be explicitly written as
+\begin{equation}
+          \mathcal{L} \equiv p(\vec{c}|M_r, [Fe/H], A_r).
+\end{equation}
+Assuming Gaussian photometric errors that are parametrized by a vector of color uncertainties $\vec{\sigma}$,
+the log-likelihood is given by
+\begin{equation}
+       ln (\mathcal{L}) = constant - {1 \over 2} \,\sum_{i=1}^N \left({ c^{obs}_i - c^{mod}_i  \over \sigma_i } \right)^2 \,
+\end{equation}
+where summation is over all colors (for example, $N=4$ for SDSS, and $N=5$ for LSST), \ensuremath{c^{obs}_i} are the
+observed colors and \ensuremath{c^{mod}_i} are the model colors (they are functions of $M_r$, $[Fe/H]$, and $A_r$
+but for notational simplicity we don't explicitly list model parameters). The model colors can be computed as
+\begin{equation}
+                       \vec{c}^{\,\,mod}  = \vec{c}_0(M_r, [Fe/H]) + \vec{\delta c}(A_r),
+\end{equation}
+where $\vec{c_0}(M_r, [Fe/H])$ are intrinsic stellar colors for a given stellar population and $\vec{\delta c}(A_r)$ are
+color corrections due to dust reddening. 
+
+Multiple stellar populations are illustrated in Figure~\ref{fig:3dataDiags}. With accurate multi-band photometry that
+includes a UV (here SDSS $u$) band main-sequence stars, red giants, white dwarfs, blue horizontal branch stars, and
+unresolved binary stars can be identified (UV photometry is also crucial for constraining metallicity). We first discuss
+our choice of $\vec{c_0}(M_r, [Fe/H])$ for main-sequence stars and red giants and then for white dwarfs and unresolved binary stars.
+
+
+\subsubsection{Empirical Luminosity-Color Tracks for Main-sequence Stars and Red Giants}
+
+Both \cite{2012ApJ...757..166B} and \cite{2014ApJ...783..114G} used empirical color tracks for main-sequence stars
+and red giants (see the left panel in Figure~\ref{fig:3HRdiags}, modeled after Figure 1 in \citealt{2014ApJ...783..114G})
+derived from SDSS data for globular clusters (for technical details, see
+Appendix A in \citealt{2008ApJ...684..287I}). These color tracks suffer from three problems. First, as can be seen in Figure 11 from
+\cite{2014ApJ...783..114G}, their predicted colors for stars between main-sequence turn-off and red giant branch are too blue by
+about 0.1--0.2 mag. Second, their metallicity grid does not extend to the $[Fe/H]>0$ range relevant for some disk stars. Finally, they
+correspond to very old populations (older than a few Gyr) and cannot be used for stars younger than about 1 Gyr. 
 
 \begin{figure*}[ht!]
-	\plotone{plot3HRdiags.png}
-	\caption{The left panel shows the absolute magnitude vs. color parametrization for main sequence and red giant stars. The symbols are color-coded by metallicity, ranging from $[Fe/H] = -2.5$ to 0.0 (blue to red). The three lines correspond to three values of metallicity: $[Fe/H] = -2.0, -1.0, 0.0$ (dot-dashed, solid and dashed, respectively). The middle panel shows a sample of 63,000 stars that have signal-to-noise ratio for Gaia’s parallax measurements of at least 20 (white dwarfs can be seen in the lower left corner). The dot-dashed, solid and dashed black lines are the same as in the left panel. For comparison, the dotted lines were computed using eqs. A2 and A7 from Ivezic et al. (2008). The right panel shows a sample of 415,000 stars with $r < 22$ and $u<22$ as red dots, and 409,000 of those that also have  $0.2 < g-i < 3.5$ as cyan dots. Their absolute magnitudes were computed using the so-called “photo-geometric” distances from Bailer-Jones et al. (2021). The dot-dashed, solid and dashed black lines are the same as in the left and middle panels. About 10,000 outliers seen at $g-i = 0.4$ and $Mr > 7$ are predominantly found at the faint end ($r>20$).}
-	\label{fig:3HRdiags}
+\plotone{plot3HRdiags.png}
+\caption{The left panel shows SDSS-based empirical absolute magnitude vs. color parametrization for main-sequence stars and red giants.
+The symbols are color-coded by metallicity, ranging from $[Fe/H] = -2.5$ to 0 (blue to red). The three lines correspond to three values of
+metallicity: $[Fe/H] = -2, -1, 0$ (dot-dashed, solid and dashed, respectively). The middle panel shows a sample of 63,000 stars that have
+signal-to-noise ratio for Gaia’s parallax measurements of at least 20 (white dwarfs can be seen in the lower left corner). The dot-dashed,
+solid and dashed black lines are the same as in the left panel. For comparison, the essentially identical yellow dotted lines were computed
+using eqs. A2 and A7 from Ivezi\'{c} et al. (2008). Note the discrepancy between these parametrizations and data for sub-giant stars ($M_r \sim 3$
+and $g-i \sim 0.8$). The right panel shows a sample of 415,000 stars with $r < 22$ and $u<22$ as red dots, and 409,000 of those that also have  $0.2 < g-i < 3.5$ as cyan dots. Their absolute magnitudes were computed using the so-called “photo-geometric” distances from Bailer-Jones et al. (2021). The dot-dashed, solid and dashed black lines are the same as in the left and middle panels. About 10,000 outliers (about 2.5\% of the full
+sample) seen at $g-i = 0.4$ and $Mr > 7$ are predominantly found at the faint end ($r>20$).}
+\label{fig:3HRdiags}
 \end{figure*}
+
+We use a combination of SDSS and Gaia data to demonstrate the first problem. The middle panel in Figure~\ref{fig:3HRdiags} 
+shows a clear discrepancy between SDSS-based empirical tracks and data for sub-giant stars. Nevertheless, it is noteworthy that
+for main-sequence stars the agreement is excellent. Furthermore, the right panel in Figure~\ref{fig:3HRdiags} demonstrates
+that SDSS-based photometric distances and Gaia-based ``photo-geometric'' distances from \cite{bailer-jones_estimating_2021}
+for main-sequence stars are on the ``same scale''.  XXX provide numerical results for offsets! 
+ 
+We address all three problems by switching from the SDSS-based empirical isochrones that correspond to old
+populations to model-based isochrones that span a range of ages and a wider range of metallicities. 
+ 
+
+\subsubsection{MIST/Dartmouth Isochrones for Main-sequence Stars and Red Giants}
+
+Look at the code first!
+
+We considered two sets of isochrones:
+ 
+\begin{figure*}[ht!]
+\plotone{compare2isochrones_augmentedSDSS_1Gyr_10Gyr.png}
+\caption{Augmented locus}
+\label{fig:augmLocus}
+\end{figure*}
+
+
+
+These color tracks account for an overwhelming majority of stars expected in LSST catalogs. Nevertheless,
+
+
+\subsubsection{Luminosity-Color Tracks for White Dwarfs}
+
+Bob Abel will provide text and plots.
+
+
+\begin{figure*}[ht!]
+\plotone{plot3diagsBA.png}
+\caption{Augmented locus}
+\label{fig:augmLocus}
+\end{figure*}
+
+
+\subsubsection{Luminosity-Color Tracks for Unresolved Binaries }
+
+Bob Abel will provide text and plots.
+
+\begin{figure*}[ht!]
+\plotone{plot3diagsBAzoom.png}
+\caption{Augmented locus}
+\label{fig:augmLocus}
+\end{figure*}
+
+
+
+\subsubsection{Luminosity-Color Tracks for Unaccounted Populations}
+
+Reiterate that variable objects, such as quasars and RR Lyrae are not considered here
+but can be addressed in a straighforward manner. Cite Sesar et al. papers 
+
+Examples: BHB stars, AGB stars... 
+
+
+\subsubsection{Accounting for Interstellar Dust Extinction} 
+
+Following \cite{2012ApJ...757..166B} 
+
+prior from IR dust maps
+
 
 Extinction is another major source of systematic errors in the process of luminosity and distance determination. The fact that the extinction vector is nearly parallel to the main stellar locus in the two-color diagrams gives rise to degeneracies that complicate the determination of the stellar type. An example is displayed in Figure~\ref{fig:extinction}, where in the left panel any of the different star types designated as 1,2 and 3 can have the same observed colors as the star marked as "Obs". This degeneracy is a result of the combination of colors chosen for the two-color diagram and depends on the position on the stellar locus and the adopted extinction curve parametrized by a single parameter \textit{R\textsubscript{V}}
 
@@ -39,29 +237,31 @@ with $A_r$ designating extinction in \textit{r}-band and $C_{\lambda}(R_V)$ desc
 
 \magcom{Explain the choice of \RV.}
 
-Another important degeneracy arises from the fact that even for a fixed \teff and \feh, the \logg and thus the luminosity are not uniquely determined by the colors: a degeneracy may exist between the giant branch and the main sequence as the colors constructed from \textit{ugrizy} bands are not sensitive to \logg. 
 
-We adopt a Bayesian framework in which we simultaneously fit for \Mb, \feh and \Ar, assuming a fixed \RV value of 3.1\footnote{In principle \RV could be also fitted for.} The posterior for each individual star with LSST photometry is then given as:
+\subsection{TRILEGAL-based Priors} 
 
-\begin{equation} \label{eq:likelihood}
-	\begin{split}
-		    &\Pcond{\Mb, \, \feh, \, \Ar}{\vec{c}} = \\
-		& \frac{\Pcond{\vec{c}}{\Mb, \, \feh, \, \Ar} P\arg{\Mb, \, \feh, \, \Ar}}{P\arg{\vec{c}}} \,
-	\end{split}
-\end{equation}
+Priors bring dependence on sky position and apparent magnitude 
 
 
-with \ensuremath{\vec{c}} standing for the vector of input colors (\ul-\gl, \gl-\rl and so on). The log-likelihood is given by:
 
-\begin{equation}
-	ln (\mathcal{L}) = C - {1 \over 2} \,\sum_{i=1}^N \left({ c^{obs}_i - c^{mod}_i  \over \sigma_i } \right)^2 \,
-\end{equation}
-
-where \ensuremath{c^{obs}_i} are the observed colors and \ensuremath{c^{mod}_i} the model colors. The priors are established by partitioning the TRILEGAL galaxy model \citep{dal_tio_simulating_2022} in healpixels, and each of the pixel in one-magnitude wide bins in apparent magnitude. The model colors are then obtained from models based on SDSS results (\magcom{reference}), where the input for the models are the \Mr and the \feh obtained from TRILEGAL. Given the assumed extinction curve, these colors are then reddened up to the maximum reddening which is estimated from \cite{schlegel_maps_1998} (SFD98) maps. The latter upper limit is used in order to provide a realistic stop condition on the amount of extinction and reduce the processing time. This is usually a valid assumption because the SFD98 maps provide \textit{total} extinction along a line of sight. In order to account for the eventual underestimation in the SFD98 maps we increase the SFD98 extinctions by 20\%.
+The priors are established by partitioning the TRILEGAL galaxy model \citep{dal_tio_simulating_2022} in healpixels, and each of the pixel in one-magnitude wide bins in apparent magnitude. The model colors are then obtained from models based on SDSS results (\magcom{reference}), where the input for the models are the \Mr and the \feh obtained from TRILEGAL. Given the assumed extinction curve, these colors are then reddened up to the maximum reddening which is estimated from \cite{schlegel_maps_1998} (SFD98) maps. The latter upper limit is used in order to provide a realistic stop condition on the amount of extinction and reduce the processing time. This is usually a valid assumption because the SFD98 maps provide \textit{total} extinction along a line of sight. In order to account for the eventual underestimation in the SFD98 maps we increase the SFD98 extinctions by 20\%.
 
 % We extract the priors based on position and apparent magnitude from TRILEGAL (\citet{dal_tio_simulating_2022}). Ideally, we would In order to extract the priors (i.e. prior maps), we divide TRILEGAL data in healpix bins, and further subdivide them in one-magnitude wide bins in apparent magnitude. The latter subdivision is helpful in breaking the degeneracies between the giant and dwarf stars, as intrinsically luminous stars become strongly disfavored at faint magnitudes\footnote{In other words, an apparently faint giant star would imply a very large distance. For example a moderately bright giant star with \ensuremath{M_r}=0 mag and \ensuremath{r}=22 mag would imply a distance modulus of 22 mag, or distance of approximately 251 kpc.}.
 
 %Our method is basically brute-force fitting with some intelligent tricks leveraged to obtain faster execution that will be required for 10B LSST stars. 
+
+
+
+
+\subsection{Bayesian Model Selection} 
+
+
+
+
+
+\subsection{Implementation: Photo-D pipeline}
+
+optimized grid search, MCMC, refer to NN paper, also in Discussion
 
 Our fitting procedure is also executed on an adaptive grid, a coarse search over the parameter space is performed first in order to establish the layout of the manifold. However, care is taken that any possible local minima are not missed by appropriately adjusting the step size \magcom{how?}. The located maxima are then explored with a smaller step size (\magcom{adjusted how?}).
 
