@@ -1,0 +1,198 @@
+
+
+\section{Results\label{sec:results}}
+
+Here we test the validity of the Bond et al. kinematic models for disk and halo stars, as enabled by the high-metallicity FGKM sample
+and the red giant sample introduced in the preceding Section.
+We first discuss the behavior of the first two statistical moments (mean and dispersion) for 3-dimensional velocity distribution
+and then compare the predicted and observed shapes of the rotational velocity distribution in more detail. We test
+model predictions for the behavior of quantities directly measured by Gaia, stellar radial velocities and proper motions, across
+the whole sky. Finally, we verify that the behavior of Gaia data for halo stars is consistent with a velocity ellipsoid that is
+spatially invariant when expressed in spherical coordinates. 
+
+
+\subsection{Comparison of predicted and observed 3-dimensional velocity distribution for disk stars}
+
+We first emulate the top left panels in Figures 5, 7 and 11 from the Bond et al. study. We select stars towards the North and South
+Galactic poles ($|b|>80^\circ$) and show the variation of their velocity components with $|Z|$ in \autoref{fig:3v}. Due to the
+galactic latitude constraint, the $v_Z$ component is dominated by the radial velocity measurements while the other two components
+are dominated by proper motion measurements. Compared to the Bond et al. high-luminosity sample, the distance range probed
+by Gaia's FGKM sample is closer: from about 50 pc to about 1 kpc vs. 0.8--5 kpc (at the far end, the SDSS sample is limited by
+sample contamination due to halo stars).
+
+The Bond et al. model predictions for the velocity mean and dispersion are in agreement with Gaia's observations. In particular, the
+gradient of the rotational velocity with $|Z|$ is evident, and the extrapolation of SDSS rotational velocity measurements to $Z=0$
+is quantitatively supported by Gaia. The same conclusions remain valid when the full sample is considered (that is, without the $|b|>80^\circ$ restriction).
+
+The $<$1 kpc distance range probed by FGKM stars is significantly extended with the red giant sample, as illustrated in
+\autoref{fig:3vRGs}. In conclusion, the Bond et al. models for the velocity mean and dispersion of disk stars appear validated
+in the $|Z|$ range 0--5 kpc, without any appreciable north-south asymmetry.  
+
+
+\begin{figure}[!ht]
+\includegraphics[width=0.999\textwidth,angle=0]{figures/plot3VvsZ_NGP.png}
+\includegraphics[width=0.999\textwidth,angle=0]{figures/plot3VvsZ_SGP.png}
+\caption{The variation of cylindrical velocity components with distance from the plane, $|Z|$, for FGKM stars with measured radial velocities, shown as dots. 
+The top row shows 6,548 stars towards the North Galactic Pole ($b >80^\circ$) and the bottom row shows 7,578 stars towards the South Galactic Pole
+($b < -80^\circ$). Triangles show the mean values in bins of $|Z|$ and the thick dashed lines show the $\pm2\sigma$ envelope around means, where
+$\sigma$ is the standard deviation for each bin (i.e., velocity dispersion). The thick dot-dashed lines are models for the mean velocity (0 for $v_R$ and
+$v_Z$, and given by eq.~\ref{eq:Dlag} for $v_\phi$). The thin dot-dashed lines show the $\pm2\sigma$ envelope, with $\sigma$ (velocity dispersion)
+given by eqs.~\ref{eq:Ddisp}, \ref{eq:DdispR}, and \ref{DdispZ}, for $\phi$, $R$ and $Z$ panels, respectively.  The thin dashed lines in the two left panels
+also show $\pm2\sigma$ envelopes, but with the velocity dispersion computed using eq.~\ref{eq:pDvPhi} (see \S~\ref{sec:vshape}).} 
+\label{fig:3v} 
+\end{figure}
+
+ 
+\begin{figure}[!ht]
+\includegraphics[width=0.999\textwidth,angle=0]{figures/plot3VvsZ_giantsD.png} 
+\caption{Similar to \autoref{fig:3v}, except that here about five times larger distances are probed with 4.3 million red giant stars
+  that have [Fe/H]$>-0.5$ and cylindrical galacto-centric radius between 7 kpc and 10 kpc. The meaning of symbols and lines
+  is the same as in \autoref{fig:3v}, and exactly the same models are shown.} 
+\label{fig:3vRGs} 
+\end{figure}
+
+
+
+\subsection{Comparison of predicted and observed shapes of the rotational velocity distribution for disk stars\label{sec:vshape}}
+
+As already suggested in \cite{2008ApJ...684..287I} and confirmed by Bond et al. (see their Figure 6), the shape of the rotational velocity
+distribution for disk stars is strongly non-Gaussian (skewed) and it evolves with the distance from the Galactic plane. Histograms based
+on Gaia's data shown in \autoref{fig:vPhiShape} confirm this expectation. Furthermore, new data still admit detailed quantitative
+modeling of observed distributions as a sum of two Gaussians, with a fixed normalization ratio and a fixed offset of their mean values (see
+\autoref{eq:pDvPhi}). Since Gaia's velocity measurement errors are negligible in this context (compared to the much larger width of the observed
+velocity distributions; for validation using quasar data, see Appendix), we have reoptimized fits by allowing six parameters to vary. Their best-fit values remain close to the SDSS
+values: $f_1=0.40$, $f_2=0.60$, $v_0 = -186 {\rm \, km~s^{-1}}$, $\Delta v_n = 38 {\rm \, km~s^{-1}}$, $a_1 = 22 {\rm \, km~s^{-1}}$ and $a_2= 17
+{\rm \, km~s^{-1}}$.  
+
+When the resulting re-optimized pdf, $p(x=v_\phi|Z)$, is used to evaluate the mean $\langle v_\phi \rangle$ and its dispersion
+$\sigma_{\phi}$  as functions of $Z$, there is no discernible change for the former compared to \autoref{eq:Dlag}, while the latter is
+about 20\% smaller than values given by \autoref{eq:Ddisp} (for illustration of the difference, see the two left panels in \autoref{fig:3v}).
+Since there is no implied physics in this two-component statistical model of the skewed velocity distribution, minor numerical adjustments
+of the few free model parameters are probably inconsequential. \\
+
+These conclusions based on the FGKM sample are supported by the behavior of the red giant sample, as illustrated in \autoref{fig:vPhiShapeRG}. 
+In particular, the vertical gradient of rotational velocity is evident. 
+
+\begin{figure}[!ht]
+\includegraphics[width=0.999\textwidth,angle=0]{figures/plotVphiDistr4.png}
+\caption{A comparison of the observed rotational velocity distribution ($v_\phi$) for FGKM stars, shown as histograms, and a two-component model (dashed
+lines: individual components; solid line: their sum) given by \autoref{eq:pDvPhi} (using updated parameters discussed in text; the same
+$Z$-dependent model is shown in all four panels). The four panels show results for two $|Z|$ bins (top row vs. bottom row) and towards North and South
+($|b|>80^\circ$, left vs. right). The sample sizes are about 4,000 stars for the nearer $|Z|$ bin and about 900 stars for the more distant bin.} 
+\label{fig:vPhiShape} 
+\end{figure}
+
+
+\begin{figure}[!ht]
+\includegraphics[width=0.999\textwidth,angle=0]{figures/plotVphiDistr4rg.png}
+\caption{Analogous to \autoref{fig:vPhiShape}, except for a subsample of the red giant sample shown in \autoref{fig:3vRGs} restricted to $|b|>60^\circ$.
+  The top two panels show the same $|Z|$ bins as in \autoref{fig:vPhiShape}, while the two bottom panels extend to larger $|Z|$. 
+  The sample sizes vary from 10,000 stars to 2,000 stars for the most distant bin.} 
+\label{fig:vPhiShapeRG} 
+\end{figure}
+
+
+
+\subsection{Comparison of predicted and observed radial velocity and proper motion sky distributions for disk stars\label{sec:allsky}}
+
+
+\begin{figure}[!ht]
+\includegraphics[width=0.5\textwidth,angle=0]{figures/projview_pmLongData.png}
+\includegraphics[width=0.5\textwidth,angle=0]{figures/projview_pmLongDMresiduals_Dslice.png}
+\includegraphics[width=0.5\textwidth,angle=0]{figures/projview_pmLatData.png}
+\includegraphics[width=0.5\textwidth,angle=0]{figures/projview_pmLatDMresiduals_Dslice.png}
+\includegraphics[width=0.5\textwidth,angle=0]{figures/projview_radVelData.png}
+\includegraphics[width=0.5\textwidth,angle=0]{figures/projview_radVelDMresiduals_DsliceRV.png}
+\caption{The top two left panels show observed distributions of mean proper motion per pixel (top: longitude; middle: latitude)
+for 868,859 stars in the 0.4--0.6 kpc distance bin. The bottom left panel shows the observed distribution of mean radial velocity
+for a subsample of 400,782 stars with good measurements. The healpix nside=32 maps are shown in the Hammer
+projection of galactic coordinates. The maps on the right show residuals (using the same color-coding scale) after
+subtracting model values computed using eq.~\ref{eq:Dlag} for $v_\phi$ and with $\langle v_R \rangle = \langle v_Z \rangle = 0$.} 
+\label{fig:skyComparison} 
+\end{figure}
+
+
+As the final test, we extrapolate the Bond et al. model from the quarter of the sky observed by SDSS and compare its predictions for
+the variation of mean proper motions and radial velocities to Gaia's measurements across the whole sky. The three left panels in
+\autoref{fig:skyComparison} show mean proper motion components per pixel and mean radial velocity per pixel for stars with
+distances in the range 400 pc to 600 pc. Their strong variation across the sky is evident and is mostly due to projection effects of the
+solar motion (and a little bit due to spatial variation of the rotational velocity component with $|Z|$). The panels on the right
+show residuals after subtracting proper motion and radial velocity values predicted by the Bond et al. model described in \S~\ref{sec:BondModels}.
+As evident, the model fully captures the observed behavior. The only potentially significant feature is observed for radial velocity residuals towards the Galactic
+center, at about $0 < b < 30^\circ$. This region was not observed by SDSS and we are not aware of any kinematic or other stellar features
+reported for that region (e.g., the famous Sgr dwarf galaxy is located at negative galactic latitudes). A possibility that these residuals
+reflect faulty measurements could be, at least in principle, easily checked because most of these stars are relatively bright ($r\sim14$). 
+
+We note that the data maps for stars with distances in the range of 800 pc to 1.2 kpc look qualitatively the same, except that the magnitude
+of proper motion is smaller by about a factor of two, as expected. The maps of residuals appear the same, except for the radial velocity
+residual ``feature'', which is observed at about 15 degrees higher latitudes than for the first distance bin.
+
+The red giant sample can be used to extend this comparison to distances where the rotational velocity component is much
+smaller than locally. We first established that the behavior for red giants in the 0.4--0.6 kpc distance bin is essentially identical
+as shown for the FGKM sample in \autoref{fig:skyComparison}. The corresponding plot for red giants in the 2.8--3.2 kpc distance bin 
+is shown in \autoref{fig:skyComparisonRG}. Due to about six times larger distances,  the morphology of data panels is rather different
+from that in \autoref{fig:skyComparison} (especially for radial velocity, where projection effects of rotational velocity component
+dominate). Nevertheless, the model for disk kinematics described in
+\S~\ref{sec:BondModels} fully captures the data behavior, as shown by vanishing maps of (data-model) residuals. 
+
+ 
+\begin{figure}[!ht]
+\includegraphics[width=0.5\textwidth,angle=0]{figures/projview_pmLongDataRG.png}
+\includegraphics[width=0.5\textwidth,angle=0]{figures/projview_pmLongDMresiduals_DsliceRV_RGdisk.png}
+\includegraphics[width=0.5\textwidth,angle=0]{figures/projview_pmLatDataRG.png}
+\includegraphics[width=0.5\textwidth,angle=0]{figures/projview_pmLatDMresiduals_DsliceRV_RGdisk.png}
+\includegraphics[width=0.5\textwidth,angle=0]{figures/projview_radVelDataRG.png}
+\includegraphics[width=0.5\textwidth,angle=0]{figures/projview_radVelDMresiduals_DsliceRV_RGdisk.png}
+\caption{Analogous to \autoref{fig:skyComparison}, except for a sample of 1.05 million red giants with [Fe/H]$>-0.5$
+  in the 2.8--3.2 kpc distance bin. Note that observed proper motions are much smaller due to about six times larger distances,
+  while radial velocity variation with galactic longitude is much stronger due to the projection effects of the rotational velocity component.} 
+\label{fig:skyComparisonRG} 
+\end{figure}
+
+
+ 
+\subsection{Comparison of predicted and observed 3-dimensional velocity distribution for halo stars}
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=0.999\textwidth,angle=0]{figures/plot3VvsZ_giantsH.png}
+    \caption{The variation of spherical velocity components with distance from the plane, $|Z|$, for $\sim$34,000 candidate halo red giants from the solar cylinder with measured radial velocities and [Fe/H]$<-1.2$. Triangles show the mean values in bins of $|Z|$ and the thick dashed lines show the $\pm2\sigma$ envelope around means, where $\sigma$ is standard deviation for each bin (i.e., velocity dispersion). The dot-dashed lines represent the halo velocity ellipsoid model described in Section~\ref{sec:BondModelsHalo}. \label{fig:3vRGhalo}}
+\end{figure}
+ 
+
+\begin{figure}[!ht]
+\includegraphics[width=0.999\textwidth,angle=0]{figures/plotVvsV2n.png}
+\vskip -2in   
+\includegraphics[width=0.999\textwidth,angle=0]{figures/plotVvsV2s.png}
+\vskip -2in   
+\caption{Illustration of the change of orientation of velocity ellipsoid in cylindrical coordinates for halo stars,
+  selected to have [Fe/H]$<-1.2$ and selected from a narrow range of cylindrical coordinates, as shown above
+  each panel. The number of stars is about 1,600 for bins with smaller $R$ (left) and 800 for bins on the right.
+  The top row shows bins above the plane and the bottom row their symmetric counterparts below the plane
+  (the Sun's position is in the middle of the figure). 
+  The dashed lines mark the direction towards the Galactic center. The change of the velocity ellipsoid tilt
+  in cylindrical coordinates is evident; however, the velocity ellipsoid in spherical coordinates is invariant
+  throughout the probed volume, as illustrated by these four spatial bins.} 
+\label{fig:haloTilt} 
+\end{figure}
+
+
+
+Bond et al. found that the kinematics of halo stars can be modeled with a triaxial velocity ellipsoid that is invariant in
+spherical coordinates. Motivated by this finding, we show in
+% \autoref{fig:3vRGhalo}   % I couldnt make this ref work
+Figure 11 
+three spherical velocity components for halo red giants as functions of distance from the Galactic plane. Unlike the strong dependence on the velocity dispersion
+on $|Z|$ for disk stars seen in Figures~\ref{fig:3v} and \ref{fig:3vRGs}, velocity dispersion for halo stars as measured by
+Gaia is spatially invariant, confirming earlier results by Bond et al. We note that small deviation of mean rotational
+velocity from zero at $|Z|<1$ kpc seen in the left panel is probably due to sample contamination by much more numerous
+disk stars (at $|Z|=0$, halo stars contribute only about 0.5\% of the total count, see Table 10 in \citealt{2008ApJ...673..864J}).  
+
+Gaia data analyzed here provide strong support for a halo velocity ellipsoid that is invariant in spherical coordinates.
+When the velocity ellipsoid is expressed in cylindrical coordinates instead, a strong covariance is seen between the $v_Z$ and $v_R$
+components. We illustrate this covariance in
+% \autoref{fig:haloTilt}.  %I couldnt make this ref work
+Figure 12. 
+The observed tilt varies with position such that the
+velocity ellipsoid points towards the Galactic center (see also \citealt{2019MNRAS.489..910E}). 
+ 
