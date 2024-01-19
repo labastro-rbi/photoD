@@ -1,11 +1,35 @@
 \section{Introduction} \label{sec:intro}
 
-Thanks to the \textit{Vera C. Rubin} observatory's \textit{Legacy Survey of Space and Time} (LSST), for the first time in history, an astronomical catalog will contain more Milky Way stars than there are living people on Earth -- of the order 10-20 billion, depending on model assumptions. In order to map the Milky Way in three dimensions, distances to these stars must be accurately  estimated. In this paper we describe a method that will deliver LSST-based stellar distance estimations complementary to \textit{Gaia's} state-of-the-art trigonometric parallaxes and reach about 10 times further, to approximately 100 kpc. These results will be transformative for the studies of the Milky Way in general, and the stellar and the dark matter halo in particular as never before was there a survey that simultaneously observed roughly two thirds of the sky, to the co-added depth of \textit{r}$\approx$26 mag. 
 
-\magcom{A bit about the importance of the distance estimation in the MW, dust implications (for extragalactic science too).}
+In order to map the Milky Way in three dimensions, distances to its stars must be accurately  estimated.
+Kinematic studies based on proper motion data also require estimates of stellar distances.  There are a variety
+of astronomical methods to estimate distances to stars, ranging from direct geometric (trigonometric) methods
+for nearby stars to indirect methods based on astrophysics for more distant stars.
 
-There are a variety of astronomical methods to estimate distances to stars, ranging from direct geometric (trigonometric) methods for nearby stars to indirect methods based on astrophysics for more distant stars. 
+As demonstrated with SDSS \citep{2008ApJ...673..864J, 2008ApJ...684..287I}, Pan-STARRS \citep{2014ApJ...783..114G, green_3d_2019} and most recently with
+Gaia data \citep{bailer-jones_estimating_2021}, broad-band near-UV to near-IR stellar photometry can be used 
+to estimate distance, metallicity and interstellar dust extinction along the line of sight for stars in the Galaxy.
+In analogy with photo-z, photometric redshifts of galaxies, hereafter we refer to these methods as photo-D. 
+The photo-D method is conceptually quite simple: multi-dimensional color tracks (either empirical or model-based),
+parametrized by luminosity, metallicity and extinction, are fit to observed colors and the best-fit produces estimates
+of the three model parameters. The method relies on strong correlations between stellar colors and
+stellar luminosity for dominant stellar populations such as main-sequence stars, red giants, white dwarfs, and even
+for the majority of unresolved binary stars. These are the same correlations that are responsible for the abundant
+structure seen in the Hertzsprung-Russell diagram. In addition to colors and luminosity, these correlations
+also involve metallicity in case of main-sequence and red giant stars, and surface gravity in case of white dwarfs.
+For the youngest main-sequence stars, stellar age may play a role, too. Measured stellar colors are also affected
+by interstellar dust extinction along the line of sight towards the star. Consequently, measurements of apparent
+brightness and sufficient number of UV to IR colors, such as those that Rubin Observatory's Legacy Survey of Space
+and Time (LSST; \citealt{2019ApJ...873..111I}) will provide, can be used to accurately estimate these parameters,
+and ultimately stellar distances.
 
-\magcom{Mention \cite{bailer-jones_estimating_2021}, \cite{gordon_panchromatic_2016}, \cite{green_measuring_2014,green_three-dimensional_2015,green_3d_2019}, \cite{juric_milky_2008} and \cite{lallement_3d_2014}, \cite{queiroz_starhorse_2018}}.
+LSST-based stellar distance estimates will significantly improve available distance catalogs, such as those recently produced by \cite{green_3d_2019}
+and \cite{bailer-jones_estimating_2021}. First, the sample size will be increased by more than an order of magnitude, and exceed 10 billion stars.
+Distance accuracy for stars with sufficiently small photometric errors will be within the 5-10\% range, or about twice
+as accurate as for surveys lacking the UV $u$ band (which provides metallicity constraints). LSST-based stellar distances
+will reach about 10 times further than Gaia’s color-based distances and will be transformative for studies of the
+Milky Way in general, and of its stellar and dark matter halo in particular. 
 
-Layout of the paper is...
+In this paper we present a Bayesian procedure and pipeline that build on previous work and can handle LSST-sized datasets.
+In \S2, we describe methodology and in \S3 we test the pipeline using both simulated catalogs, and SDSS, DECam and Gaia
+photometry. We discuss possibilities for further improvements and catalog public release plans in \S4. 

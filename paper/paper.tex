@@ -88,7 +88,7 @@
 
 \begin{document}
 
-\title{PhotoD with LSST: stellar photometric distances out to the edge of the Galaxy}
+\title{Photo-D with LSST: stellar photometric distances out to the edge of the Galaxy}
   
 
 \author[0000-0003-3710-0331]{Lovro Palaversa}
@@ -100,8 +100,9 @@
 \author[0000-0012-3245-123X]{Karlo Mrakov\v{c}i\'{c}}
 \affiliation{Faculty of Physics, University of Rijeka, Radmile Matej\v{c}i\'{c} 2, 51000 Rijeka, Croatia}
                                                                                                  
-\author[0000-0000-0000-0000]{Bob Abel}
-\affiliation{The Paradise Island, WA, USA }
+\author[0000-0001-8418-3083]{Bob Abel}
+\affiliation{Olympic College, 1600 Chester Avenue, Bremerton, WA
+98337, USA, and DiRAC Institute, University of Washington, Box 351580, Seattle, WA 98195, USA}
 
 \author[0000-0000-0000-0000]{Dani Chao}
 \affiliation{Ru{\dj}er Bo\v{s}kovi\'{c} Institute, Bijeni\v{c}ka cesta 54, 10000 Zagreb, Croatia }
@@ -109,23 +110,23 @@
 \author[0000-0002-3045-0446]{Oleksandra Razim}
 \affiliation{Ru{\dj}er Bo\v{s}kovi\'{c} Institute, Bijeni\v{c}ka cesta 54, 10000 Zagreb, Croatia }
 
-\author[0000-0000-0000-0000]{Filip Matkovi\'{c}}
-\affiliation{Hvar Observatory, 10000 Zagreb, Croatia}
+\author[0009-0002-5858-585X]{Filip Matkovi\'{c}}
+\affiliation{Hvar Observatory, Faculty of Geodesy, University of Zagreb, Ka\v{c}i\'{c}eva 26, 10000 Zagreb, Croatia}
 
 \author[0000-0000-0000-0000]{Connor Yablonski}
 \affiliation{Department of Astronomy, University of Washington, Box 351580, Seattle, WA 98195, USA}
 
-\author[0000-0000-0000-0000]{Toni \v{S}ari\'{c}}
-\affiliation{University of Split, Croatia}
+\author[0000-0001-8731-8369]{Toni \v{S}ari\'{c}}
+\affiliation{University of Split - FESB, R. Bo\v{s}kovi\'{c}a 32, 21000 Split, Croatia}
 
 \author[0000-0000-0000-0000]{Tomislav Jurki\'{c}}
-\affiliation{University of Rijeka, Croatia}
+\affiliation{Faculty of Physics, University of Rijeka, Radmile Matej\v{c}i\'{c} 2, 51000 Rijeka, Croatia}
 
 \author[0000-0000-0000-0000]{Mario Juri\'{c}}
 \affiliation{Department of Astronomy and DiRAC Institute, University of Washington, Box 351580, Seattle, WA 98195, USA}
 
-\author[0000-0000-0000-0000]{Forgotten Collaborator}
-\affiliation{Somewhere}
+%\author[0000-0000-0000-0000]{Forgotten Collaborator}
+%\affiliation{Somewhere}
 
 
 %\correspondingauthor{Lovro Palaversa}
@@ -142,8 +143,8 @@ and pipeline that build on previous work and can handle LSST-sized datasets. Lik
 and priors are derived from TRILEGAL-based simulated LSST catalogs from Dal Tio et al. (2022). The computation speed is about 10 milliseconds per
 star on a single core for both optimized grid search and MCMC methods; we show in a companion paper by Mrakov\v{c}i\'{c} et al. how to utilize neural
 networks to accelerate this performance by an order of magnitude.  We validate our pipeline, named
-PhotoD (in analogy with photo-z, photometric redshifts of galaxies) using both simulated catalogs, and SDSS, DECam and Gaia data. 
-We intend to make LSST-based value-added PhotoD catalogs publicly
+PhotoD (in analogy with photo-z, photometric redshifts of galaxies)
+using both simulated catalogs, and SDSS, DECam and Gaia photometry. We intend to make LSST-based value-added PhotoD catalogs publicly
 available via Rubin Science Platform with every LSST Data Release. 
 \end{abstract}
 
@@ -158,8 +159,6 @@ available via Rubin Science Platform with every LSST Data Release.
 \include{intro}
 
 \include{methodology}
-
-%\include{methodologyZI}
 
 %\include{analysis}
 

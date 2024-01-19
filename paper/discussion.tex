@@ -5,3 +5,46 @@
 
 
 % Here we provide a layout of our method that simultaneously provides distance estimates as well as the three-dimensional estimation of the dust distribution. The distance modulus of a star can be estimated given its absolute and apparent magnitudes and the extinction along the line of sight. Therefore, given the observed colors it is necessary to simultaneously estimate the effective temperature, metallicity and extinction.  
+
+
+
+
+XXX  old text from methods 
+The best photometric estimators of metallicity are colors whose shorter-wavelength component includes the metal absorbtion bands at near-UV wavelengths, short of Balmer break (300 $\lessapprox\lambda$ [nm] $\lessapprox$ 400). Therefore, the LSST has a comparative advantage over the surveys lacking \textit{u}-band measurements, and could provide accurate distances within the range of 5-10\%. \magcom{A plot of model spectra, fixed, \textit{log(g)} and \textit{T\textsubscript{eff}}, several different metallicities?}
+
+
+Likelihood computations utilize MIST/Dartmouth isochrones
+and priors are derived from TRILEGAL-based simulated LSST catalogs from Dal Tio et al. (2022). The computation speed is about 10 milliseconds per
+star on a single core for both optimized grid search and MCMC methods; we show in a companion paper by Mrakov\v{c}i\'{c} et al. how to utilize neural
+networks to accelerate this performance by an order of magnitude.  We validate our pipeline, named
+PhotoD (in analogy with photo-z, photometric redshifts of galaxies) using both simulated catalogs, and SDSS, DECam and Gaia data. 
+We intend to make LSST-based value-added PhotoD catalogs publicly
+available via Rubin Science Platform with every LSST Data Release.
+
+
+In this paper we describe a method that will deliver LSST-based stellar distance estimations complementary to \textit{Gaia's} state-of-the-art trigonometric parallaxes and reach about 10 times further, to approximately 100 kpc. These results will be transformative for the studies of the Milky Way in general, and the stellar and the dark matter halo in particular as never before was there a survey that simultaneously observed roughly two thirds of the sky, to the co-added depth of \textit{r}$\approx$26 mag. 
+
+\magcom{A bit about the importance of the distance estimation in the MW, dust implications (for extragalactic science too).}
+
+There are a variety of astronomical methods to estimate distances to stars, ranging from direct geometric (trigonometric) methods for nearby stars to indirect methods based on astrophysics for more distant stars. 
+
+\magcom{Mention \cite{bailer-jones_estimating_2021}, \cite{gordon_panchromatic_2016}, \cite{green_measuring_2014,green_three-dimensional_2015,green_3d_2019}, \cite{juric_milky_2008} and \cite{lallement_3d_2014}, \cite{queiroz_starhorse_2018}}.
+
+Layout of the paper is...
+
+
+
+
+ assuming approximately 10 billion stars in the LSST stellar catalog as predicted by TRILEGAL, and a 100-core machine, a distance catalog could be produced in about 10 days (10 millisec/star). Input LSST photometry (with errors) and minimalistic auxiliary metadata  for 10 billion stars would amount to about 1 TB of data; the code outputs, including a covariance matrix of the three fitted parameters, would have approximately the same volume.
+
+
+ 
+
+ 
+ Thanks to the \textit{Vera C. Rubin} observatory's \textit{Legacy Survey of Space and Time} (LSST), for the first time in history, an astronomical catalog will contain more Milky Way stars than there are living people on Earth -- of the order 10-20 billion, depending on model assumptions. In order to map the Milky Way in three dimensions, distances to these stars must be accurately  estimated.
+
+
+
+
+
+ 
