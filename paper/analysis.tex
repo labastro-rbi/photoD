@@ -6,7 +6,83 @@
 
 
 
+
+\section{Implementation: Photo-D pipeline and Tests}
+
+optimized grid search, MCMC, refer to NN paper, also in Discussion
+
+Our fitting procedure is also executed on an adaptive grid, a coarse search over the parameter space is performed first in order to establish the layout of the manifold. However, care is taken that any possible local minima are not missed by appropriately adjusting the step size \magcom{how?}. The located maxima are then explored with a smaller step size (\magcom{adjusted how?}).
+
+In addition to the approach described here, we also tested Markov Chain Monte Carlo and neural network approaches that will be/are described in forthcoming/published papers.
+
+%Under the assumptions that the locus of the color-color diagram is representative of the stellar SEDs, that the shape of the extinction curve can be parametrized with a single parameter \RV
+
+%%% METHODOLOGY
+
+
+%Our method is basically brute-force fitting with some intelligent tricks leveraged to obtain faster execution that will be required for 10B LSST stars. 
+
+
+
+ XXX Green et al. (2014) used MCMC 
+
+
+% 2) statistics:
+
+
+
+The priors are established by partitioning the TRILEGAL galaxy model
+\citep{dal_tio_simulating_2022} in healpixels,
+and each of the pixel in one-magnitude wide bins in apparent
+magnitude.
+
+The model colors are then obtained from models based on SDSS results (\magcom{reference}), where the input for the models are the \Mr and the \feh obtained from TRILEGAL. Given the assumed extinction curve, these colors are then reddened up to the maximum reddening which is estimated from \cite{schlegel_maps_1998} (SFD98) maps. The latter upper limit is used in order to provide a realistic stop condition on the amount of extinction and reduce the processing time. This is usually a valid assumption because the SFD98 maps provide \textit{total} extinction along a line of sight. In order to account for the eventual underestimation in the SFD98 maps we increase the SFD98 extinctions by 20\%.
+
+
+
+% 3) code testing:
+
+\begin{figure*}[ht!]
+\plotone{qpBmeans_chiTest4_3D.png}
+\caption{Write caption: TRILEGAL mean values of input model params in umag vs. g-i }
+\label{fig:qpBmeans_chiTest4_3D.}
+\end{figure*}
+ 
+\begin{figure*}[ht!]
+\plotone{qpBcmd_chiTest4_3D_Mr.png}
+\caption{Write caption: performance for Mr vs. true Mr and FeH}
+\label{fig:qpBcmd_chiTest4_3D_Mr}
+\end{figure*}
+ 
+\begin{figure*}[ht!]
+\plotone{qpBcmd_chiTest4_3D_FeH.png}
+\caption{Write caption: performance for FeH vs. true Mr and FeH}
+\label{fig:qpBcmd_chiTest4_3D_FeH}
+\end{figure*}
+ 
+\begin{figure*}[ht!]
+\plotone{qpBcmd_chiTest4_3D_Ar.png}
+\caption{Write caption: performance for Ar vs. true Mr and FeH}
+\label{fig:qpBcmd_chiTest4_3D_Ar}
+\end{figure*}
+ 
+\begin{figure*}[ht!]
+\plotone{qpB_chiTest4_3D_Mr.png}
+\caption{Write caption: performance for Mr vs. estimated Mr and FeH}
+\label{fig:qpB_chiTest4_3D_Mr}
+\end{figure*}
+  
+
+% *** data-based comparisons ***
+% Stripe 82 vs. Gaia
+% Bulge BDSD sample?
+
+
+
+
+
+
 XXX moved from Methods, use when discussing 2-D posteriors...
 
 Another important degeneracy arises from the fact that even for a fixed \teff and \feh, the \logg and thus the luminosity are not uniquely determined by the colors: a degeneracy may exist between the giant branch and the main sequence as the colors constructed from \textit{ugrizy} bands are not sensitive to \logg. 
- 
+
