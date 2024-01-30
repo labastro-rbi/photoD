@@ -45,7 +45,7 @@ or in a probabilistic form
 Note that in practice the uncertainty of the observed magnitude, $r^{obs}$, is always significantly smaller than
 the width of $p(M_r + A_r)$ (at the bright end by an order of magnitude, $\sim$0.01 mag vs. $\sim$0.1 mag). 
 
-Therefore, $\vec{D}$ = ($r$, $\vec{c}$) and $\vec{\theta}$ = ($M_r$, $[Fe/H]$, $A_r$). Data $\vec{D}$ and
+\redcom{LP: "In summary", instead of "Therefore", or am I missing something? Equations could be moved to the top of the paragraph, this is somewhat repetitive.} Therefore, $\vec{D}$ = ($r$, $\vec{c}$) and $\vec{\theta}$ = ($M_r$, $[Fe/H]$, $A_r$). Data $\vec{D}$ and
 model parameters $\vec{\theta}$ are related via the Bayes theorem (see, e.g., Chapter 5 in \citealt{2020sdmm.book.....I}),
 \begin{equation}
   \label{eq:BayesFull}
@@ -71,17 +71,17 @@ The term $p(D|I)$ is the {\it probability of data}, or the prior predictive prob
 It provides proper normalization for the posterior  pdf and usually it is not explicitly computed
 when estimating model parameters: rather, $p(M,\vec{\theta}|D,I)$ for a given $M$
 is simply renormalized so that
-its integral over all model parameters $\vec{\theta}$ is unity. The integral of the prior $p(\vec{\theta}|M,I)$
+its integral over all model parameters $\vec{\theta}$ is unity. \redcom{LP: A zašto?} The integral of the prior $p(\vec{\theta}|M,I)$
 over all parameters should also be unity, but for the same reason, calculations of the posterior pdf are
 often done with an arbitrary normalization. An important exception is model selection discussed further
-below, where the correct normalization of the product $p(D|M,\vec{\theta},I) \, p(\vec{\theta}|M,I)$ is crucial.
+below, where the correct normalization of the product $p(D|M,\vec{\theta},I) \, p(\vec{\theta}|M,I)$ is crucial. \redcom{LP: OK, ovo mi baš nije bilo jasno...}
 
 
 
 \begin{figure*}[t!]
 \plotone{plot3diagsData.png}
 \caption{An illustration of multiple stellar populations. The red dots in the left panel show color-magnitude diagram for 841,000 stars from the SDSS Stripe 82 Standard Star Catalog
-(variable stars are excluded, \citealt{2021MNRAS.505.5941T}) that have Gaia matches within 0.15 arcsec (after correcting for proper motion using Gaia measurements). A subset of 415,000 stars with $r < 22$ and $u<22$ are overplotted as blue dots, and 409,000 of those that also have $0.2 < g-i < 3.5$ (dominated by main-sequence stars and red giants) are overplotted as cyan dots. Finally, 63,000 stars that have signal-to-noise ratio for Gaia’s parallax measurements of at least 20 are shown as green dots (these stars can be used for the calibration of luminosity-color relations). The same symbol color scheme is used in other two panels. The three yellow lines in the middle panel show stellar locus parametrization used by Green et al. (2014) for three values of metallicity (left to right): $[Fe/H] = -2, -1, 0$. In the right panel, the impact of metallicity on color-color tracks is negligible and all three are indistinguishable from each other. In the bottom of the middle panel, at $-0.5 < g-r < 0$, the three dark blue sequences correspond to (from left to right) He white dwarfs, H white dwarfs, and blue horizontal branch stars. The clouds of pale blue dots visible above the main stellar locus in the middle and right panels correspond to unresolved binary stars \citep{2004ApJ...615L.141S}.} \label{fig:3dataDiags}
+(variable stars (\redcom{LP: are QSO excluded too?  If yes then "stars" should be replaced with "sources".}) are excluded, \citealt{2021MNRAS.505.5941T}) that have Gaia matches within 0.15 arcsec (after correcting for proper motion using Gaia measurements). A subset of 415,000 stars with $r < 22$ and $u<22$ are overplotted as blue dots, and 409,000 of those that also have $0.2 < g-i < 3.5$ (dominated by main-sequence stars and red giants) are overplotted as cyan dots. Finally, 63,000 stars that have signal-to-noise ratio for Gaia’s parallax measurements of at least 20 are shown as green dots (these stars can be used for the calibration of luminosity-color relations). The same symbol color scheme is used in other two panels. The three yellow lines in the middle panel show stellar locus parametrization used by Green et al. (2014) for three values of metallicity (left to right): $[Fe/H] = -2, -1, 0$. In the right panel, the impact of metallicity on color-color tracks is negligible and all three are indistinguishable from each other. In the bottom of the middle panel, at $-0.5 < g-r < 0$, the three dark blue sequences correspond to (from left to right) He white dwarfs, H white dwarfs, and blue horizontal branch stars. The clouds of pale blue dots visible above the main stellar locus in the middle and right panels correspond to unresolved binary stars \citep{2004ApJ...615L.141S}.} \label{fig:3dataDiags}
 \end{figure*}
 
 
@@ -146,16 +146,16 @@ and red giants next, and then for white dwarfs, unresolved binary stars and BHB 
 \begin{figure*}[b!]
 \plotone{plot3HRdiags.png}
 \caption{The left panel shows SDSS-based empirical absolute magnitude vs. color parametrization for main-sequence stars and red giants.
-The symbols are color-coded by metallicity, ranging from $[Fe/H] = -2.5$ to 0 (blue to red). The three lines correspond to three values of
+The symbols \redcom{"ribbons"?} are color-coded by metallicity, ranging from $[Fe/H] = -2.5$ to 0 (blue to red). The three lines correspond to three values of
 metallicity: $[Fe/H] = -2, -1, 0$ (dot-dashed, solid and dashed, respectively). The middle panel shows a sample of 63,000 stars that have
 signal-to-noise ratio for Gaia’s parallax measurements of at least 20 (white dwarfs can be seen in the lower left corner; same sample is
-shown by green dots in Figure~\ref{fig:3HRdiags}). Their absolute magnitude are derived from parallax measurements. The dot-dashed,
+shown by green dots in Figure~\ref{fig:3HRdiags}). Their absolute magnitudes are derived from parallax measurements. The dot-dashed,
 solid and dashed black lines are the same as in the left panel. For comparison, the essentially identical yellow dotted lines were computed
-using eqs. A2 and A7 from Ivezi\'{c} et al. (2008). Note the discrepancy between these parametrizations and data for sub-giant stars ($M_r \sim 3-4$
-and $g-i \sim 0.8-1.1$). The right panel shows a sample of 415,000 stars with $r < 22$ and $u<22$ as red dots (shown by blue dots in Figure~\ref{fig:3HRdiags}), and 409,000 of those that also have  $0.2 < g-i < 3.5$ as cyan dots. Their absolute magnitudes were computed
+using eqs. A2 and A7 from Ivezi\'{c} et al. (2008). \redcom{very difficult to discern...} Note the discrepancy between these parametrizations and data for sub-giant stars ($M_r \sim 3-4$
+and $g-i \sim 0.8-1.1$). The right panel shows a sample of 415,000 stars with $r < 22$ and $u<22$ as red dots (shown by blue dots in Figure~\ref{fig:3dataDiags}(\redcom{corrected to Fig 1; was this the intention?}), and 409,000 of those that also have  $0.2 < g-i < 3.5$ as cyan dots. Their absolute magnitudes were computed
 using the so-called “photo-geometric” distances from Bailer-Jones et al. (2021). The dot-dashed, solid and dashed black lines are the
 same as in the left and middle panels. About 10,000 outliers (about 2.5\% of the full
-sample) seen at $g-i = 0.4$ and $Mr > 7$ are predominantly found at the faint end ($r>20$).}
+sample) seen at $g-i = 0.4$ and $Mr > 7$ are predominantly found at the faint end ($r>20$).(\redcom{There is some interesting structure in the right plot...but I don't get exactly što je pjesnik želio reći s ovim plotom?})}
 \label{fig:3HRdiags}
 \end{figure*}
 
@@ -176,7 +176,7 @@ that SDSS-based photometric distances and Gaia-based ``photo-geometric'' distanc
 for main-sequence stars are on the ``same scale''.  XXX ZI: provide numerical results for offsets! 
  
 We address all three problems by switching from the SDSS-based empirical isochrones that correspond to old
-populations to model-based isochrones that span a range of ages and a wider range of metallicities. 
+populations to model-based isochrones that span a range of ages and a wider range of metallicities \redcom{where the former fail to properly explain the observations?} 
  
 
 \subsubsection{Model-based Isochrones for Main-sequence Stars and Red Giants}
@@ -211,6 +211,7 @@ expected in SDSS and LSST catalogs (approximately $>$95\% but the fraction varie
 Nevertheless, we also explicitly account for a few additional populations: white dwarfs, unresolved binary stars and
 blue horizontal branch stars. 
 
+\redcom{Tu sam bio malo zbunjen: u zadnjem odlomku iz 2.2.1. piše: da se prebacimo na model-based izokrone; čitanjem 2.2.2. ispada da su modeli samo nadoštukani? }
 
 
 \begin{figure*}[b!]
@@ -221,7 +222,7 @@ blue horizontal branch stars.
   SDSS-based tracks (see the middle panel in Figure~\ref{fig:3HRdiags}) can be explained with tracks for old stars and
   intermediate-range metallicity. The sharp feature protruding from the main locus in the middle two panels corresponds
   to most luminous and evolved high-metallicity stars. 
-}
+(\redcom{Why is the row 3 funky?})}
 \label{fig:augmLocus}
 \end{figure*}
 
@@ -303,7 +304,7 @@ find that the scatter of $R_V$ around its mean value $R_V=3.1$ is very small. Fo
 empirical results from their Table 1: $C_m$ = (1.810, 1.400, 0.759, 0.561) in $(u, g, i, z)$, respectively ($C_r=1$
 by definition). This choice does not preclude the use of our framework to fit for $R_V$ as the fourth free
 model parameter in Galactic plane regions with very large $A_r$; we  can simply add multiple models
-with extincted colors generated using different values of $C_m$. 
+with extincted colors generated using different values of $C_m$. \redcom{If we are constraining $A_r$ from data that are fitted to the models, what does this loop look like...? For each LoS we fit different models and stop when some convergence criteria is satisfied? Is this better than taking a prior from TRILEGAL, or at the least using TRILEGAL to constrain the possible models? OK, only a small area is possibly affected by this but IIRC,in the central regions there are clumps so the results may look too "smooth".}
 
 In our implementation, constraints on $A_r$ for two nearby stars, even if they have similar distances,
 are independent. We note that one could use the so-called hierarchical Bayesian modeling  and specify prior
@@ -345,7 +346,7 @@ dust extinction maps. To account for potential map errors, we set the maximum al
 \begin{equation}
           A_r^{max} =  a \, A_r^{SFD} \, + \, b,
 \end{equation}
-and $a=1.3$, $b=0.1$. Therefore, $p(A_r) = 1/A_r^{max}$ for $0 \le A_r \le A_r^{max}$ and $p(A_r) = 0$ for $A_r > A_r^{max}$.
+and $a=1.3$, $b=0.1$. Therefore, $p(A_r) = 1/A_r^{max}$ for $0 \le A_r \le A_r^{max}$ and $p(A_r) = 0$ for $A_r > A_r^{max}$. \redcom{Why those exact numbers?}
 
 The prior distribution of stellar model parameters, $p(M_r, [Fe/H])$, depends on sky position and apparent
 magnitude (here $r$) due to the complex structure of the Milky Way. For example,  \cite{2014ApJ...783..114G}
