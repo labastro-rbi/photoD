@@ -6,7 +6,7 @@ from scipy.stats import norm
 from astroML.stats import binned_statistic_2d
 
 
-def plot3diagsBobAbel(df1, df2, df3, df4, L0, L1, L2, WD, WDMD, zoom=False):
+def plot3diagsBobAbel(df1, df2, df3, df4, L0, L1, L2, WD, WDMD, BHB, zoom=False):
 
     fig=plt.figure(2,figsize=(12,4))
     fig.subplots_adjust(wspace=0.2,hspace=0.2,top=0.97,bottom=0.1,left=0.09,right=0.95)
@@ -35,9 +35,11 @@ def plot3diagsBobAbel(df1, df2, df3, df4, L0, L1, L2, WD, WDMD, zoom=False):
     ax=fig.add_subplot(131)
     ax.scatter(df4['gi'], df4['Mr'], s=3.5, c='green') 
     if zoom:
-        ax.text(-1.8, 14, 'DA: yellow')
-        ax.text(-1.8, 14.8, 'DB: red')
-        ax.text(-1.8, 15.6, 'DC: cyan')
+        #ax.text(-1.8, 14, 'DA: yellow')
+        #ax.text(-1.8, 14.8, 'DB: red')
+        #ax.text(-1.8, 15.6, 'DC: cyan')
+        ax.text(-1.8, 14, 'H: yellow')
+        ax.text(-1.8, 14.8, 'He: cyan') 
     if (1):
         giGrid = np.linspace(0.2, 4.0, 300)
         Mr0 = getMr(giGrid, 0.0)
@@ -47,9 +49,9 @@ def plot3diagsBobAbel(df1, df2, df3, df4, L0, L1, L2, WD, WDMD, zoom=False):
         ax.plot(giGrid, Mr1, ls='dotted', c='yellow')
         ax.plot(giGrid, Mr2, ls='dotted', c='yellow')
     ax.set_xlim(-1.8,4.1)
-    ax.set_ylim(16.1, 1.0)
+    ax.set_ylim(16.1, 0.0)
     if zoom:
-        ax.set_xlim(-2.0,1.0)
+        ax.set_xlim(-2.0, 1.0)
         ax.set_ylim(16.1, 8.0)
        
     ax.set_xlabel('g-i')
@@ -62,7 +64,8 @@ def plot3diagsBobAbel(df1, df2, df3, df4, L0, L1, L2, WD, WDMD, zoom=False):
         ax.plot(WD['DCgr']+WD['DCri'], WD['Mr'], ls='--', c='cyan')
     if (zoom==False):
         ax.scatter(WDMD['DAd_gr']+WDMD['DAd_ri'], WDMD['DAd_Mr'], s=0.01, c='black')
-
+        # ax.scatter(BHB['gr']+BHB['ri'], BHB['Mr'], s=0.01, c='red')
+  
     
     ax=fig.add_subplot(132)
     if zoom:
@@ -78,6 +81,8 @@ def plot3diagsBobAbel(df1, df2, df3, df4, L0, L1, L2, WD, WDMD, zoom=False):
         ax.plot(WD['DBug'], WD['DBgr'], ls='-', c='black')
         ax.plot(WD['DBug'], WD['DBgr'], ls='--', c='red')
         ax.plot(WD['DCug'], WD['DCgr'], ls='--', c='cyan')
+        # ax.scatter(BHB['ug'], BHB['gr'], s=0.01, c='red')
+
     if (zoom==False):
         ax.scatter(WDMD['DAd_ug'], WDMD['DAd_gr'], s=0.01, c='black')
  
@@ -97,6 +102,8 @@ def plot3diagsBobAbel(df1, df2, df3, df4, L0, L1, L2, WD, WDMD, zoom=False):
         ax.plot(WD['DBgr'], WD['DBri'], ls='-', c='black')
         ax.plot(WD['DBgr'], WD['DBri'], ls='--', c='red')
         ax.plot(WD['DCgr'], WD['DCri'], ls='--', c='cyan')
+        # ax.scatter(BHB['gr'], BHB['ri'], s=0.01, c='red')
+
     if (zoom==False):
         ax.scatter(WDMD['DAd_gr'], WDMD['DAd_ri'], s=0.01, c='black')
         
