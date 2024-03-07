@@ -49,7 +49,7 @@ def plot3diagsBobAbel(df1, df2, df3, df4, L0, L1, L2, WD, WDMD, BHB, zoom=False)
         ax.plot(giGrid, Mr1, ls='dotted', c='yellow')
         ax.plot(giGrid, Mr2, ls='dotted', c='yellow')
     ax.set_xlim(-1.8,4.1)
-    ax.set_ylim(16.1, 0.0)
+    ax.set_ylim(16.1, 1.0)
     if zoom:
         ax.set_xlim(-2.0, 1.0)
         ax.set_ylim(16.1, 8.0)
