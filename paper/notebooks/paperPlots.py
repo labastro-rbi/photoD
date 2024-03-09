@@ -110,9 +110,10 @@ def plot3diagsBobAbel(df1, df2, df3, df4, L0, L1, L2, WD, WDMD, BHB, zoom=False)
     plt.tight_layout()
     if zoom:
         plt.savefig('plot3diagsBAzoom.png')
+        print('made plot: plot3diagsBAzoom.png')
     else:
         plt.savefig('plot3diagsBA.png')
-    print('made plot: plot3diagsBA.png')
+        print('made plot: plot3diagsBA.png')
     plt.show() 
     plt.close("all")
     return
