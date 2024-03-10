@@ -25,7 +25,7 @@ from getpass import getpass
 # 21 22 23 24 25 26 27 He, NS, BH
 def makeQueryString(minRA, maxRA, minDec, maxDec, umagMax=99.99):
     query1 = """
-    SELECT ra, dec, gall, galb, gc, logage, mass, label, logg, m_h, av, mu0, umag, gmag, rmag, imag, zmag, ymag
+    SELECT ra, dec, gall, galb, gc, logage, mass, label, logg, m_h, av, mu0, umag, gmag, rmag, imag, zmag, ymag, nest4096
     FROM lsst_sim.simdr2
     WHERE"""
     query2 = f" {minRA} < ra and ra < {maxRA}"
