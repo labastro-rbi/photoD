@@ -286,8 +286,8 @@ def readAllDSED(DSEDdatadir):
     for age in ages:
         DSEDFeHlist = []
         for DSED in DSEDlist:
-            if (age > 5.0):
-                DSED = fixLocus10Gyr(DSED)
+            # if (age > 5.0):
+                # DSED = fixLocus10Gyr(DSED)
             DSEDFeHlist.append(DSED[DSED['ageGyr']==age])
         DSEDiso.append(DSEDFeHlist)             
 
@@ -390,9 +390,10 @@ def DSEDlist2locusAugmented(DSEDlist):
         locus.rename_column('col0', 'Mr')     
         locus.rename_column('col1', 'FeH')     
         for c in colors:
-            locus[c] = interpolateColorMr(d['Mr'], d[c], MrGrid)
+            locus[c], distanceAlongLocus = interpolateColorMr(d['Mr'], d[c], MrGrid)
+            locus['Dalong_'+c] = distanceAlongLocus 
             # locus[c] = interpolateColorMrLinear(d['Mr'], d[c], MrGrid)
-        locus['gi'] = locus['gr'] + locus['ri'] 
+        locus['gi'] = locus['gr'] + locus['ri']
         if (i==0):
             DSEDlocus = locus
         else:
