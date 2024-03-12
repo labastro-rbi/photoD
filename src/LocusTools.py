@@ -911,7 +911,7 @@ def LSSTsimsLocus(fixForStripe82=True, datafile=""):
 
 # similar to LSSTsimsLocus, but with tLoc running variable 
 
-def readSDSSDSEDlocus(datafile, fixForStripe82=True): 
+def readSDSSDSEDlocus(datafile, fixForStripe82=False): 
         ## Mr, as function of [Fe/H], along the SDSS/LSST stellar 
         ## for more details see the file header
         colnames = ['tLoc', 'Mr', 'FeH', 'ug', 'gr', 'ri', 'iz']
