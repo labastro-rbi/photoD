@@ -470,6 +470,71 @@ def compare2isochrones(dataDF, isoDF1, isoDF2, alpha1=0.05, alpha2=0.8, title=""
 
 
 
+def compare2isochrones2(dataDF, isoDF1, isoDF2, alpha1=0.05, alpha2=0.8, title="", plotname='compare2isochrones.png'):
+
+    fig,ax = plt.subplots(3,2,figsize=(12,12))
+
+    plt.rcParams.update({'font.size': 12})
+    plt.rc('axes', labelsize=14)    
+
+    ax[0,0].scatter(dataDF['gi'], dataDF['Mr'], s=0.1, c='black')
+    ax[0,0].scatter(isoDF1['gi'], isoDF1['Mr'], s=0.1, c=isoDF1['Mr'], cmap=plt.cm.jet, alpha=alpha1)
+    ax[0,0].set_xlim(-1.0, 4.2)
+    ax[0,0].set_ylim(16.5, -3.2)
+    ax[0,0].set_xlabel('g-i')
+    ax[0,0].set_ylabel('Mr')
+
+    ax[0,1].scatter(dataDF['gi'], dataDF['Mr'], s=0.1, c='black')
+    ax[0,1].scatter(isoDF2['gi'], isoDF2['Mr'], s=0.1, c=isoDF2['Mr'], cmap=plt.cm.jet, alpha=alpha2)
+    ax[0,1].set_xlim(-1.0, 4.2)
+    ax[0,1].set_ylim(16.5, -3.2)
+    ax[0,1].set_xlabel('g-i')
+    ax[0,1].set_ylabel('Mr')
+    ax[0,0].set_title(title, loc='center')
+
+    ax[1,0].scatter(dataDF['ug'], dataDF['gr'], s=0.1, c='black')
+    if (1):
+        flag = (isoDF1['Mr']>0.5)
+        isoDF1x = isoDF1[flag]
+        ax[1,0].scatter(isoDF1x['ug'], isoDF1x['gr'], s=0.1, c=isoDF1x['Mr'], cmap=plt.cm.jet, alpha=alpha1)
+    else:
+        ax[1,0].scatter(isoDF1['ug'], isoDF1['gr'], s=0.1, c=isoDF1['Mr'], cmap=plt.cm.jet, alpha=alpha1)
+    ax[1,0].set_xlim(-1.0,4.2)
+    ax[1,0].set_ylim(-0.5, 2.2)
+    ax[1,0].set_xlabel('u-g')
+    ax[1,0].set_ylabel('g-r')
+
+    ax[1,1].scatter(dataDF['ug'], dataDF['gr'], s=0.1, c='black')
+    ax[1,1].scatter(isoDF2['ug'], isoDF2['gr'], s=0.1, c=isoDF2['Mr'], cmap=plt.cm.jet, alpha=alpha2)
+    ax[1,1].set_xlim(-1.0,4.2)
+    ax[1,1].set_ylim(-0.5, 2.2)
+    ax[1,1].set_xlabel('u-g')
+    ax[1,1].set_ylabel('g-r')
+
+    ax[2,0].scatter(dataDF['gr'], dataDF['ri'], s=0.1, c='black')
+    ax[2,0].scatter(isoDF1['gr'], isoDF1['ri'], s=0.1, c=isoDF1['Mr'], cmap=plt.cm.jet, alpha=alpha1)
+    ax[2,0].set_xlim(-0.5, 2.2)
+    ax[2,0].set_ylim(-0.5, 2.4)
+    ax[2,0].set_xlabel('g-r')
+    ax[2,0].set_ylabel('r-i')
+
+    ax[2,1].scatter(dataDF['gr'], dataDF['ri'], s=0.1, c='black')
+    ax[2,1].scatter(isoDF2['gr'], isoDF2['ri'], s=0.1, c=isoDF2['Mr'], cmap=plt.cm.jet, alpha=alpha2)
+    ax[2,1].set_xlim(-0.5, 2.2)
+    ax[2,1].set_ylim(-0.5, 2.4)
+    ax[2,1].set_xlabel('g-r')
+    ax[2,1].set_ylabel('r-i')
+
+    plt.tight_layout()
+    plt.savefig(plotname)
+    print('made plot:', plotname)
+    plt.show() 
+    plt.close("all")
+    return
+
+
+
+
 
 
 def compare2isochronesColorMr(dataDF, isoDF1, isoDF2, alpha1=0.05, alpha2=0.8, title="", plotname='compare2isochronesColorMr.png'):
@@ -549,6 +614,126 @@ def compare2isochronesColorMr(dataDF, isoDF1, isoDF2, alpha1=0.05, alpha2=0.8, t
     ax[4,1].set_xlabel('Mr')
     ax[4,1].set_ylabel('g-i')
 
+    plt.tight_layout()
+    plt.savefig(plotname)
+    print('made plot:', plotname)
+    plt.show() 
+    plt.close("all")
+    return
+
+
+ 
+
+
+
+def compare2isochronesColorMrAlongLocus(df1, df2, alpha=0.8, title="", plotname='noname.png', tMin = -10, tMax = 272):
+
+    fig,ax = plt.subplots(7,2,figsize=(12,12))
+
+    def plotPanel(xP, yP, df, xName, yName, cName, xMin, xMax, yMin, yMax, xLabel, yLabel, alpha):
+        ax[xP,yP].scatter(df[xName], df[yName], s=0.3, c=df[cName], cmap=plt.cm.jet, alpha=alpha)
+        ax[xP,yP].set_xlim(xMin, xMax)
+        ax[xP,yP].set_ylim(yMin, yMax)
+        ax[xP,yP].set_xlabel(xLabel)
+        ax[xP,yP].set_ylabel(yLabel)
+
+    # derivatives dMr/dtLoc
+    def dMdt(df):
+        dMdt = 0*df['Mr']
+        for i in range(1,len(dMdt)):
+            dMdt[i] = (df['Mr'][i]-df['Mr'][i-1])/(df['tLoc'][i]-df['tLoc'][i-1])      
+        dMdt[0] = dMdt[1]
+        return dMdt
+
+    tLocMin = tMin
+    tLocMax = tMax
+    ax[0,0].set_title(title)
+
+    plotPanel(0, 0, df1, 'tLoc', 'ug', 'FeH', tLocMin, tLocMax, -0.7, 4.2, 'tLocus', 'u-g', alpha) 
+    plotPanel(0, 1, df2, 'tLoc', 'ug', 'FeH', tLocMin, tLocMax, -0.7, 4.2, 'tLocus', 'u-g', alpha) 
+
+    plotPanel(1, 0, df1, 'tLoc', 'gr', 'FeH', tLocMin, tLocMax, -0.9, 2.2, 'tLocus', 'g-r', alpha) 
+    plotPanel(1, 1, df2, 'tLoc', 'gr', 'FeH', tLocMin, tLocMax, -0.9, 2.2, 'tLocus', 'g-r', alpha) 
+     
+    plotPanel(2, 0, df1, 'tLoc', 'ri', 'FeH', tLocMin, tLocMax, -0.7, 2.9, 'tLocus', 'r-i', alpha) 
+    plotPanel(2, 1, df2, 'tLoc', 'ri', 'FeH', tLocMin, tLocMax, -0.7, 2.9, 'tLocus', 'r-i', alpha) 
+
+    plotPanel(3, 0, df1, 'tLoc', 'iz', 'FeH', tLocMin, tLocMax, -0.7, 2.0, 'tLocus', 'i-z', alpha) 
+    plotPanel(3, 1, df2, 'tLoc', 'iz', 'FeH', tLocMin, tLocMax, -0.7, 2.0, 'tLocus', 'i-z', alpha) 
+
+    plotPanel(4, 0, df1, 'tLoc', 'gi', 'FeH', tLocMin, tLocMax, -1.7, 5.1, 'tLocus', 'g-i', alpha) 
+    plotPanel(4, 1, df2, 'tLoc', 'gi', 'FeH', tLocMin, tLocMax, -1.7, 5.1, 'tLocus', 'g-i', alpha) 
+  
+    plotPanel(5, 0, df1, 'tLoc', 'Mr', 'FeH', tLocMin, tLocMax, 20.1, -5.1, 'tLocus', 'Mr', alpha) 
+    plotPanel(5, 1, df2, 'tLoc', 'Mr', 'FeH', tLocMin, tLocMax, 20.1, -5.1, 'tLocus', 'Mr', alpha) 
+
+    # derivatives dMr/dtLoc
+    if (1):
+        df1['dMdt'] = dMdt(df1)
+        df2['dMdt'] = dMdt(df2)
+        plotPanel(6, 0, df1, 'tLoc', 'dMdt', 'FeH', tLocMin, tLocMax, -10.7, 10.3, 'tLocus', 'dMr/dtLoc', alpha) 
+        plotPanel(6, 1, df2, 'tLoc', 'dMdt', 'FeH', tLocMin, tLocMax, -10.7, 10.3, 'tLocus', 'dMr/dtLoc', alpha) 
+
+    
+    plt.tight_layout()
+    plt.savefig(plotname)
+    print('made plot:', plotname)
+    plt.show() 
+    plt.close("all")
+    return
+
+
+
+
+
+def compare2isochronesColorMrAlongLocus2(df1, df2, alpha=0.8, title="", plotname='compare2isochronesColorMrAlongLocus.png'):
+
+    fig,ax = plt.subplots(7,2,figsize=(12,12))
+
+    def plotPanel(xP, yP, df, xName, yName, cName, xMin, xMax, yMin, yMax, xLabel, yLabel, alpha):
+        ax[xP,yP].scatter(df[xName], df[yName], s=0.3, c=df[cName], cmap=plt.cm.jet, alpha=alpha)
+        ax[xP,yP].set_xlim(xMin, xMax)
+        ax[xP,yP].set_ylim(yMin, yMax)
+        ax[xP,yP].set_xlabel(xLabel)
+        ax[xP,yP].set_ylabel(yLabel)
+
+    # derivatives dMr/dtLoc
+    def dMdt(df):
+        dMdt = 0*df['Mr']
+        for i in range(1,len(dMdt)):
+            dMdt[i] = (df['Mr'][i]-df['Mr'][i-1])/(df['tLoc'][i]-df['tLoc'][i-1])      
+        dMdt[0] = dMdt[1]
+        return dMdt
+
+    tLocMin = -10
+    tLocMax = 272
+    ax[0,0].set_title(title)
+
+    plotPanel(0, 0, df1, 'tLoc', 'ug', 'Mr', tLocMin, tLocMax, -0.7, 4.2, 'tLocus', 'u-g', alpha) 
+    plotPanel(0, 1, df2, 'tLoc', 'ug', 'Mr', tLocMin, tLocMax, -0.7, 4.2, 'tLocus', 'u-g', alpha) 
+
+    plotPanel(1, 0, df1, 'tLoc', 'gr', 'Mr', tLocMin, tLocMax, -0.9, 2.2, 'tLocus', 'g-r', alpha) 
+    plotPanel(1, 1, df2, 'tLoc', 'gr', 'Mr', tLocMin, tLocMax, -0.9, 2.2, 'tLocus', 'g-r', alpha) 
+     
+    plotPanel(2, 0, df1, 'tLoc', 'ri', 'Mr', tLocMin, tLocMax, -0.7, 2.9, 'tLocus', 'r-i', alpha) 
+    plotPanel(2, 1, df2, 'tLoc', 'ri', 'Mr', tLocMin, tLocMax, -0.7, 2.9, 'tLocus', 'r-i', alpha) 
+
+    plotPanel(3, 0, df1, 'tLoc', 'iz', 'Mr', tLocMin, tLocMax, -0.7, 2.0, 'tLocus', 'i-z', alpha) 
+    plotPanel(3, 1, df2, 'tLoc', 'iz', 'Mr', tLocMin, tLocMax, -0.7, 2.0, 'tLocus', 'i-z', alpha) 
+
+    plotPanel(4, 0, df1, 'tLoc', 'gi', 'Mr', tLocMin, tLocMax, -1.7, 4.1, 'tLocus', 'g-i', alpha) 
+    plotPanel(4, 1, df2, 'tLoc', 'gi', 'Mr', tLocMin, tLocMax, -1.7, 4.1, 'tLocus', 'g-i', alpha) 
+  
+    plotPanel(5, 0, df1, 'tLoc', 'Mr', 'Mr', tLocMin, tLocMax, 15.1, -5.1, 'tLocus', 'Mr', alpha) 
+    plotPanel(5, 1, df2, 'tLoc', 'Mr', 'Mr', tLocMin, tLocMax, 15.1, -5.1, 'tLocus', 'Mr', alpha) 
+
+    # derivatives dMr/dtLoc
+    df1['dMdt'] = dMdt(df1)
+    df2['dMdt'] = dMdt(df2)
+    plotPanel(6, 0, df1, 'tLoc', 'dMdt', 'Mr', tLocMin, tLocMax, -0.7, 0.3, 'tLocus', 'dMr/dtLoc', alpha) 
+    plotPanel(6, 1, df2, 'tLoc', 'dMdt', 'Mr', tLocMin, tLocMax, -0.7, 0.3, 'tLocus', 'dMr/dtLoc', alpha) 
+
+    
     plt.tight_layout()
     plt.savefig(plotname)
     print('made plot:', plotname)

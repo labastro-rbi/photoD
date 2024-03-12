@@ -366,12 +366,12 @@ def DSEDlist2locus(DSEDlist):
     # given a list of DSED tables (e.g. 31 for different FeH values)
     # make a table with (Mr, FeH, {colors}), such as SDSS master locus
     d = DSEDlist[0]
-    sublist = (d['Mr'], d['FeH'], d['ug'], d['gr'], d['ri'], d['iz'], d['gi'])
+    sublist = (d['tLoc'], d['Mr'], d['FeH'], d['ug'], d['gr'], d['ri'], d['iz'], d['gi'])
     DSEDlocus = Table(sublist, copy=True)
     # loop 
     for i in range(1,len(DSEDlist)):
         d = DSEDlist[i]
-        sublist = (d['Mr'], d['FeH'], d['ug'], d['gr'], d['ri'], d['iz'], d['gi'])
+        sublist = (d['tLoc'], d['Mr'], d['FeH'], d['ug'], d['gr'], d['ri'], d['iz'], d['gi'])
         locus = Table(sublist, copy=True)
         DSEDlocus = vstack([DSEDlocus, locus])
     return DSEDlocus 
@@ -390,8 +390,7 @@ def DSEDlist2locusAugmented(DSEDlist):
         locus.rename_column('col0', 'Mr')     
         locus.rename_column('col1', 'FeH')     
         for c in colors:
-            locus[c], distanceAlongLocus = interpolateColorMr(d['Mr'], d[c], MrGrid)
-            locus['Dalong_'+c] = distanceAlongLocus 
+            locus[c] = interpolateColorMr(d['Mr'], d[c], MrGrid)
             # locus[c] = interpolateColorMrLinear(d['Mr'], d[c], MrGrid)
         locus['gi'] = locus['gr'] + locus['ri']
         if (i==0):
@@ -496,15 +495,19 @@ def getDSEDages(DSEDdatadir, DSEDfile):
 def assignAges(DSED, ages):
     k = 0
     DSED['ageGyr'] = DSED['logTeff']
+    DSED['tLoc'] = DSED['logTeff']
     for i in range(0, len(DSED)):
         if i==0: 
             DSED['ageGyr'][i] = ages[k]
+            DSED['tLoc'][i] = 0.0
         else:
             if DSED['EEP'][i]>DSED['EEP'][i-1]:
                 DSED['ageGyr'][i] = ages[k]
+                DSED['tLoc'][i] =  DSED['tLoc'][i-1] + 1.0 
             else:
                 k += 1
                 DSED['ageGyr'][i] = ages[k]
+                DSED['tLoc'][i] = 0.0
 
 def PARSEClocus(datafile, masterLocusData=""): 
         ## STELLAR ISOCHRONES IN THE SDSS-2MASS PHOTOMETRIC SYSTEM
@@ -548,6 +551,7 @@ def interpolateLocusGrid(inLocus, masterLocus):
         return interpLocus
 
 
+# first version, will become obsolete after augmentSDSSlocusWithIsochrone fully commissioned
 def augmentSDSSlocus(locusSDSS, locusDSED, MrStitch=5.0):
 
     # copy input locus
@@ -578,6 +582,42 @@ def augmentSDSSlocus(locusSDSS, locusDSED, MrStitch=5.0):
                 # NB correct for SDSS colors at Mr=MrStitch for SDSS locus
                 locusSDSSaug[c][j] = locusDSED[c][j] - locusDSED[c][jMr] + locusSDSSaug[c][jMr]
     return locusSDSSaug
+
+
+# new version, incorporates tLoc variable (distance along the locus)
+# "stitch" Mr < MrStich part of locusDSED to locusSDSS (and match colors) 
+def augmentSDSSlocusWithIsochrone(locusSDSS, locusDSED, MrStitch=5.0):
+
+    Ldsed = locusDSED
+    locusSDSS['tLoc'] = locusSDSS['Mr']
+    FeHGrid = locusSDSS['FeH']
+    FeH1d = np.sort(np.unique(FeHGrid))
+    colors = ['ug', 'gr', 'ri', 'iz', 'gi']
+    # loop over all FeH values
+    for i in range(0,len(FeH1d)):
+        LsdssFeH = locusSDSS[(locusSDSS['FeH']>FeH1d[i]-0.01)&(locusSDSS['FeH']<FeH1d[i]+0.01)]
+        LsdssFeH.reverse()
+        LdsedFeH = Ldsed[(Ldsed['FeH']>FeH1d[i]-0.01)&(Ldsed['FeH']<FeH1d[i]+0.01)]
+        if (len(LdsedFeH)>0):
+            ldsedRG = LdsedFeH[LdsedFeH['Mr'] < MrStitch]
+            ldsedRG['tLoc'] = MrStitch - 0.01*(ldsedRG['tLoc'] - ldsedRG['tLoc'][0] + 1)
+            d = ldsedRG
+            sublist = (d['tLoc'], d['Mr'], d['FeH'], d['ug'], d['gr'], d['ri'], d['iz'], d['gi'])
+            locusRG = Table(sublist, copy=True) 
+            locusSDSSms = LsdssFeH[LsdssFeH['Mr'] >= MrStitch]
+            d = locusSDSSms
+            sublist = (d['tLoc'], d['Mr'], d['FeH'], d['ug'], d['gr'], d['ri'], d['iz'], d['gi'])
+            locusMS = Table(sublist, copy=True)
+            for c in colors:
+                # correct for color offset 
+                locusRG[c] = locusRG[c] - locusRG[c][0] + locusMS[c][-1]
+            StitchedLocusFeH = vstack([locusMS, locusRG])
+            if (i==0):
+                StitchedLocus = StitchedLocusFeH
+            else:
+                StitchedLocus = vstack([StitchedLocus, StitchedLocusFeH])
+    return StitchedLocus
+ 
 
 
 def smoothLocus(locus):
@@ -866,6 +906,59 @@ def LSSTsimsLocus(fixForStripe82=True, datafile=""):
             LSSTlocus['iz'] += off0*LSSTlocus['ri']+off2*LSSTlocus['ri']**2+off5*LSSTlocus['ri']**5
             LSSTlocus['iz'] += offZ*(Z0+LSSTlocus['FeH'])
         return LSSTlocus
+
+
+
+# similar to LSSTsimsLocus, but with tLoc running variable 
+
+def readSDSSDSEDlocus(datafile, fixForStripe82=True): 
+        ## Mr, as function of [Fe/H], along the SDSS/LSST stellar 
+        ## for more details see the file header
+        colnames = ['tLoc', 'Mr', 'FeH', 'ug', 'gr', 'ri', 'iz']
+        LSSTlocus = Table.read(datafile, format='ascii', names=colnames)
+        LSSTlocus['gi'] = LSSTlocus['gr'] + LSSTlocus['ri']
+        if (fixForStripe82):
+            print('Fixing input Mr-FeH-colors grid to agree with the SDSS v4.2 catalog')
+            # for SDSS v4.2 catalog, see: http://faculty.washington.edu/ivezic/sdss/catalogs/stripe82.html
+            # implement empirical corrections for u-g and i-z colors to make it better agree with the SDSS v4.2 catalog
+            # fix u-g: slightly redder for progressively redder stars and fixed for gi>giMax
+            ugFix = LSSTlocus['ug']+0.02*(2+LSSTlocus['FeH'])*LSSTlocus['gi']
+            giMax = 1.8
+            ugMax = 2.53 + 0.13*(1+LSSTlocus['FeH'])
+            LSSTlocus['ug'] = np.where(LSSTlocus['gi']>giMax, ugMax , ugFix)
+            # fix i-z color: small offsets as functions of r-i and [Fe/H]
+            off0 = 0.08
+            off2 = -0.09
+            off5 = 0.008
+            offZ = 0.01
+            Z0 = 2.5
+            LSSTlocus['iz'] += off0*LSSTlocus['ri']+off2*LSSTlocus['ri']**2+off5*LSSTlocus['ri']**5
+            LSSTlocus['iz'] += offZ*(Z0+LSSTlocus['FeH'])
+        return LSSTlocus
+
+
+def dumpSDSSDSEDlocus(df, header, outfilename):
+
+    fout = open(outfilename, "w")
+    fout.write(header + '\n')
+    fout.write("   tLoc    Mr    FeH     ug      gr      ri      iz   \n")
+    for i in range(0,len(df)):
+        r1 = df['tLoc'][i]
+        r2 = df['Mr'][i]
+        r3 = df['FeH'][i]
+        r4 = df['ug'][i]
+        r5 = df['gr'][i] 
+        r6 = df['ri'][i] 
+        r7 = df['iz'][i] 
+        s = str("%7.2f" % r1) + str("%7.2f" % r2) + str("%6.2f" % r3) + str("%8.3f" % r4) + str("%8.3f" % r5)
+        s = s + str("%8.3f" % r6) + str("%8.3f" % r7) + "\n"
+        fout.write(s)             
+    fout.close() 
+    print('made catalog:', outfilename)
+    return 
+
+
+
 
 def BHBlocus(): 
         ## Mr, [Fe/H] and SDSS/LSST colors for BHB stars (Sirko+2004)
