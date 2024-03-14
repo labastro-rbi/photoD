@@ -304,6 +304,7 @@ def show3Flat2Dmaps(Z1, Z2, Z3, md, xLab, yLab, x0=-99, y0=-99, logScale=False, 
     im1 = Z1.reshape((Xpts, Ypts))
     im2 = Z2.reshape((Xpts, Ypts))
     im3 = Z3.reshape((Xpts, Ypts))
+    print('pts:', Xpts, Ypts)
     
     showTrue = False
     if ((x0>-99)&(y0>-99)):

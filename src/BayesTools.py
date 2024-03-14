@@ -184,7 +184,7 @@ def dumpPriorMaps(sample, fileRootname, show2Dmap=True, verbose=True, NrowMax=20
  
 
         
-def readPriors(rootname, locusData):
+def readPriors(rootname, locusData, MrColumn='Mr'):
     # TRILEGAL-based maps were pre-computed for this range...
     bc = getBayesConstants()
     rmagMin = bc['rmagMin']
@@ -204,7 +204,7 @@ def readPriors(rootname, locusData):
         points = np.array((X.flatten(), Y.flatten())).T
         values = Zval.flatten()
         # actual (linear) interpolation
-        priorGrid[rind] = griddata(points, values, (locusData['FeH'], locusData['Mr']), method='linear')
+        priorGrid[rind] = griddata(points, values, (locusData['FeH'], locusData[MrColumn]), method='linear', fill_value=0)
     return priorGrid
  
         
@@ -711,7 +711,8 @@ def make3Dlikelihood(likeGrid):
     return np.moveaxis(likeGrid, [0, 1, 2], [2, 0, 1]) 
 
  
-def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList, priorsRootName, outfile, iStart=0, iEnd=-1, myStars=[], verbose=False):
+def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList, priorsRootName, outfile, \
+                                iStart=0, iEnd=-1, myStars=[], verbose=False, MrColumn='Mr'):
 
     # this is for prototype testing, set to False for production
     # if set to True, it works only for the star i = 100592  
@@ -722,7 +723,7 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
         iEnd = np.size(catalog)
      
     # read maps with priors (and interpolate on the Mr-FeH grid given by locusData, which is same for all stars)
-    priorGrid = readPriors(rootname=priorsRootName, locusData=locusData)
+    priorGrid = readPriors(rootname=priorsRootName, locusData=locusData, MrColumn=MrColumn)
     # get prior map indices using observed r band mags
     priorind = getPriorMapIndex(catalog['rmag'])
               
@@ -807,13 +808,16 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
             if (ArMax < ArGridSmallMax):
                 ArGrid = ArGridList['ArSmall']
                 locus3D = locus3DList['ArSmall']
+                # print('selected ArSmall locus3D with', len(locus3D), ' elements')
             else:
                 if (ArMax < ArGridMediumMax):
                     ArGrid = ArGridList['ArMedium']
                     locus3D = locus3DList['ArMedium']
+                    # print('selected ArMedium locus3D with', len(locus3D), ' elements')
                 else:
                     ArGrid = ArGridList['ArLarge']
                     locus3D = locus3DList['ArLarge']
+                    # print('selected ArLarge locus3D with', len(locus3D), ' elements')
             # subselect from chosen 3D locus (simply to have fewer Ar points and thus faster execution) 
             Ar1d = ArGrid[ArGrid<=ArMax]
  
@@ -839,14 +843,18 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
                 ################### this works, but 2-pass implemention TBW 
             else:
                 # simply limit by maximum plausible extinction Ar
+                # print('trying to select from locus3D with', len(locus3D), ' elements, ArMax=', ArMax)
                 locus3Dok = locus3D[locus3D['Ar']<=ArMax]
-
+                # print('selected locus3Dok with', len(locus3Dok), ' elements, from locus3D with', len(locus3D))
                 
             ### compute chi2 map using provided 3D model locus (locus3Dok)
+            # return i, fitColors, reddCoeffs, catalog, locus3Dok, ArCoeff, FeH1d, Mr1d, Ar1d
             chi2map = lt.getPhotoDchi2map3D(i, fitColors, reddCoeffs, catalog, locus3Dok, ArCoeff, masterLocus=True)
             ## likelihood map
             likeGrid = np.exp(-0.5*chi2map)
-            likeCube = likeGrid.reshape(np.size(FeH1d), np.size(Mr1d), np.size(Ar1d)) 
+            # print('likeGrid:', likeGrid.shape)
+            likeCube = likeGrid.reshape(np.size(FeH1d), np.size(Mr1d), np.size(Ar1d))
+            # print('likeCube:', likeCube.shape)
         #############################################################################################
         
         if (Ar1d.size>1):
@@ -864,13 +872,22 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
             priorGrid = readPriors(rootname=priorsRootName, locusData=smallLocus)
             # get prior map indices using observed r band mags
             priorind = getPriorMapIndex(catalog['rmag'])
-        # and proceed...
-        prior2d = priorGrid[priorind[i]].reshape(np.size(FeH1d), np.size(Mr1d))
-        priorCube = make3Dprior(prior2d, np.size(Ar1d))
 
+            
+        prior2d = priorGrid[priorind[i]].reshape(np.size(FeH1d), np.size(Mr1d))
+        # print('prior2d', prior2d.shape)
+        # print('    min/max:', np.min(prior2d), np.max(prior2d))
+        priorCube = make3Dprior(prior2d, np.size(Ar1d))
+        # print('priorCube', priorCube.shape)
+        
         # posterior data cube
+        ## hack until above prior interpolation is implemented 
+        # priorCube = 1 + 0*likeCube
+        ### 
         postCube = priorCube * likeCube
-    
+
+        # return likeCube, priorCube, postCube, locus3Dok0
+        
         ## process to get expectation values and uncertainties
         # marginalize and get stats
         margpostMr = {}
@@ -914,7 +931,7 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
 
     # store results 
     writeBayesEstimates(catalog, outfile, iStart, iEnd, do3D=True)
-    return postCube, Mr1d, FeH1d, Ar1d
+    return
 
 
 def writeBayesEstimates(catalog, outfile, iStart, iEnd, do3D=False):

@@ -586,32 +586,52 @@ def augmentSDSSlocus(locusSDSS, locusDSED, MrStitch=5.0):
 
 # new version, incorporates tLoc variable (distance along the locus)
 # "stitch" Mr < MrStich part of locusDSED to locusSDSS (and match colors) 
-def augmentSDSSlocusWithIsochrone(locusSDSS, locusDSED, MrStitch=5.0):
+def augmentSDSSlocusWithIsochrone(locusSDSS, locusDSED, MrStitch=4.0):
 
     Ldsed = locusDSED
     locusSDSS['tLoc'] = locusSDSS['Mr']
     FeHGrid = locusSDSS['FeH']
     FeH1d = np.sort(np.unique(FeHGrid))
     colors = ['ug', 'gr', 'ri', 'iz', 'gi']
+    tLocMinAll = 1.40  # see comments below
+    kmax = int((MrStitch-tLocMinAll)/0.01)
     # loop over all FeH values
     for i in range(0,len(FeH1d)):
-        LsdssFeH = locusSDSS[(locusSDSS['FeH']>FeH1d[i]-0.01)&(locusSDSS['FeH']<FeH1d[i]+0.01)]
-        LsdssFeH.reverse()
-        LdsedFeH = Ldsed[(Ldsed['FeH']>FeH1d[i]-0.01)&(Ldsed['FeH']<FeH1d[i]+0.01)]
+        thisFeH = FeH1d[i]
+        LsdssFeH = locusSDSS[(locusSDSS['FeH']>thisFeH-0.01)&(locusSDSS['FeH']<thisFeH+0.01)]
+        LdsedFeH = Ldsed[(Ldsed['FeH']>thisFeH-0.01)&(Ldsed['FeH']<thisFeH+0.01)]
+        LdsedFeH.reverse()
         if (len(LdsedFeH)>0):
+            # take the part brighter than MrStitch
             ldsedRG = LdsedFeH[LdsedFeH['Mr'] < MrStitch]
-            ldsedRG['tLoc'] = MrStitch - 0.01*(ldsedRG['tLoc'] - ldsedRG['tLoc'][0] + 1)
+            lenRG = len(ldsedRG)
+            # redefine tLoc coordinate to have the same step as Mr in locusSDSS (horrible hack!)
+            for k in range(0, lenRG):
+                ldsedRG['tLoc'][lenRG - 1 - k] = MrStitch - 0.01*(k+1)
+            ldsedRG.reverse()
+            ## hack: different DSED isochrones have different number of points above MrStitch
+            ## we want them to be uniform length to make downstream code simpler
+            ## minimum tLoc is 1.47 for 10 Myr isochrone; we'll pad all to tLocMinAll = 1.40
+            tLocMin = np.min(ldsedRG['tLoc'])
+            lastRow = ldsedRG[-1]
+            for k in range(lenRG, kmax):
+                ldsedRG.add_row(lastRow)
+                ldsedRG['tLoc'][-1] = tLocMin - (k-lenRG+1)*0.01
+            ldsedRG.reverse()
             d = ldsedRG
             sublist = (d['tLoc'], d['Mr'], d['FeH'], d['ug'], d['gr'], d['ri'], d['iz'], d['gi'])
-            locusRG = Table(sublist, copy=True) 
+            locusRG = Table(sublist, copy=True)
+            ## and now fainter than MrStitch from the original SDSS locus
             locusSDSSms = LsdssFeH[LsdssFeH['Mr'] >= MrStitch]
             d = locusSDSSms
             sublist = (d['tLoc'], d['Mr'], d['FeH'], d['ug'], d['gr'], d['ri'], d['iz'], d['gi'])
             locusMS = Table(sublist, copy=True)
             for c in colors:
-                # correct for color offset 
-                locusRG[c] = locusRG[c] - locusRG[c][0] + locusMS[c][-1]
-            StitchedLocusFeH = vstack([locusMS, locusRG])
+                # correct DSED colors for color offset relative to the SDSS locus at Mr=MrStitch 
+                locusRG[c] = locusRG[c] - locusRG[c][-1] + locusMS[c][0]
+            # and joint the two final tables 
+            StitchedLocusFeH = vstack([locusRG, locusMS])
+            # and add table for this FeH to the master table 
             if (i==0):
                 StitchedLocus = StitchedLocusFeH
             else:
@@ -1163,7 +1183,7 @@ def getPhotoDchi2map(i, colors, data2fit, locus):
 ## similar to getPhotoDchi2map, but adding the 3rd dimension (Ar) to model (locus) colors
 ## the upper limit on Ar comes from an external Ar (e.g. ArSFD for obs, or used Ar in sims)
 ## NB the grid for Ar is defined here 
-def getPhotoDchi2map3D(i, colors, colorReddCoeffs, data2fit, locus, ArCoeff, masterLocus=False):
+def getPhotoDchi2map3D(i, colors, colorReddCoeffs, data2fit, locus, ArCoeff, masterLocus=True):
 
         # first adopt, or generate, 3D model locus
         if masterLocus:
@@ -1204,7 +1224,7 @@ def getPhotoDchi2map3D(i, colors, colorReddCoeffs, data2fit, locus, ArCoeff, mas
             return ArGrid, getLocusChi2colors(colors, locus3D, ObsColor, ObsColorErr)
 
 
-def get3DmodelList(locusData, fitColors, agressive=False):
+def get3DmodelList(locusData, fitColors, agressive=False, DSED=False):
 
     if agressive:
         ## AGRESSIVE 
@@ -1226,7 +1246,7 @@ def get3DmodelList(locusData, fitColors, agressive=False):
     AGList.append(ArGridLarge)
 
     ### call the workhorse 
-    L3Dlist = make3DlocusList(locusData, fitColors, AGList)
+    L3Dlist = make3DlocusList(locusData, fitColors, AGList, DSED=DSED)
     
     # repack
     ArGridList = {}
@@ -1242,7 +1262,7 @@ def get3DmodelList(locusData, fitColors, agressive=False):
 
 
 ### make 3Dlocus list for provided list of Ar grids
-def make3DlocusList(locusData, fitColors, ArGridList):
+def make3DlocusList(locusData, fitColors, ArGridList, DSED=False):
 
     # color corrections due to dust reddening 
     # for finding extinction, too
@@ -1272,7 +1292,10 @@ def make3DlocusList(locusData, fitColors, ArGridList):
         colCorr = {}
         for color in fitColors:
             colCorr[color] = ArGrid * reddCoeffs[color]
-        locus3D = make3DlocusFast(locus3D0, ArGrid, fitColors, colCorr, FeH1d, Mr1d)
+        if DSED:
+            locus3D = make3DlocusFastDSED(locus3D0, ArGrid, fitColors, colCorr, FeH1d, Mr1d)
+        else:
+            locus3D = make3DlocusFast(locus3D0, ArGrid, fitColors, colCorr, FeH1d, Mr1d)
         locus3DList.append(locus3D)
     return locus3DList 
 
@@ -1294,6 +1317,20 @@ def make3DlocusFast(locus3D0, ArGrid, colors, colorCorrection, FeH1d, Mr1d):
                 locus3D[i,j,k][4] = locus3D[i,j,k][4] + colorCorrection['ri'][k] 
                 locus3D[i,j,k][5] = locus3D[i,j,k][5] + colorCorrection['iz'][k] 
                 locus3D[i,j,k][8] = ArGrid[k]   
+    return locus3D 
+
+def make3DlocusFastDSED(locus3D0, ArGrid, colors, colorCorrection, FeH1d, Mr1d):
+
+    N3rd = np.size(ArGrid)
+    locus3D = np.repeat(locus3D0[:, :, np.newaxis], N3rd, axis=2)
+    for i in range(0,np.size(FeH1d)):
+        for j in range(0,np.size(Mr1d)):
+            for k in range(0,np.size(ArGrid)):
+                locus3D[i,j,k][3] = locus3D[i,j,k][3] + colorCorrection['ug'][k] 
+                locus3D[i,j,k][4] = locus3D[i,j,k][4] + colorCorrection['gr'][k] 
+                locus3D[i,j,k][5] = locus3D[i,j,k][5] + colorCorrection['ri'][k] 
+                locus3D[i,j,k][6] = locus3D[i,j,k][6] + colorCorrection['iz'][k] 
+                locus3D[i,j,k][9] = ArGrid[k]   
     return locus3D 
 
 
