@@ -4,6 +4,9 @@ import pylab as plt
 import scipy.stats as stats
 from scipy.stats import norm
 from astroML.stats import binned_statistic_2d
+import LocusTools as lt 
+import BayesTools as bt 
+import PlotTools as pt
 
 
 def plot3diagsBobAbel(df1, df2, df3, df4, L0, L1, L2, WD, WDMD, BHB, zoom=False):
@@ -404,6 +407,7 @@ def show4diagsDSED(age, ages, FeHlist, DSEDiso, FeHlocus3vals, Lcomparison, data
     showRIZ(dataDF, Lcomparison, DSEDs)
     return
 
+ 
 
 
 def compare2isochrones(dataDF, isoDF1, isoDF2, alpha1=0.05, alpha2=0.8, title="", plotname='compare2isochrones.png'):
@@ -740,3 +744,427 @@ def compare2isochronesColorMrAlongLocus2(df1, df2, alpha=0.8, title="", plotname
     plt.show() 
     plt.close("all")
     return
+
+
+
+
+
+def compare2isochronesColorDistance(df1, df2, alpha=0.8, title="", plotname='compare2isochronesColorMrAlongLocus.png'):
+
+    fig,ax = plt.subplots(7,2,figsize=(12,12))
+
+    def plotPanel(xP, yP, df, xName, yName, cName, xMin, xMax, yMin, yMax, xLabel, yLabel, alpha):
+        ax[xP,yP].scatter(df[xName], df[yName], s=0.3, c=df[cName], cmap=plt.cm.jet, alpha=alpha)
+        ax[xP,yP].set_xlim(xMin, xMax)
+        ax[xP,yP].set_ylim(yMin, yMax)
+        ax[xP,yP].set_xlabel(xLabel)
+        ax[xP,yP].set_ylabel(yLabel)
+
+#   tLoc    Mr    FeH     ug      gr      ri      iz   
+#   3.46   3.00 -1.50   0.959   0.316   0.116   0.030
+    ugT = 0.959
+    grT = 0.316
+    riT = 0.116
+    izT = 0.030 
+
+    df = df1
+    df['colorDist'] = np.sqrt((df['ug']-ugT)**2 + (df['gr']-grT)**2 + (df['ri']-riT)**2 + (df['iz']-izT)**2)
+    df = df2
+    df['colorDist'] = np.sqrt((df['ug']-ugT)**2 + (df['gr']-grT)**2 + (df['ri']-riT)**2 + (df['iz']-izT)**2)
+    
+    tLocMin = 0
+    tLocMax = 17
+    ax[0,0].set_title(title)
+
+    plotPanel(0, 0, df1, 'tLoc', 'ug', 'colorDist', tLocMin, tLocMax, -0.2, 4.4, 'tLocus', 'u-g', alpha) 
+    plotPanel(0, 1, df2, 'tLoc', 'ug', 'colorDist', tLocMin, tLocMax, -0.2, 4.4, 'tLocus', 'u-g', alpha) 
+
+    plotPanel(1, 0, df1, 'tLoc', 'gr', 'colorDist', tLocMin, tLocMax, -0.2, 2.2, 'tLocus', 'g-r', alpha) 
+    plotPanel(1, 1, df2, 'tLoc', 'gr', 'colorDist', tLocMin, tLocMax, -0.2, 2.2, 'tLocus', 'g-r', alpha) 
+     
+    plotPanel(2, 0, df1, 'tLoc', 'ri', 'colorDist', tLocMin, tLocMax, -0.3, 2.9, 'tLocus', 'r-i', alpha) 
+    plotPanel(2, 1, df2, 'tLoc', 'ri', 'colorDist', tLocMin, tLocMax, -0.3, 2.9, 'tLocus', 'r-i', alpha) 
+
+    plotPanel(3, 0, df1, 'tLoc', 'iz', 'colorDist', tLocMin, tLocMax, -0.3, 2.0, 'tLocus', 'i-z', alpha) 
+    plotPanel(3, 1, df2, 'tLoc', 'iz', 'colorDist', tLocMin, tLocMax, -0.3, 2.0, 'tLocus', 'i-z', alpha) 
+
+    plotPanel(4, 0, df1, 'tLoc', 'gi', 'colorDist', tLocMin, tLocMax, -0.7, 4.4, 'tLocus', 'g-i', alpha) 
+    plotPanel(4, 1, df2, 'tLoc', 'gi', 'colorDist', tLocMin, tLocMax, -0.7, 4.4, 'tLocus', 'g-i', alpha) 
+  
+    plotPanel(5, 0, df1, 'Mr', 'colorDist', 'colorDist', -4, 10, 0, 0.1, 'Mr', 'CD', alpha) 
+    plotPanel(5, 1, df2, 'Mr', 'colorDist', 'colorDist', -4, 10, 0, 0.8, 'Mr', 'CD', alpha) 
+
+    plotPanel(6, 0, df1, 'tLoc', 'colorDist', 'FeH', tLocMin, tLocMax, 0, 0.1, 'tLocus', 'CD', alpha) 
+    plotPanel(6, 1, df2, 'tLoc', 'colorDist', 'FeH', tLocMin, tLocMax, 0, 0.8, 'tLocus', 'CD', alpha) 
+
+    
+    plt.tight_layout()
+    plt.savefig(plotname)
+    print('made plot:', plotname)
+    plt.show() 
+    plt.close("all")
+    return
+
+
+# compute closest distance between the two locii, as well as corresponding dMr and dFeH 
+def getCD(df1, df2):
+    colors = ['ug', 'gr', 'ri', 'iz']
+    df1['CD'] = 0*df1['ug']
+    df1['CDdMr'] = 0*df1['ug']
+    df1['CDdFeH'] = 0*df1['ug']
+    for i in range(0,len(df1)):
+        CD = 0
+        for c in colors:
+            CD += (df2[c]-df1[c][i])**2
+        df1['CD'][i] = np.sqrt(np.min(CD))
+        df1['CDdMr'][i] = df2['Mr'][np.argmin(CD)] - df1['Mr'][i]
+        df1['CDdFeH'][i] = df2['FeH'][np.argmin(CD)] - df1['FeH'][i] 
+
+
+        
+
+def plotRGdegeneracy(df, alpha=0.8, title="", plotname='RGdegeneracy.png'):
+
+    fig, ax = plt.subplots(1,3,figsize=(10,3))
+
+    def plotPanel(nPanel, df, xName, yName, cName, xMin, xMax, yMin, yMax, xLabel, yLabel, alpha):
+        #ax[nPanel].plot(df[xName], df[yName])
+        ax[nPanel].scatter(df[xName], df[yName], s=1.3, c=df[cName], cmap=plt.cm.jet, alpha=alpha)
+        ax[nPanel].set_xlim(xMin, xMax)
+        ax[nPanel].set_ylim(yMin, yMax)
+        ax[nPanel].set_xlabel(xLabel)
+        ax[nPanel].set_ylabel(yLabel)
+ 
+    MrMin = 0.5
+    MrMax = 4.0
+    ax[0].set_title(title)
+
+    plotPanel(0, df, 'Mr', 'CD', 'FeH', MrMin, MrMax, 0.0, 0.03, 'Mr', 'min. color distance', alpha) 
+    plotPanel(1, df, 'Mr', 'CDdMr', 'FeH', MrMin, MrMax, 0.0, 5.0, 'Mr', 'error in Mr', alpha) 
+    plotPanel(2, df, 'Mr', 'CDdFeH', 'FeH', MrMin, MrMax, -0.2, 0.8, 'Mr', 'error in [Fe/H]', alpha) 
+   
+    plt.tight_layout()
+    plt.savefig(plotname)
+    print('made plot:', plotname)
+    plt.show() 
+    plt.close("all")
+    return
+
+
+
+###  analyze Gaia-Stripe82 sample
+
+### test old photoFeH/photoMr:
+#  give it a sample definition and analyze a set of quantities:
+#   1) 0.2<g-r<0.6
+#      generate photoFeH for ugShift, then generate dFeH and photoMr and
+#         compare to MrPi0 for piSNR>10: vs. piSNR and umag, gi, photoFeH
+#         compare to MrPho0 vs. umag, gi, photoFeH
+#   2) all, umag < 21
+#      generate photoFeH for ugShift, then generate photoMr and
+#         compare to MrPho0 vs. gi
+
+
+
+def analyzeGaiaStripe82(df, ugShift=0.0, piSNRmin=10):
+
+    ### definitions of performance quantities 
+    # first photoFeH with ugShift=0
+    df['photoFeH0'] = lt.photoFeH(df['ug0'], df['gr0'])  
+    # and then with provided ugShift
+    df['photoFeH'] = lt.photoFeH(df['ug0'] + ugShift, df['gr0'])  
+    # and photoMr
+    df['photoMr0'] = lt.getMr(df['gi0'], df['photoFeH0'])
+    df['photoMr'] = lt.getMr(df['gi0'], df['photoFeH'])
+    df['dFeH'] = df['photoFeH0'] - df['FeHEst'] 
+    df['dMrBayes'] = df['MrEst'] - df['photoMr0'] 
+
+    ### selection of subsamples 
+    # select bright blue stars
+    B = df[(df['gr0']>0.2)&(df['gr0']<0.6)&(df['u_mMed']<21)]
+    print('from', len(df), 'stars, selected', len(B), 'with 0.2<g-r<0.6 and u<21')
+    # and now select parallax sample
+    Pi = B[(B['piSNR']>piSNRmin)&(B['MrPi0']>4)]
+    print('from', len(B), 'stars, selected', len(Pi), 'with piSNR>', piSNRmin, 'and MrPi>4')
+    
+    ### # performance analysis
+    # 1) Pi sample
+    Pi['dMr0'] = Pi['MrPi0'] - Pi['photoMr0'] 
+    Pi['dMr'] = Pi['MrPi0'] - Pi['photoMr'] 
+    Pi['dMrBayes2'] = Pi['MrEst'] - Pi['MrPi0']
+    print(' ')
+    print('Pi sample:')
+    print('agreement Bayes FeH with photom FeH:', bt.getMedianSigG(bt.basicStats(Pi, 'dFeH'))) 
+    print('agreement photom Mr with MrPi0:', bt.getMedianSigG(bt.basicStats(Pi, 'dMr0'))) 
+    print('agreement photom Mr with Bayes Mr:', bt.getMedianSigG(bt.basicStats(Pi, 'dMrBayes'))) 
+    print('agreement MrPi0 with Bayes Mr:', bt.getMedianSigG(bt.basicStats(Pi, 'dMrBayes2'))) 
+    #print('agreement with MrPi0, using ugShift=', ugShift, ':', bt.getMedianSigG(bt.basicStats(Pi, 'dMr'))) 
+
+    # 2) B sample
+    B['dMr'] = B['MrPho0'] - B['photoMr0'] 
+    B['dMrBayes2'] =  B['MrEst'] - B['MrPho0']
+    print(' ')
+    print('B sample:')
+    print('agreement Bayes FeH with photmo FeH:', bt.getMedianSigG(bt.basicStats(B, 'dFeH'))) 
+    print('agreement photom Mr with MrPho0:', bt.getMedianSigG(bt.basicStats(B, 'dMr'))) 
+    print('agreement photom Mr with Bayes Mr:', bt.getMedianSigG(bt.basicStats(B, 'dMrBayes'))) 
+    print('agreement MrPi0 with Bayes Mr:', bt.getMedianSigG(bt.basicStats(B, 'dMrBayes2'))) 
+   
+
+    ### plots
+    # 1) 4-panel plot (1) of dMr0 from Pi sample vs. umag, piSNR, gi, photoFeH0 
+    # 2) 4-panel plot (2) of dMr from B sample vs. umag, ug, gi, photoFeH0 
+    return B, Pi
+
+def gaiaStripe82plot2(df, title="", plotname='gaiaStripe82plot2.png'):
+
+    fig,ax = plt.subplots(2,2,figsize=(8,8))
+    alpha = 0.9 
+    plt.rcParams.update({'font.size': 14})
+    plt.rc('axes', labelsize=18)
+
+    def plotBinnedMedians(i, j, x, y, xMin, xMax, Nbin):
+        xBin, nPts, medianBin, sigGbin = lt.fitMedians(x, y, xMin, xMax, Nbin) 
+        ax[i,j].scatter(xBin, medianBin, s=40, c='red')
+        ax[i,j].plot(xBin, medianBin+sigGbin*np.sqrt(nPts), c='red')
+        ax[i,j].plot(xBin, medianBin-sigGbin*np.sqrt(nPts), c='red')
+        ax[i,j].plot([xMin, xMax], [0,0], c='yellow')
+
+    symbSize = 0.01
+    
+    ax[0,0].scatter(df['u_mMed'], df['dMr'], s=symbSize, c=df['MrPho0'], cmap=plt.cm.jet, alpha=alpha)
+    ax[0,0].set_xlim(15, 21.2)
+    ax[0,0].set_ylim(-1.0, 1.0)
+    ax[0,0].set_xlabel('u mag')
+    ax[0,0].set_ylabel('MrPho - photoMr')
+    plotBinnedMedians(0, 0, df['u_mMed'], df['dMr'], 16, 21, 15)
+    
+    ax[0,1].scatter(df['ug0'], df['dMr'], s=symbSize, c=df['MrPho0'], cmap=plt.cm.jet, alpha=alpha)
+    ax[0,1].set_xlim(0.6, 2.0)
+    ax[0,1].set_ylim(-1.0, 1.0)
+    ax[0,1].set_xlabel('u-g')
+    ax[0,1].set_ylabel('MrPho - photoMr')
+    plotBinnedMedians(0, 1, df['ug0'], df['dMr'], 0.8, 1.8, 10)
+
+    ax[1,0].scatter(df['gr0'], df['dMr'], s=symbSize, c=df['MrPho0'], cmap=plt.cm.jet, alpha=alpha)
+    ax[1,0].set_xlim(0.15, 0.65)
+    ax[1,0].set_ylim(-1.0, 1.0)
+    ax[1,0].set_xlabel('g-r')
+    ax[1,0].set_ylabel('MrPho - photoMr')
+    plotBinnedMedians(1, 0, df['gr0'], df['dMr'], 0.20, 0.6, 8)
+
+    ax[1,1].scatter(df['photoFeH0'], df['dMr'], s=symbSize, c=df['MrPho0'], cmap=plt.cm.jet, alpha=alpha)
+    ax[1,1].set_xlim(-2.2, 0.2)
+    ax[1,1].set_ylim(-1.0, 1.0)
+    ax[1,1].set_xlabel('photo [Fe/H]')
+    ax[1,1].set_ylabel('MrPho - photoMr')
+    plotBinnedMedians(1, 1, df['photoFeH0'], df['dMr'], -2.0, 0.0, 8)
+
+    plt.tight_layout()
+    plt.savefig(plotname)
+    print('made plot:', plotname)
+    plt.show() 
+    plt.close("all")
+    return
+
+
+    
+
+def gaiaStripe82plot1(df, title="", plotname='gaiaStripe82plot1.png'):
+
+    fig,ax = plt.subplots(2,2,figsize=(8,8))
+    alpha = 0.9 
+    plt.rcParams.update({'font.size': 14})
+    plt.rc('axes', labelsize=18)
+
+    def plotBinnedMedians(i, j, x, y, xMin, xMax, Nbin):
+        xBin, nPts, medianBin, sigGbin = lt.fitMedians(x, y, xMin, xMax, Nbin) 
+        ax[i,j].scatter(xBin, medianBin, s=40, c='red')
+        ax[i,j].plot(xBin, medianBin+sigGbin*np.sqrt(nPts), c='red')
+        ax[i,j].plot(xBin, medianBin-sigGbin*np.sqrt(nPts), c='red')
+        ax[i,j].plot([xMin, xMax], [0,0], c='yellow')   
+
+        
+    ax[0,0].scatter(df['u_mMed'], df['dMr0'], s=0.3, c=df['MrPi0'], cmap=plt.cm.jet, alpha=alpha)
+    ax[0,0].set_xlim(15.0, 20.0)
+    ax[0,0].set_ylim(-1.0, 1.0)
+    ax[0,0].set_xlabel('u mag')
+    ax[0,0].set_ylabel('MrGeo - photoMr')
+    plotBinnedMedians(0, 0, df['u_mMed'], df['dMr0'], 16, 19, 12)
+    
+    ax[0,1].scatter(df['piSNR'], df['dMr0'], s=0.3, c=df['MrPi0'], cmap=plt.cm.jet, alpha=alpha)
+    ax[0,1].set_xlim(0.0, 100.0)
+    ax[0,1].set_ylim(-1.0, 1.0)
+    ax[0,1].set_xlabel('parallax SNR')
+    ax[0,1].set_ylabel('MrGeo - photoMr')
+    plotBinnedMedians(0, 1, df['piSNR'], df['dMr0'], 10, 90, 8)
+
+    ax[1,0].scatter(df['gr0'], df['dMr0'], s=0.3, c=df['MrPi0'], cmap=plt.cm.jet, alpha=alpha)
+    ax[1,0].set_xlim(0.15, 0.65)
+    ax[1,0].set_ylim(-1.0, 1.0)
+    ax[1,0].set_xlabel('g-r')
+    ax[1,0].set_ylabel('MrGeo - photoMr')
+    plotBinnedMedians(1, 0, df['gr0'], df['dMr0'], 0.25, 0.6, 7)
+
+    ax[1,1].scatter(df['photoFeH0'], df['dMr0'], s=0.3, c=df['MrPi0'], cmap=plt.cm.jet, alpha=alpha)
+    ax[1,1].set_xlim(-2.2, 0.2)
+    ax[1,1].set_ylim(-1.0, 1.0)
+    ax[1,1].set_xlabel('photo [Fe/H]')
+    ax[1,1].set_ylabel('MrGeo - photoMr')
+    plotBinnedMedians(1, 1, df['photoFeH0'], df['dMr0'], -2.0, 0.0, 8)
+
+    plt.tight_layout()
+    plt.savefig(plotname)
+    print('made plot:', plotname)
+    plt.show() 
+    plt.close("all")
+    return
+
+
+
+def gaiaStripe82plot2(df, title="", plotname='gaiaStripe82plot2.png'):
+
+    fig,ax = plt.subplots(2,2,figsize=(8,8))
+    alpha = 0.9 
+    plt.rcParams.update({'font.size': 14})
+    plt.rc('axes', labelsize=18)
+
+    def plotBinnedMedians(i, j, x, y, xMin, xMax, Nbin):
+        xBin, nPts, medianBin, sigGbin = lt.fitMedians(x, y, xMin, xMax, Nbin) 
+        ax[i,j].scatter(xBin, medianBin, s=40, c='red')
+        ax[i,j].plot(xBin, medianBin+sigGbin*np.sqrt(nPts), c='red')
+        ax[i,j].plot(xBin, medianBin-sigGbin*np.sqrt(nPts), c='red')
+        ax[i,j].plot([xMin, xMax], [0,0], c='yellow')
+
+    symbSize = 0.01
+    
+    ax[0,0].scatter(df['u_mMed'], df['dMr'], s=symbSize, c=df['MrPho0'], cmap=plt.cm.jet, alpha=alpha)
+    ax[0,0].set_xlim(15, 21.2)
+    ax[0,0].set_ylim(-1.0, 1.0)
+    ax[0,0].set_xlabel('u mag')
+    ax[0,0].set_ylabel('MrPho - photoMr')
+    plotBinnedMedians(0, 0, df['u_mMed'], df['dMr'], 16, 21, 15)
+    
+    ax[0,1].scatter(df['ug0'], df['dMr'], s=symbSize, c=df['MrPho0'], cmap=plt.cm.jet, alpha=alpha)
+    ax[0,1].set_xlim(0.6, 2.0)
+    ax[0,1].set_ylim(-1.0, 1.0)
+    ax[0,1].set_xlabel('u-g')
+    ax[0,1].set_ylabel('MrPho - photoMr')
+    plotBinnedMedians(0, 1, df['ug0'], df['dMr'], 0.8, 1.8, 10)
+
+    ax[1,0].scatter(df['gr0'], df['dMr'], s=symbSize, c=df['MrPho0'], cmap=plt.cm.jet, alpha=alpha)
+    ax[1,0].set_xlim(0.15, 0.65)
+    ax[1,0].set_ylim(-1.0, 1.0)
+    ax[1,0].set_xlabel('g-r')
+    ax[1,0].set_ylabel('MrPho - photoMr')
+    plotBinnedMedians(1, 0, df['gr0'], df['dMr'], 0.20, 0.6, 8)
+
+    ax[1,1].scatter(df['photoFeH0'], df['dMr'], s=symbSize, c=df['MrPho0'], cmap=plt.cm.jet, alpha=alpha)
+    ax[1,1].set_xlim(-2.2, 0.2)
+    ax[1,1].set_ylim(-1.0, 1.0)
+    ax[1,1].set_xlabel('photo [Fe/H]')
+    ax[1,1].set_ylabel('MrPho - photoMr')
+    plotBinnedMedians(1, 1, df['photoFeH0'], df['dMr'], -2.0, 0.0, 8)
+
+    feh = np.linspace(-2.2, 0.2, 220)
+    x = (-1.2-feh)/0.1 - 0.5
+    fit = 0.8*(1/(1+np.exp(-x)) - 0.5)
+    ax[1,1].plot(feh, fit, c='cyan')
+
+    
+    plt.tight_layout()
+    plt.savefig(plotname)
+    print('made plot:', plotname)
+    plt.show() 
+    plt.close("all")
+    return
+
+
+
+
+def gaiaStripe82plot3(df, title="", plotname='gaiaStripe82plot3.png'):
+
+    fig,ax = plt.subplots(2,2,figsize=(8,8))
+    alpha = 0.9 
+    plt.rcParams.update({'font.size': 14})
+    plt.rc('axes', labelsize=18)
+
+    def plotBinnedMedians(i, j, x, y, xMin, xMax, Nbin):
+        xBin, nPts, medianBin, sigGbin = lt.fitMedians(x, y, xMin, xMax, Nbin) 
+        ax[i,j].scatter(xBin, medianBin, s=40, c='red')
+        ax[i,j].plot(xBin, medianBin+sigGbin*np.sqrt(nPts), c='red')
+        ax[i,j].plot(xBin, medianBin-sigGbin*np.sqrt(nPts), c='red')
+        ax[i,j].plot([xMin, xMax], [0,0], c='yellow')
+
+    symbSize = 0.01
+    
+    ax[0,0].scatter(df['u_mMed'], df['dMr'], s=symbSize, c=df['MrPho0'], cmap=plt.cm.jet, alpha=alpha)
+    ax[0,0].set_xlim(15, 21.2)
+    ax[0,0].set_ylim(-2.0, 2.0)
+    ax[0,0].set_xlabel('u mag')
+    ax[0,0].set_ylabel('MrPho - Bayes Mr')
+    plotBinnedMedians(0, 0, df['u_mMed'], df['dMr'], 16, 21, 15)
+    
+    ax[0,1].scatter(df['ug0'], df['dMr'], s=symbSize, c=df['MrPho0'], cmap=plt.cm.jet, alpha=alpha)
+    ax[0,1].set_xlim(0.6, 2.8)
+    ax[0,1].set_ylim(-2.0, 2.0)
+    ax[0,1].set_xlabel('u-g')
+    ax[0,1].set_ylabel('MrPho - Bayes Mr')
+    plotBinnedMedians(0, 1, df['ug0'], df['dMr'], 0.8, 2.7, 19)
+
+    ax[1,0].scatter(df['gi0'], df['dMr'], s=symbSize, c=df['MrPho0'], cmap=plt.cm.jet, alpha=alpha)
+    ax[1,0].set_xlim(0.15, 2.65)
+    ax[1,0].set_ylim(-2.0, 2.0)
+    ax[1,0].set_xlabel('g-i')
+    ax[1,0].set_ylabel('MrPho - Bayes Mr')
+    plotBinnedMedians(1, 0, df['gi0'], df['dMr'], 0.20, 2.5, 23)
+
+    ax[1,1].scatter(df['FeHEst'], df['dMr'], s=symbSize, c=df['MrPho0'], cmap=plt.cm.jet, alpha=alpha)
+    ax[1,1].set_xlim(-2.5, 0.5)
+    ax[1,1].set_ylim(-2.0, 2.0)
+    ax[1,1].set_xlabel('Bayes [Fe/H]')
+    ax[1,1].set_ylabel('MrPho - Bayes Mr')
+    plotBinnedMedians(1, 1, df['FeHEst'], df['dMr'], -2.0, 0.0, 8)
+
+    feh = np.linspace(-2.2, 0.2, 220)
+    x = (-1.2-feh)/0.1 - 0.5
+    fit = 0.8*(1/(1+np.exp(-x)) - 0.5)
+    ax[1,1].plot(feh, fit, c='cyan')
+    
+    plt.tight_layout()
+    plt.savefig(plotname)
+    print('made plot:', plotname)
+    plt.show() 
+    plt.close("all")
+    return
+
+
+          
+
+
+def testBayesBSphotoGaiaStripe82(df):
+
+    # FeH: Bayes vs. photo
+    df['photoFeH'] = lt.photoFeH(df['ug0'], df['gr0'])  
+    df['dBphotoFeH'] = df['FeHEst'] - df['photoFeH']
+    print('agreement between Bayes and photo FeH:', bt.getMedianSigG(bt.basicStats(df, 'dBphotoFeH'))) 
+
+    # Mr: MrPi0 vs. photo with Bayes FeH 
+    df['MrPiBayesFeH'] = lt.getMr(df['gi0'], df['FeHEst'])
+    df['dMrPiBayesFeH'] = df['MrPi0'] - df['MrPiBayesFeH']
+    print('agreement between MrPi0 and photo Mr with Bayes FeH:', bt.getMedianSigG(bt.basicStats(df, 'dMrPiBayesFeH'))) 
+
+    # Mr: MrPho0 vs. photo with Bayes FeH 
+    df['MrPhoBayesFeH'] = lt.getMr(df['gi0'], df['FeHEst'])
+    df['dMrPhoBayesFeH'] = df['MrPho0'] - df['MrPhoBayesFeH']
+    print('agreement between MrPho0 and photo Mr with Bayes FeH:', bt.getMedianSigG(bt.basicStats(df, 'dMrPhoBayesFeH'))) 
+
+    # Mr: Bayes vs. photo with Bayes FeH 
+    df['photoMrBayesFeH'] = lt.getMr(df['gi0'], df['FeHEst'])
+    df['dphotoMrBayesFeH'] = df['MrEst'] - df['photoMrBayesFeH']
+    print('agreement between Bayes Mr and photo Mr with Bayes FeH:', bt.getMedianSigG(bt.basicStats(df, 'dphotoMrBayesFeH'))) 
+
+    # Mr: Bayes vs. photo with photo FeH 
+    df['photoMrphotoFeH'] = lt.getMr(df['gi0'], df['photoFeH'])
+    df['dphotoMrphotoFeH'] = df['MrEst'] - df['photoMrphotoFeH']
+    print('agreement between Bayes Mr and photo Mr with photo FeH:', bt.getMedianSigG(bt.basicStats(df, 'dphotoMrphotoFeH'))) 

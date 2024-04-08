@@ -180,13 +180,13 @@ populations with model-based isochrones that span a range of ages and a wider ra
 results in better agreement with the observations. 
  
 
-\subsubsection{Model-based Isochrones for Main-sequence Stars and Red Giants}
+\subsubsection{Model-based Isochrones for Main-sequence Stars and Red Giants} 
  
 
 \begin{figure*}[ht!]
 \plotone{compare2isochrones_augmentedSDSS_1Gyr_10Gyr.png}
 \caption{Augmented SDSS color tracks for two isochrone ages (left: 1 Gyr; right: 10 Gyr) and the full metallicity range
-  ($-2.5 < [Fe/H] < +0.5$). The black dots show the same sample of 63,000 stars from the middle panel in
+  ($-2.5 < [Fe/H] < +0.5$, color-coded linearly from blue to red). The black dots show the same sample of 63,000 stars from the middle panel in
   Figure~\ref{fig:3HRdiags}. As can be seen in the top right panel, sub-giant stars that could not be fit with empirical
   SDSS-based tracks (see the middle panel in Figure~\ref{fig:3HRdiags}) can be explained with tracks for old stars and
   intermediate-range metallicity. The sharp feature protruding from the main locus in the middle two panels corresponds
@@ -195,6 +195,15 @@ results in better agreement with the observations.
 \label{fig:augmLocus}
 \end{figure*}
 
+\begin{figure*}[ht!]
+\plotone{RGdegeneracy.png}
+\caption{Analysis of color degeneracies between giants and main  sequence stars. The left panel shows minimum color distance in
+  4-dimensional color space ($u-g$, $g-r$, $r-i$, $i-z$) between a position on the locus with $M_r<4$ (giants) and any position on the
+  main-sequence $M_r>4$ locus (in magnitudes). Symbols are color-coded by metallicity, linearly from blue to red for the range $-2.5$ to 0.5).
+  The middle and right panels show errors in absolute magnitude and metallicity when a giant is misidentified as a main sequence star
+  closest to it in color space.} 
+\label{fig:RGdegeneracy}
+\end{figure*}
 
 We considered two sets of isochrones: the Dartmouth Stellar Evolution Database\footnote{See http://stellar.dartmouth.edu/models},
 hereafter DSED \citep{2008ApJS..178...89D}, and PARSEC\footnote{http://stev.oapd.inaf.it/cgi-bin/cmd\_3.7} \citep{2012MNRAS.427..127B} isochrones. 
@@ -218,13 +227,18 @@ We have computed such tracks for a grid of ages but believe that the two choices
 (1 Gyr and 10 Gyr) should suffice for ``non-specialized'' bulk processing. The reason is that the locii for ages above 1-2 Gyr look
 very similar to each other, while the fraction of stars younger than 1 Gyr is very small at the faint apparent magnitude
 levels probed by SDSS and LSST. Of course, in sky regions with intensive star formation, a ``specialized'' approach with
-a fine age grid can be easily executed. 
+a fine age grid can be easily executed.
+
+We note strong degeneracies in color space between giants and main sequence stars (see Figure~\ref{fig:RGdegeneracy}). 
+They are especially strong for sub-giant stars with $2 < M_r < 4$, for which it is always possible to find a matching main sequence star
+closer in 4-dimensional color distance than 0.02 mag (and for $3 < M_r < 4$ even closer than 0.01 mag). Due to photometric scatter, 
+such subgiant stars can be misidentified as a main sequence star and absolute magnitude errors can range up to several magnitudes.
+
 
 These color tracks for main-sequence stars,  blue horizontal branch stars, and red giants account for an overwhelming majority of stars 
 expected in SDSS and LSST catalogs (approximately $>$95\% but the fraction varies with apparent magnitude and sky position). 
 Nevertheless, we also explicitly account for a few additional populations: white dwarfs and unresolved binary stars. 
- 
- 
+
 
 \subsubsection{Luminosity-Color Tracks for White Dwarfs}
 
