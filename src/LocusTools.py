@@ -222,7 +222,7 @@ def GClocusGiants(Mr, FeH):
     color['FeH'] = 0*color['iz'] + FeH
     return color
 
-def CoveyMSlocus(): 
+def CoveyMSlocus(datafile=''): 
         ## STELLAR LOCUS IN THE SDSS-2MASS PHOTOMETRIC SYSTEM
         ## read and return colors from
         ## http://faculty.washington.edu/ivezic/sdss/catalogs/tomoIV/Covey_Berry.txt
@@ -230,7 +230,8 @@ def CoveyMSlocus():
         ## according to Yuan et al (2015, ApJ 799, 134), this locus approximately corresponds to FeH = -0.5 
         colnames = ['Nbin', 'gi', 'Ns', 'ug', 'Eug', 'gr', 'Egr', 'ri', 'Eri', 'iz', 'Eiz', \
                      'zJ', 'EzJ', 'JH', 'EJH', 'HK', 'EHK']
-        coveyMS = Table.read('./Covey_Berry.txt', format='ascii', names=colnames)
+        if datafile=='': datafile='./Covey_Berry.txt'
+        coveyMS = Table.read(datafile, format='ascii', names=colnames)
         return coveyMS 
 
 
@@ -674,7 +675,25 @@ def smoothLocus(locus):
     return locusSmooth
 
 
+### read catalog produced at Astro Lab by dumpCatalogFromPatch() from MakePriors.py
+def readAstroLabCatalog(infile, verbose=False):
+        if verbose: print('reading from:', infile)
+        colnames = ['ra', 'dec', 'glon', 'glat', 'GC', 'logage', 'mass', 'pop', 'logg', 'FeH', 'Mr', 'Ar', 'DM',
+                     'umag',  'gmag', 'rmag', 'imag', 'zmag', 'ymag', 'ug', 'gr', 'ri', 'iz', 'gi']
 
+        # GC: Galactic component the star belongs to: 1 → thin disk; 2 → thick disk; 3 → halo; 4 → bulge; 5 → Magellanic Clouds.
+        # colors are corrected for dust reddening (magnitudes are not) 
+        catalog = Table.read(infile, format='ascii', names=colnames)
+        return catalog 
+
+
+### read White Dwarf locus produced from Bob Abel's inputs
+def readWDlocus(infile, verbose=False):
+        if verbose: print('reading from:', infile)
+        colnames = ['Mr', 'ug', 'gr', 'ri', 'iz']
+        WDlocus = Table.read(infile, format='ascii', names=colnames)
+        WDlocus['gi'] = WDlocus['gr'] + WDlocus['ri'] 
+        return WDlocus 
 
 
 def readTRILEGAL(infile=''):
@@ -1001,6 +1020,12 @@ def photoFeH(ug, gr):
 def getMr(gi, FeH):
         ## Mr(g-i, FeH) introduced in Ivezic et al. (2008), Tomography II
         MrFit = -5.06 + 14.32*gi -12.97*gi**2 + 6.127*gi**3 -1.267*gi**4 + 0.0967*gi**5
+        ## based on Gaia parallax sample, the following correction should be added
+        if (False): 
+             MrCorr = 12.5*(0.4-gi)**2 - 0.03
+             MrCorr = np.where(gi>0.4, 0.0, MrCorr)
+             MrCorr = np.where(gi<0.5, MrCorr-0.1, MrCorr+0.01)
+             MrFit = MrFit + MrCorr
         ## offset for metallicity, valid for -2.5 < FeH < 0.2
         FeHoffset = 4.50 -1.11*FeH -0.18*FeH**2
         return MrFit + FeHoffset
@@ -1035,6 +1060,43 @@ def getColorsFromMrFeH(L, Lvalues, colors=''):
     for color in colors:
         Lvalues[color] = L[color][k]
  
+
+        
+        
+def getWDcolorsFromMr(LwdH, LwdHe, fHe, Lvalues, colors=''):
+    SDSScolors = ['ug', 'gr', 'ri', 'iz']
+    if (colors == ''): colors = SDSScolors
+    for c in colors:
+         Lvalues[c] = 0*Lvalues['Mr'] -9.99
+    # random number for selecting He subset of white dwarfs
+    rnd = np.random.uniform(low=0.0, high=1.0, size=len(Lvalues))
+    # loop over all stars
+    for j in range(0,len(Lvalues)):
+         if (rnd[j] < fHe):
+             distSq = (LwdHe['Mr']-Lvalues['Mr'][j])**2
+             for c in colors:
+                  Lvalues[c][j] = LwdHe[c][np.argmin(distSq)] 
+         else:
+             distSq = (LwdH['Mr']-Lvalues['Mr'][j])**2
+             for c in colors:
+                  Lvalues[c][j] = LwdH[c][np.argmin(distSq)] 
+    return 
+
+
+        
+def getColorsFromMrFeHDSED(L, Lvalues, colors=''):
+    SDSScolors = ['ug', 'gr', 'ri', 'iz']
+    if (colors == ''): colors = SDSScolors
+    Lvalues['MrAssigned'] = 0*Lvalues['Mr'] -9.99
+    for c in colors:
+         Lvalues[c] = 0*Lvalues['Mr'] -9.99
+    for j in range(0,len(Lvalues)):
+         distSq = (L['Mr']-Lvalues['Mr'][j])**2/0.01**2 + (L['FeH']-Lvalues['FeH'][j])**2/0.1**2
+         Lvalues['MrAssigned'][j] = L['Mr'][np.argmin(distSq)] 
+         for c in colors:
+             Lvalues[c][j] = L[c][np.argmin(distSq)] 
+    return 
+
         
 def getColorsFromGivenMrFeH(myMr, myFeH, L, gp, colors=""):
     SDSScolors = ['ug', 'gr', 'ri', 'iz'] 
@@ -1048,7 +1110,19 @@ def getColorsFromGivenMrFeH(myMr, myFeH, L, gp, colors=""):
     for color in colors:
         myColors[color] = L[color][k]
     return myColors
- 
+
+
+## given Bayes estimates FeHEst and MrEst, where MrEst is really tLoc, variable
+## along the locus, use locus info about Mr = func(tLoc, FeH), to get the true
+## meaningful MrEst 
+def getMrFromFeHtLoc(Locus, Catalog):
+    Catalog['MrTrueEst'] = 0*Catalog['tLoc'] + 89.99
+    for j in range(0,len(Catalog)):
+        distSq = (Locus['tLoc']-Catalog['tLoc'][j])**2/0.01**2 + (Locus['FeH']-Catalog['FeHEst'][j])**2/0.1**2
+        Catalog['MrTrueEst'][j] = Locus['MrTrue'][np.argmin(distSq)] 
+    return
+
+
         
 # given a grid of model colors, Mcolors, compute chi2
 # for a given set of observed colors Ocolors, with errors Oerrors 
@@ -1427,10 +1501,15 @@ def fitMedians(x, y, xMin, xMax, Nbin, verbose=False):
 
 def basicStats(df, colName):
     yAux = df[colName]
-    # robust estimate of standard deviation: 0.741*(q75-q25)
-    sigmaG = 0.741*(np.percentile(yAux,75)-np.percentile(yAux,25))
-    median = np.median(yAux)
-    return [np.size(yAux), np.min(yAux), np.max(yAux), median, sigmaG]
+    if (len(df)>0):
+        # robust estimate of standard deviation: 0.741*(q75-q25)
+        sigmaG = 0.741*(np.percentile(yAux,75)-np.percentile(yAux,25))
+        median = np.median(yAux)
+        return [np.size(yAux), np.min(yAux), np.max(yAux), median, sigmaG]
+    else:
+        sigmaG = -1.11
+        median = 0.0
+        return [0, -9.99, -9.99, median, sigmaG]
 
 
 def getMedianSigG(basicStatsLine):

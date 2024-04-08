@@ -40,16 +40,11 @@ def retrievePatch(query, verbose=True):
     if verbose: print('querying...')
     result = qc.query(sql=query)
     if verbose: print('converting...')
-    #trilegal = convert(result)
-    #trilegal['Ar'] = 2.75 * trilegal['av'] / 3.10 
-    #trilegal['Mr'] = trilegal['rmag'] - trilegal['Ar'] - trilegal['mu0']
-    #trilegal2 = trilegal.rename(columns={"m_h": "FeH"})
-    #df = trilegal2.rename(columns={"mu0": "DM"})
     df = convert(result)
     df['Ar'] = 2.75 * df['av'] / 3.10 
     df['Mr'] = df['rmag'] - df['Ar'] - df['mu0']
-    df.rename(columns={"m_h": "FeH"})
-    df.rename(columns={"mu0": "DM"})
+    df2 = df.rename(columns={"m_h": "FeH"})
+    df = df2.rename(columns={"mu0": "DM"})
     # colors corrected for extinction
     C = lt. extcoeff()
     for b in ['u', 'g', 'r', 'i', 'z']:

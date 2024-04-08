@@ -46,6 +46,8 @@ def plot2Dmap(x, y, xMin, xMax, nXbin, yMin, yMax, nYbin, xLabel, yLabel, addMed
     ygrid = np.linspace(yMin, yMax, nYbin)
     Xgrid, Ygrid = np.meshgrid(xgrid, ygrid)
     Z = kde.evaluate(np.vstack([Xgrid.ravel(), Ygrid.ravel()]))
+
+    print('nXbin=', nXbin)
     
     # plot the result as an image
     if (logScale):
@@ -75,7 +77,7 @@ def plot2Dmap(x, y, xMin, xMax, nXbin, yMin, yMax, nYbin, xLabel, yLabel, addMed
          plt.plot([2.5, 10.5], [0, 0], ls='--', lw=1, c='red')
    
     if (addMedians):     
-        xBin, nPts, medianBin, sigGbin = lt.fitMedians(x, y, xMin, xMax, 60)
+        xBin, nPts, medianBin, sigGbin = lt.fitMedians(x, y, xMin, xMax, nXbin)
         plt.scatter(xBin, medianBin, s=40, c='red')
         plt.plot(xBin, medianBin+sigGbin*np.sqrt(nPts), c='yellow')
         plt.plot(xBin, medianBin-sigGbin*np.sqrt(nPts), c='yellow')
@@ -461,8 +463,8 @@ def qpB(df, Qname, Dname='Mr', cmd=False, estQ=False):
             xAxis = 'MrEst'
             yAxis = 'FeHEst'
             yTicks = [-2.0, -1.5, -1.0, -0.5, 0.0, 0.5] 
-            xlabel = '$\mathrm{Mr estimate}$'
-            ylabel = '$\mathrm{[Fe/H] estimate}$'
+            xlabel = 'Mr estimate'
+            ylabel = '[Fe/H] estimate'
         else:
             xAxis = 'Mr'
             yAxis = 'FeH'
@@ -493,7 +495,7 @@ def qpB(df, Qname, Dname='Mr', cmd=False, estQ=False):
     plt.ylabel(ylabel)
     if (cmd):
         plt.xlim(0.0, 4.0)
-        plt.ylim(28, 15)
+        plt.ylim(27, 15)
     else:
         plt.xlim(xedges[0], xedges[-1])
         plt.ylim(yedges[0], yedges[-1])
@@ -510,7 +512,7 @@ def qpB(df, Qname, Dname='Mr', cmd=False, estQ=False):
             plt.clim(-0.15, 0.15)
         else:
             cb = plt.colorbar(ticks=np.linspace(-0.4, 0.4, 5), pad=0.22, format=r'$%.1f$', orientation='horizontal')
-            cb.set_label(r'$\mathrm{mean\ \Delta Fe/H]\ in\ pixel}$') 
+            cb.set_label(r'$\mathrm{mean\ \Delta [Fe/H]\ in\ pixel}$') 
             plt.clim(-0.4, 0.4)
 
     # density contours 
@@ -541,7 +543,7 @@ def qpB(df, Qname, Dname='Mr', cmd=False, estQ=False):
         cb.set_label(r'$\mathrm{\sigma_G(M_r)\ in\ pixel}$')
     else:
         if (Dname=='Ar'):
-            plt.clim(0, 0.2)
+            plt.clim(0, 0.1)
             cb.set_label(r'$\mathrm{\sigma_G(A_r)\ in\ pixel}$')     
         else:
             plt.clim(0, 0.5)
@@ -586,9 +588,14 @@ def qpB(df, Qname, Dname='Mr', cmd=False, estQ=False):
             extent=[xedges[0], xedges[-1], yedges[0], yedges[-1]])
     plt.contour(np.log10(dFeH_count.T), levels, colors='k', linestyles='dashed',
             extent=[xedges[0], xedges[-1], yedges[0], yedges[-1]])
-    
-    plt.savefig('../plots/qpB_'+Dname+'.png')
-    print('made plot: ../plots/qpB_'+Dname+'.png')
+
+    if estQ:
+        outname = '../plots/qpB_estQ_'+Dname+'.png'
+    else:
+        outname = '../plots/qpB_'+Dname+'.png'
+        
+    plt.savefig(outname)
+    print('made plot:', outname)
     plt.show() 
     plt.close("all")
     return 
@@ -615,7 +622,7 @@ def qpBcmd(df, color='gi', mag='umag', scatter=False):
         ylabel = '$\mathrm{u mag}$'
         xMin = 0.0
         xMax = 4.0
-        yMin = 28
+        yMin = 27
         yMax = 14
     else:
         xAxis = 'Mr'
@@ -719,7 +726,7 @@ def qpBcmd(df, color='gi', mag='umag', scatter=False):
         cb.set_label(r'$\mathrm{\sigma_G(Ar)\ in\ pixel}$')
     else:
         cb.set_label(r'$\mathrm{mean\ Ar\ in\ pixel}$')
-    plt.clim(0, 0.5)
+    plt.clim(0, 0.25)
 
     # density contours 
     levels = np.linspace(0, np.log10(dFeH_count.max()), 5)[2:]

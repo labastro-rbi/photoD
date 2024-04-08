@@ -5,6 +5,7 @@ from matplotlib.colors import LogNorm
 from scipy.stats import gaussian_kde
 import LocusTools as lt 
 import PlotTools as pt
+from astropy.table import Table
 
 
 ### numerical model specifications and constants for Bayesian PhotoD method
@@ -24,11 +25,28 @@ def getBayesConstants():
     BayesConst['rmagMax'] = 27
     BayesConst['rmagNsteps'] = 27
     # parameters for dust extinction grid when fitting 3D (Mr, FeH, Ar)
-    # prior for Ar is flat from 0 to (1.3*Ar+0.1) with a step of 0.01 mag ***
+    # prior for Ar is flat from (0*Ar+0.0) to (1.3*Ar+0.1) with a step of 0.01 mag ***
     # where 1.3 <= ArCoef0, 0.1 <= ArCoef1 and 0.01 mag <= ArCoef2 are set here (or user supplied)
+    # ArMin: ArCoeff3*Ar + ArCoeff4 
     BayesConst['ArCoeff0'] = 1.3
     BayesConst['ArCoeff1'] = 0.1
     BayesConst['ArCoeff2'] = 0.01
+    if False:
+        # allow only 0.01 mag around the provided (e.g. SFD) Ar value
+        print('bt.getBayesConstants: DONT FORGET TO UNDO HACK THAT limits Ar range!!!') 
+        BayesConst['ArCoeff3'] =  0.5
+        BayesConst['ArCoeff4'] = -0.01
+    else:
+        # allow Ar as small as 0
+        BayesConst['ArCoeff3'] = 0.0
+        BayesConst['ArCoeff4'] = 0.0
+        
+    if False:
+        ## for testing with fitting Ar: 
+        print('bt.getBayesConstants: DONT FORGET TO UNDO HACK THAT SETS Ar=0!!!') 
+        BayesConst['ArCoeff0'] = 0.0
+        BayesConst['ArCoeff1'] = 0.01
+        BayesConst['ArCoeff2'] = 0.01
     
     return BayesConst   
 
@@ -205,6 +223,7 @@ def readPriors(rootname, locusData, MrColumn='Mr'):
         values = Zval.flatten()
         # actual (linear) interpolation
         priorGrid[rind] = griddata(points, values, (locusData['FeH'], locusData[MrColumn]), method='linear', fill_value=0)
+ 
     return priorGrid
  
         
@@ -408,14 +427,18 @@ def showCornerPlot3(postCube, Mr1d, FeH1d, Ar1d, md, xLab, yLab, x0=-99, y0=-99,
     yMin = md[3]  # Mr
     yMax = md[4]
     zMin = 0      # Ar
+    zMin = Ar1d[0]   
     zMax = Ar1d[-1]
        
     #### make 3 marginal (summed) 2-D distributions and 3 1-D marginal distributions 
     # grid steps
     dFeH = FeH1d[1]-FeH1d[0]
     dMr = Mr1d[1]-Mr1d[0]
-    dAr = Ar1d[1]-Ar1d[0]
-    
+    if (Ar1d.size>1):
+        dAr = Ar1d[1] - Ar1d[0]
+    else:
+        dAr = 0.01
+   
     # 1-D marginal distributions
     margMr, margFeH, margAr = getMargDistr3D(postCube, dMr, dFeH, dAr) 
 
@@ -733,6 +756,18 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
     ArCoeff[0] = bc['ArCoeff0']
     ArCoeff[1] = bc['ArCoeff1'] 
     ArCoeff[2] = bc['ArCoeff2']
+    ArCoeff[3] = bc['ArCoeff3']
+    ArCoeff[4] = bc['ArCoeff4']
+
+    # for small Ar regions - high latitudes: adopt the SFD value 
+    # fit restricted range +-0.01 mag around ArFit
+    if False:
+        ArCoeff[0] = 1.0   # ArMax = C[0]*ArFit + C[1]
+        ArCoeff[1] = 0.01
+        ArCoeff[2] = 0.01  # step in Ar
+        ArCoeff[3] = 1.0   # ArMin = C[3]*ArFit + C[4]
+        ArCoeff[4] = -0.01
+
 
     # color corrections due to dust reddening (for each Ar in the grid for this particular star) 
     # for finding extinction, too
@@ -749,7 +784,8 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
     FeHGrid = locusData[xLabel]
     MrGrid = locusData[yLabel]
     FeH1d = np.sort(np.unique(FeHGrid))
-    Mr1d = np.sort(np.unique(MrGrid))  
+    Mr1d = np.sort(np.unique(MrGrid))
+    
     # grid step
     dFeH = FeH1d[1]-FeH1d[0]
     dMr = Mr1d[1]-Mr1d[0]
@@ -762,6 +798,9 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
     MrNpts = Mr1d.size 
     mdLocus = np.array([FeHmin, FeHmax, FeHNpts, MrFaint, MrBright, MrNpts])
 
+    print('Mr1d=', np.min(Mr1d), np.max(Mr1d), len(Mr1d))
+    print('MrBright, MrFaint=', MrBright, MrFaint)
+    
     # setup arrays for holding results
     catalog['MrEst'] = 0*catalog['Mr'] - 99 
     catalog['MrEstUnc'] = 0*catalog['Mr'] -1 
@@ -804,6 +843,8 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
             ### THIS BLOCK USES A LIST OF THREE 3D MODEL LOCII, with 3 different resolutions for Ar
             # note that here true Ar is used (catalog['Ar'][i]); for real stars, need to use SFD or another extinction map
             ArMax = ArCoeff[0]*catalog['Ar'][i] + ArCoeff[1]
+            ArMin = ArCoeff[3]*catalog['Ar'][i] + ArCoeff[4]
+           
             # depending on ArMax, pick the adequate Ar resolution of locus3D
             if (ArMax < ArGridSmallMax):
                 ArGrid = ArGridList['ArSmall']
@@ -819,7 +860,7 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
                     locus3D = locus3DList['ArLarge']
                     # print('selected ArLarge locus3D with', len(locus3D), ' elements')
             # subselect from chosen 3D locus (simply to have fewer Ar points and thus faster execution) 
-            Ar1d = ArGrid[ArGrid<=ArMax]
+            Ar1d = ArGrid[(ArGrid>=ArMin)&(ArGrid<=ArMax)]
  
             if restrictLocus: 
                 ######### TEST: can we subsample in 3D? ################
@@ -844,10 +885,11 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
             else:
                 # simply limit by maximum plausible extinction Ar
                 # print('trying to select from locus3D with', len(locus3D), ' elements, ArMax=', ArMax)
-                locus3Dok = locus3D[locus3D['Ar']<=ArMax]
+                locus3Dok = locus3D[(locus3D['Ar']>=ArMin)&(locus3D['Ar']<=ArMax)]
                 # print('selected locus3Dok with', len(locus3Dok), ' elements, from locus3D with', len(locus3D))
-                
-            ### compute chi2 map using provided 3D model locus (locus3Dok)
+
+            ##### the main Bayes block      
+            ## compute chi2 map using provided 3D model locus (locus3Dok) ##
             # return i, fitColors, reddCoeffs, catalog, locus3Dok, ArCoeff, FeH1d, Mr1d, Ar1d
             chi2map = lt.getPhotoDchi2map3D(i, fitColors, reddCoeffs, catalog, locus3Dok, ArCoeff, masterLocus=True)
             ## likelihood map
@@ -873,20 +915,15 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
             # get prior map indices using observed r band mags
             priorind = getPriorMapIndex(catalog['rmag'])
 
-            
+        ## generate 3D (Mr, FeH, Ar) prior from 2D (Mr, FeH) prior using uniform prior for Ar    
         prior2d = priorGrid[priorind[i]].reshape(np.size(FeH1d), np.size(Mr1d))
-        # print('prior2d', prior2d.shape)
-        # print('    min/max:', np.min(prior2d), np.max(prior2d))
-        priorCube = make3Dprior(prior2d, np.size(Ar1d))
-        # print('priorCube', priorCube.shape)
-        
-        # posterior data cube
-        ## hack until above prior interpolation is implemented 
-        # priorCube = 1 + 0*likeCube
-        ### 
+        priorCube = make3Dprior(prior2d, np.size(Ar1d))        
+        ## posterior data cube
         postCube = priorCube * likeCube
 
-        # return likeCube, priorCube, postCube, locus3Dok0
+        # for testing 
+        if (0):
+            return likeCube, priorCube, postCube, locus3Dok0
         
         ## process to get expectation values and uncertainties
         # marginalize and get stats
@@ -905,6 +942,7 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
         catalog['FeHdS'][i] = Entropy(margpostFeH[2]) - Entropy(margpostFeH[0])
         catalog['ArdS'][i] = Entropy(margpostAr[2]) - Entropy(margpostAr[0])
 
+        # for testing and illustration  
         if (i in myStars):
             # plot 
             FeHStar = catalog['FeH'][i]
@@ -966,7 +1004,7 @@ def writeBayesEstimates(catalog, outfile, iStart, iEnd, do3D=False):
 
 
 ####################################################################################################
-### toosl for testing Bayes results
+### tools for testing Bayes results
 
 ## test Bayes estimates
 # chiTest: if True, read noise-free stellar locus colors in lt.readTRILEGALLSST
@@ -974,6 +1012,8 @@ def writeBayesEstimates(catalog, outfile, iStart, iEnd, do3D=False):
 # fitQ: if true, call qpBcmd in plotAll and plot mean values of Mr, FeH and Ar in umag vs. g-i diagrams
 # b3D: 3D Bayes version with Ar results
 def checkBayes(infile1, infile2, chi2max=10, umagMax=99.9, chiTest=False, cmd=False, fitQ=False, b3D=False):
+
+    ### first read and subselect data, then call plotAll below to make plots
     
     ## input simulation
     if (umagMax < 99):
@@ -984,6 +1024,8 @@ def checkBayes(infile1, infile2, chi2max=10, umagMax=99.9, chiTest=False, cmd=Fa
         simsBayesAll = lt.readTRILEGALLSSTestimates(infile=infile2, b3D=b3D)
         # volatile: assumes the same order 
         simsBayes = simsBayesAll[simsAll['umag']<umagMax]
+        if (len(simsBayesAll)!=len(simsAll)):
+            print('ERROR: input files have different length!') 
     else:
         sims = lt.readTRILEGALLSST(inTLfile=infile1, chiTest=chiTest, b3D=b3D)
         ## file with Bayes estimates
@@ -995,7 +1037,7 @@ def checkBayes(infile1, infile2, chi2max=10, umagMax=99.9, chiTest=False, cmd=Fa
     sims['imag'] = sims['rmag'] - sims['ri']
     sims['zmag'] = sims['imag'] - sims['iz'] 
 
-    ## define quantities for testing
+    ## define quantities for testing: always (truth - estimate) 
     sims['dMr'] = sims['Mr'] - simsBayes['MrEst']
     sims['dMrNorm'] = sims['dMr'] / simsBayes['MrUnc'] 
     sims['dFeH'] = sims['FeH'] - simsBayes['FeHEst']
@@ -1018,9 +1060,15 @@ def checkBayes(infile1, infile2, chi2max=10, umagMax=99.9, chiTest=False, cmd=Fa
     sims['ArdS'] = simsBayes['ArdS'] 
 
     ## extract testing sample
-    simsTest = sims[simsBayes['chi2min']<chi2max]   
-    print('after chi2min<', chi2max, 'selection:', np.size(sims), np.size(simsTest))  
-    
+    onlyMSRG = True
+    if (onlyMSRG):
+        simsTest = sims[(simsBayes['chi2min']<chi2max)&(sims['logg']<6.5)]
+        print('MS and RGs after chi2min<', chi2max, 'selection:', np.size(sims), np.size(simsTest))  
+    else:
+        simsTest = sims[simsBayes['chi2min']<chi2max]
+        print('after chi2min<', chi2max, 'selection:', np.size(sims), np.size(simsTest), 'may include WDs etc')  
+
+    ### the main call to plotting code 
     plotAll(simsTest, cmd=cmd, fitQ=fitQ)
     return sims, simsTest
 
@@ -1042,16 +1090,18 @@ def plotAll(dfName, cmd=False, fitQ=False):
     else:
         print('calling qpB Mr')
         pt.qpB(dfName, 'dMr', Dname='Mr', cmd=cmd)
-        pt.qpB(dfName, 'dMr', Dname='Mr', cmd=cmd, estQ=True)
+        if (cmd!=True):
+            pt.qpB(dfName, 'dMr', Dname='Mr', cmd=cmd, estQ=True)
         print('calling qpB FeH')
         pt.qpB(dfName, 'dFeH', Dname='FeH', cmd=cmd)
-        pt.qpB(dfName, 'dFeH', Dname='FeH', cmd=cmd, estQ=True)
+        if (cmd!=True): 
+            pt.qpB(dfName, 'dFeH', Dname='FeH', cmd=cmd, estQ=True)
         print('calling qpB Ar')
         pt.qpB(dfName, 'dAr', Dname='Ar', cmd=cmd)
-        pt.qpB(dfName, 'dAr', Dname='Ar', cmd=cmd, estQ=True)
+        if (cmd!=True):
+            pt.qpB(dfName, 'dAr', Dname='Ar', cmd=cmd, estQ=True)
 
-        
-    
+            
 ## quick comparison of Karlo's NN estimates for Mr, FeH, Ar
 def cK(infile1, infile2, sim3=False, simtype='a', chiTest=True):
     ## input simulation
@@ -1090,4 +1140,95 @@ def cK(infile1, infile2, sim3=False, simtype='a', chiTest=True):
     plotAll(simsTest)
     return sims, simsTest 
     
+
+
+
+
+
+## test Bayes estimates
+# chiTest: if True, read noise-free stellar locus colors in lt.readTRILEGALLSST
+# cmd: if True, in qpB, called by plotAll, plot umag vs. g-i instead of FeH vs. Mr diagram  
+# fitQ: if true, call qpBcmd in plotAll and plot mean values of Mr, FeH and Ar in umag vs. g-i diagrams
+# b3D: 3D Bayes version with Ar results
+def checkStripe82Gaia(infile1, infile2, chi2max=10, umagMax=99.9, chiTest=False, cmd=False, fitQ=False, b3D=False):
+
+    ### first read and subselect data, then call plotAll below to make plots
+    
+    ## input simulation
+    if (umagMax < 99):
+        # simsAll = lt.readTRILEGALLSST(inTLfile=infile1, chiTest=chiTest)
+        simsAll = Table.read(infile1)
+        sims = simsAll[simsAll['u_mMed']<umagMax]
+        print('from', np.size(simsAll),' selected with u <', umagMax, np.size(sims))
+        ## file with Bayes estimates
+        simsBayesAll = lt.readTRILEGALLSSTestimates(infile=infile2, b3D=b3D)
+        # volatile: assumes the same order 
+        simsBayes = simsBayesAll[simsAll['u_mMed']<umagMax]
+        if (len(simsBayesAll)!=len(simsAll)):
+            print('ERROR: input files have different length!') 
+    else:
+        # sims = lt.readTRILEGALLSST(inTLfile=infile1, chiTest=chiTest, b3D=b3D)
+        sims = Table.read(infile1) 
+        ## file with Bayes estimates
+        simsBayes = lt.readTRILEGALLSSTestimates(infile=infile2, b3D=b3D)
+
+    mags = ['u', 'g', 'r', 'i', 'z']
+    for m in mags:
+        sims[m+'mag'] = sims[m+'_mMed']  
+        
+    # these colors are already corrected for extinction (in Stripe82GaiaEDR3_photoD.csv file)
+    # so all mags are corrected, too 
+    sims['gmag'] = sims['rmag'] - sims['Ar'] + sims['gr']  
+    sims['umag'] = sims['gmag'] + sims['ug']
+    sims['imag'] = sims['rmag'] - sims['ri']
+    sims['zmag'] = sims['imag'] - sims['iz'] 
+
+    ## define quantities for testing: always (truth - estimate)
+    df = sims
+    df['photoFeH'] = lt.photoFeH(df['ug'], df['gr'])
+    df['photoFeH'] = np.where(df['photoFeH']>0.5, 0.5, df['photoFeH'])
+    df['photoFeH'] = np.where(df['photoFeH']<-2.5, -2.5, df['photoFeH'])
+    df['photoMr'] = lt.getMr(df['gi'], df['photoFeH'])
+    df['FeH'] = df['photoFeH']
+
+    sims['dMr'] = sims['MrPho'] - sims['Ar'] - simsBayes['MrEst']
+    sims['dMrPi'] = sims['Mr'] - sims['Ar'] - simsBayes['MrEst']
+    sims['dMrPiPhoto'] = sims['Mr'] - sims['Ar'] - simsBayes['MrEst']
+    sims['dMrPhoto'] = sims['MrPho'] - sims['Ar'] - simsBayes['MrEst']
+    sims['dMrPhotoBayes'] = sims['photoMr'] - simsBayes['MrEst']
+    sims['dMrNorm'] = sims['dMr'] / simsBayes['MrUnc']
+    sims['dFeH'] = sims['FeH'] - simsBayes['FeHEst']
+    sims['dFeHNorm'] = sims['dFeH'] / simsBayes['FeHUnc'] 
+    sims['dAr'] = sims['Ar'] - simsBayes['ArEst']
+    sims['dArNorm'] = sims['dAr'] / simsBayes['ArUnc'] 
+    sims['MrML'] = simsBayes['MrEst']
+    sims['FeHML'] = simsBayes['FeHEst']
+    sims['ArML'] = simsBayes['ArEst']
+    sims['chi2min'] = simsBayes['chi2min']
+    sims['MrEst'] = simsBayes['MrEst']
+    sims['FeHEst'] = simsBayes['FeHEst']
+    sims['ArEst'] = simsBayes['ArEst']
+
+    ## dummy 
+    sims['test_set'] = 1 + 0*sims['Ar']
+
+    # entropy change
+    sims['MrdS'] = simsBayes['MrdS'] 
+    sims['FeHdS'] = simsBayes['FeHdS'] 
+    sims['ArdS'] = simsBayes['ArdS'] 
+
+    ## extract testing sample
+    onlyMSRG = True
+    if (onlyMSRG):
+        simsTest = sims[(simsBayes['chi2min']<chi2max)&(sims['MrPho']>4)]
+        print('MS and RGs after chi2min<', chi2max, 'selection:', np.size(sims), np.size(simsTest))  
+    else:
+        simsTest = sims[simsBayes['chi2min']<chi2max]
+        print('after chi2min<', chi2max, 'selection:', np.size(sims), np.size(simsTest), 'may include WDs etc')  
+
+    ### the main call to plotting code 
+    plotAll(simsTest, cmd=cmd, fitQ=fitQ)
+    return sims, simsTest
+
+
 
