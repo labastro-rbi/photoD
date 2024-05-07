@@ -14,7 +14,7 @@ CHECK_RERUN = grep Rerun $*.log
 NAME    = paper
 DOC_OUT = ${NAME}.${SUFF}
 
-DEPENDENCIES = paper.tex intro.tex analysis.tex results.tex discussion.tex  
+DEPENDENCIES = paper.tex intro.tex analysis.tex pipeline.tex discussion.tex  
 
 default: ${DOC_OUT}
 

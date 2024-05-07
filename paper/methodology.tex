@@ -78,8 +78,9 @@ below in \S\ref{sec:ModSel}, where the correct normalization of the product $p(D
 
 
 \begin{figure*}[t!]
-\plotone{plot3diagsData.png}
-\caption{An illustration of multiple stellar populations. The red dots in the left panel show color-magnitude diagram for 841,000 stars from the SDSS Stripe 82 Standard Star Catalog
+\includegraphics[width=1.0\textwidth,angle=0]{figures/plot3diagsData.png} 
+\caption{An illustration of multiple stellar populations. The dots (of
+any color) in the left panel show color-magnitude diagram for 841,000 stars from the SDSS Stripe 82 Standard Star Catalog
 (variable sources are excluded, \citealt{2021MNRAS.505.5941T}) that have Gaia matches within 0.15 arcsec (after correcting for proper motion using Gaia measurements). A subset of 415,000 stars with $r < 22$ and $u<22$ are overplotted as blue dots, and 409,000 of those that also have $0.2 < g-i < 3.5$ (dominated by main-sequence stars and red giants) are overplotted as cyan dots. Finally, 63,000 stars that have signal-to-noise ratio for Gaia’s parallax measurements of at least 20 are shown as green dots (these stars can be used for the calibration of luminosity-color relations). The same symbol color scheme is used in other two panels. The three yellow lines in the middle panel show stellar locus parametrization used by Green et al. (2014) for three values of metallicity (left to right): $[Fe/H] = -2, -1, 0$. In the right panel, the impact of metallicity on color-color tracks is negligible and all three are indistinguishable from each other. In the bottom of the middle panel, at $-0.5 < g-r < 0$, the three dark blue sequences correspond to (from left to right) He white dwarfs, H white dwarfs, and blue horizontal branch stars. The clouds of pale blue dots visible above the main stellar locus in the middle and right panels correspond to unresolved binary stars \citep{2004ApJ...615L.141S}.} \label{fig:3dataDiags}
 \end{figure*}
 
@@ -91,7 +92,8 @@ to the disk and thus $A_r$ can be obtained from IR maps, they have halo metallic
 by main-sequence stars. As a result, a simple functional relationship, $M_r = f(g-i)$, or its generalized version that
 accounts for the shift of $M_r$ as a function of metallicity \citep{2008ApJ...684..287I}, can be used to estimate distance
 in a straightforward manner.}
-by, e.g., \cite{2011MNRAS.411..435B},  \cite{2014ApJ...783..114G},  \cite{green_3d_2019} and \cite{bailer-jones_estimating_2021}.
+by, e.g., \cite{2011MNRAS.411..435B},  \cite{2014ApJ...783..114G}, \cite{lallement_3d_2014}, 
+\cite{gordon_panchromatic_2016}, \cite{queiroz_starhorse_2018}, \cite{green_3d_2019} and \cite{bailer-jones_estimating_2021}.
 The main differences compared to these works include: 
 \begin{enumerate}
 \item The use of multiple stellar populations, in addition to main-sequence stars and red giants (white dwarfs, unresolved binary stars,
@@ -143,16 +145,16 @@ and red giants next, and then for white dwarfs, unresolved binary stars and BHB 
 \subsubsection{Empirical Luminosity-Color Tracks for Main-sequence Stars and Red Giants}
 
 \begin{figure*}[b!]
-\plotone{plot3HRdiags.png}
+\includegraphics[width=1.0\textwidth,angle=0]{figures/plot3HRdiags.png}  
 \caption{The left panel shows SDSS-based empirical absolute magnitude vs. color parametrization for main-sequence stars and red giants.
-The date are color-coded by metallicity, ranging from $[Fe/H] = -2.5$ to 0 (blue to red). The three lines correspond to three values of
+The data are color-coded by metallicity, ranging from $[Fe/H] = -2.5$ to 0 (blue to red). The three lines correspond to three values of
 metallicity: $[Fe/H] = -2, -1, 0$ (dot-dashed, solid and dashed, respectively). The middle panel shows a sample of 63,000 stars that have
 signal-to-noise ratio for Gaia’s parallax measurements of at least 20 (white dwarfs can be seen in the lower left corner.
 Their absolute magnitudes are derived from parallax measurements. The dot-dashed,
 solid and dashed black lines are the same as in the left panel. For comparison, the essentially identical yellow dotted lines were computed
 using eqs. A2 and A7 from Ivezi\'{c} et al. (2008).  Note the discrepancy between these parametrizations and data for sub-giant stars ($M_r \sim 3-4$
 and $g-i \sim 0.8-1.1$). The right panel shows a sample of 415,000 stars with $r < 22$ and $u<22$ as red dots (shown by blue dots in
-Figure~\ref{fig:3dataDiags}, and 409,000 of those that also have  $0.2 < g-i < 3.5$ as cyan dots. Their absolute magnitudes were computed
+Figure~\ref{fig:3dataDiags}), and 409,000 of those that also have  $0.2 < g-i < 3.5$ as cyan dots. Their absolute magnitudes were computed
 using the so-called “photogeometric” distances from Bailer-Jones et al. (2021). The dot-dashed, solid and dashed black lines are the
 same as in the left and middle panels. About 10,000 outliers (about 2.5\% of the full
 sample) seen at $g-i = 0.4$ and $Mr > 7$ are predominantly found at the faint end ($r>20$).}
@@ -173,7 +175,8 @@ shows a clear discrepancy between SDSS-based empirical tracks and data for sub-g
 magnitudes. Nevertheless, it is noteworthy that
 for main-sequence stars the agreement is excellent. Furthermore, the right panel in Figure~\ref{fig:3HRdiags} demonstrates
 that SDSS-based photometric distances and Gaia-based ``photogeometric'' distances from \cite{bailer-jones_estimating_2021}
-for main-sequence stars are on the ``same scale''.  XXX ZI: provide numerical results for offsets! 
+for main-sequence stars are on the ``same scale''.  We discuss these
+distance scales in more detail in \S\ref{sec:SDSSGaia}. 
  
 We address all three problems by augmenting the SDSS-based empirical isochrones that correspond to old
 populations with model-based isochrones that span a range of ages and a wider range of metallicities, which
@@ -196,7 +199,7 @@ results in better agreement with the observations.
 \end{figure*}
 
 \begin{figure*}[ht!]
-\plotone{RGdegeneracy.png}
+\includegraphics[width=1.0\textwidth,angle=0]{figures/RGdegeneracy.png}
 \caption{Analysis of color degeneracies between giants and main  sequence stars. The left panel shows minimum color distance in
   4-dimensional color space ($u-g$, $g-r$, $r-i$, $i-z$) between a position on the locus with $M_r<4$ (giants) and any position on the
   main-sequence $M_r>4$ locus (in magnitudes). Symbols are color-coded by metallicity, linearly from blue to red for the range $-2.5$ to 0.5).
@@ -265,8 +268,8 @@ After these color adjustments are applied, all color vs. $M_r$ model sequences w
 with a step of 0.02 mag). The resulting two model tracks for H and He white dwarfs are shown in Figure~\ref{fig:locusWDs}. 
    
 
-\begin{figure*}[ht!]
-\plotone{plot3diagsBAzoom.png}
+\begin{figure*}[ht!] 
+\includegraphics[width=1.0\textwidth,angle=0]{figures/plot3diagsBAzoom.png}
 \caption{Luminosity-color tracks for H and He white dwarfs based on models from \cite{1995PASP..107.1047B}, with
   colors slightly shifted to bring them in agreement with SDSS photometry. Data, shown as symbols, are the same as in
   Figure~\ref{fig:3dataDiags} and in the middle panel in Figure~\ref{fig:3HRdiags}. Note the crucial role of the $u-g$ color
@@ -299,10 +302,10 @@ combination of an H white dwarf and a $[Fe/H]=-1.5$ M dwarf).
 
 
 \begin{figure*}[ht!]
-\plotone{plot3diagsBA_DAh.png}
+\includegraphics[width=1.0\textwidth,angle=0]{figures/plot3diagsBA_DAh.png}  
 \caption{Luminosity-color tracks, shown with gray symbols, for unresolved binaries composed of an M dwarf with
   $[Fe/H]=-1.5$ and an H white dwarf. Analogous tracks for binaries composed of an M dwarf with
-  $[Fe/H]=0$ and either an H or He white dwarf look very similar though not identical. Data, shown as symbols,
+  $[Fe/H]=0$ and either an H or He white dwarf look very similar though not identical. Data, shown as colored symbols,
   are the same as in Figure~\ref{fig:3dataDiags} and in the middle panel in Figure~\ref{fig:3HRdiags}.} 
 \label{fig:locusBinaries}
 \end{figure*}
@@ -361,7 +364,7 @@ wavelength range and extend into near-IR (such as the $i-z$ color) are available
 Section 2.8 in \cite{2012ApJ...757..166B}.
 
 
-\subsection{TRILEGAL-based Priors} 
+\subsection{TRILEGAL-based Priors \label{sec:priors}} 
 
 \begin{figure*}[t!]
 \hskip -0.5in
@@ -561,8 +564,8 @@ probability of model $k$, $k=1...N_M$, as
 \begin{equation}
                  p(k) = { O_{k1}  \over \sum_{j=1}^{j=N_M}  O_{kj}},
 \end{equation}
-where the model $k=1$ is chosen arbitrarily without a loss of generality ($O_{11}$ = 1). We will illustrate model
-selection with multiple stellar populations in the next Section.
+where the model $k=1$ is chosen arbitrarily without a loss of generality ($O_{11}$ = 1).
+% We will illustrate model selection with multiple stellar populations in the next Section.
 
 
 

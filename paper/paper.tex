@@ -96,7 +96,7 @@
 \author[0000-0003-3710-0331]{Lovro Palaversa}
 \affiliation{Ru{\dj}er Bo\v{s}kovi\'{c} Institute, Bijeni\v{c}ka cesta 54, 10000 Zagreb, Croatia }
 
-\author[0000-0012-3245-123X]{\v{Z}eljko Ivezi\'{c}}
+\author[0000-0001-5250-2633]{\v{Z}eljko Ivezi\'{c}}
 \affiliation{Department of Astronomy and DiRAC Institute, University of Washington, Box 351580, Seattle, WA 98195, USA}
 
 \author[0000-0012-3245-123X]{Karlo Mrakov\v{c}i\'{c}}
@@ -124,6 +124,9 @@
 \author[0000-0002-4993-2939]{Tomislav Jurki\'{c}}
 \affiliation{Faculty of Physics, University of Rijeka, Radmile Matej\v{c}i\'{c} 2, 51000 Rijeka, Croatia}
 
+\author[0000-0000-0000-0000]{Neven Caplar}
+\affiliation{Department of Astronomy and DiRAC Institute, University of Washington, Box 351580, Seattle, WA 98195, USA}
+
 \author[0000-0000-0000-0000]{Mario Juri\'{c}}
 \affiliation{Department of Astronomy and DiRAC Institute, University of Washington, Box 351580, Seattle, WA 98195, USA}
 
@@ -150,6 +153,8 @@ using both simulated catalogs, and SDSS, DECam and Gaia photometry. We intend to
 available via Rubin Science Platform with every LSST Data Release. 
 \end{abstract}
 
+
+
 %% Keywords should appear after the \end{abstract} command. 
 %% The AAS Journals now uses Unified Astronomy Thesaurus concepts:
 %% https://astrothesaurus.org
@@ -164,10 +169,12 @@ available via Rubin Science Platform with every LSST Data Release.
 
 \include{analysis}
 
-%\include{discussion}
- 
-\begin{acknowledgements}
+\include{pipeline}
 
+\include{discussion}
+
+
+\begin{acknowledgements}
 This work is financed within the Tenure Track Pilot Programme of the Croatian Science Foundation and the Ecole Polytechnique Fédérale
 de Lausanne and the Project TTP-2018-07-1171 Mining the variable sky, with the funds of the Croatian-Swiss Research Programme. 
 \v{Z}.I. acknowledges funding by the Fulbright Foundation and thanks the Ru\dj er Bo\v{s}kovi\'{c} Institute for hospitality. 
@@ -186,7 +193,6 @@ Data Processing and Analysis Consortium (DPAC,
 \url{https://www.cosmos.esa.int/web/gaia/ dpac/consortium}). Funding for the
 DPAC has been provided by national institutions, in particular, the
 institutions participating in the Gaia Multilateral Agreement.
-
 \end{acknowledgements}
  
 \vspace{5mm}
@@ -204,4 +210,51 @@ institutions participating in the Gaia Multilateral Agreement.
 
 
 
- 
+
+
+
+dust extinction plot in: 
+BayesMethod3D_SEGUElong.ipynb
+
+
+BDBS:
+BDBS/analyzeBDBS_field_044_TRILEGALcatalog.ipynb
+PhotoD/notebooks/BayesMethod3D_BDBSfield044.ipynb
+
+
+
+
+
+IBJ2012: fig. 23 
+star with g-i = 3.0 and r =20: DM = 7 mag so d=250 pc
+Mr = 13
+
+10% distance from both Gaia and LSST: fig. 21: 
+sigmaPi = 0.5 mas for both LSST and Gaia
+SNR=10, so pi = 5 mas or D=200 pc OK
+
+within 150 pc: 10% dist for DM=6 and r = 21.5 => Mr = 15.5  (g-i = 3.6) 
+LSST sigmaPi at r=21.5: 0.7 mas so pi = 7 mas or D = 150 pc! 
+  
+
+blue star with g-i = 0.3 and r = 20: DM = 16, d=15 kpc
+so Mr = 4
+parallax = 1/15 mas so SNR=0.13
+
+DM = 12: r = 16, d=2.5 kpc, pi = 0.4 
+Gaia sigmaPi = 0.05 mas, SNR = 10 
+LSST pi limited by systematics: sigmaPi = 0.5 so SNR~1
+
+
+LSST at r = 24: sigmaPi = 3
+for SNR=10, pi = 30 mas and d=30pc DM=2.5 mag
+Mr = 24-2.5 -> Mr = 21.5
+
+For stars with g-i > 3.2 (M5 and later), LSST has better parallax distance
+estimates for r>20
+
+For stars of any color at distances beyond 3 kpc, LSST photo distances
+are better than Gaia distances
+For blue stars at 3 kpc, r = 16 and Gaia's parallax are already 10\%
+between 16 and 20, LSST benefits from FeH which photogeo don't have
+LSST at blue end goes to 100 kpc with 10% distance, correct? 
