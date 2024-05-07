@@ -1,0 +1,20 @@
+
+
+\section{All-sky PhotoD Pipeline Implementation \label{sec:LSDBpipe}}
+
+
+{\bf Lovro:} will here describe LSDB implementation (with Neven's help) and pipeline performance on the full TRILEGAL catalog...
+
+LSDB = Large Survey Database 
+
+
+\subsection{LSDB and Healpix Implementation} 
+
+Implementation of the Bayesian algorithm described in preceding sections assumes that priors can be assumed constant
+over some sky region, hereafter a patch (see \S\ref{sec:priors}). In practice,  patches need to be at least several sq. deg.
+large in order to have enough stars to compute priors. At the same time, they should not be too large to satisfy the assumption
+of constancy. Both of these size limits vary across the sky due to Galactic structure effects. 
+
+One of recent tools developed to efficiently loop across the sky patches and perform some per-patch calculations
+is the  Large Survey Database...
+ 
