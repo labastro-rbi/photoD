@@ -19,15 +19,16 @@ Luminosity-color models introduced in \S\ref{sec:method} are expressed as lookup
 on a two-dimensional grid, and after accounting for dust extinction, on a three-dimensional grid. We use equidistant grids for all three
 model parameters: 0.01 mag for $M_r$, 0.05 dex for $[Fe/H]$ and a range of steps from 0.005 mag to 0.02 mag for $A_r$, depending on its
 prior range. These grids have sufficient resolution for numerical analysis of the posterior probability distributions and typically
-result (depending on the maximum allowed $A_r$ value) in several million grid points. For a given star, exhaustive grid search method simply iterates
+result (depending on the maximum allowed $A_r$ value) in several
+million grid points. For a given star, the exhaustive grid search method simply iterates
 over all these points and for each computes likelihood and ultimately the posterior pdf. 
 
 Significant acceleration can be achieved by using a two-step iteration, with degraded grids in the first step, but still fine
-enough to sufficiently resolve posterior pdf to approximately estimate its behavior around its maximum. We find that degrading $M_r$ step to 0.05 mag and
-$[Fe/H]$ step to 0.1 dex works well in practice and results in about 10 times shorter run time. After the first iteration, the range $\pm 3
-\sigma$ around the posterior  maximum, where $\sigma$ is standard deviation, is estimated using marginal distribution for each model
-parameter. The calculation of posterior is then repeated
-using the finest grid but only in the $\pm 3 \sigma$  neighborhood (cube) around posterior maximum, which includes 100 to 1000 times fewer grid locations. 
+enough to sufficiently resolve the posterior pdf to approximately estimate its behavior around its maximum. We find that degrading the
+$M_r$ step to 0.05 mag and the $[Fe/H]$ step to 0.1 dex works well in practice and results in a about ten times shorter run time. After the first iteration, the range $\pm 3
+\sigma$ around the posterior  maximum, where $\sigma$ is standard deviation, is estimated using the marginal distribution for each model
+parameter. The calculation of the posterior is then repeated using the finest grid but only in the $\pm 3 \sigma$  neighborhood
+(cube) around the posterior maximum, which includes 100 to 1000 times fewer grid locations. 
 
 With this acceleration trick, runtime per star is typically about 10 millisec per star  (it varies nearly proportionally to the maximum allowed $A_r$ value). 
 While exceedingly simple, this method is sufficiently fast and robust to offer a convenient practical solution for processing samples of billions of stars. 
@@ -36,20 +37,20 @@ While exceedingly simple, this method is sufficiently fast and robust to offer a
 \subsubsection{Markov Chain Monte Carlo Method}
  
 Markov Chain Monte Carlo methods have been successfully used in this context (e.g., \citealt{2014ApJ...783..114G}). 
-Given that we aim to process LSST photometry for about 10$^{10}$ stars, it is worthwhile to compare MCMC runtime
-to runtime for our accelerated exhaustive grid search method. We considered two implementations, based on {\it PyMC3} \citep{pymc2023} and
+Given that we aim to process LSST photometry for about 10$^{10}$ stars, it is worthwhile to compare the MCMC runtime
+to the runtime for our accelerated exhaustive grid search method. We considered two implementations, based on {\it PyMC3} \citep{pymc2023} and
 {\it emcee} \citep{2013PASP..125..306F}. The latter was about 10-20 times faster than the former; for example, with 4 ``walkers'' and 500
 iterations, it took on average about 0.1 sec per star. Therefore, in this low-dimensional case (there are only three model parameters) the
-grid search method described above is about an order of magnitude faster than {\it emcee} implementation. 
+grid search method described above is about an order of magnitude faster than the {\it emcee} implementation. 
 
 
 \subsubsection{Neural Network Method}
 
-Further acceleration can be achieved using Neural Network method. In a companion paper by Mrakov\v{c}i\'{c} et al., we describe
+Further acceleration can be achieved using the Neural Network method. In a companion paper by Mrakov\v{c}i\'{c} et al., we describe
 how to use a small subsample of stars to train a neural network model and then estimate model parameters and their uncertainty for the remaining
-stars using trained network. This approach yields runtimes of about 1 milisec per star, that is, shorter by an order of magnitude than when
+stars using the trained network. This approach yields runtimes of about 1 milisec per star, that is, shorter by an order of magnitude than when
 the grid search method is used for the full sample. With this additional speed up, a sample of 10 billion stars can be processed in
-about 10 hours using a 300-core machine and pipeline described in the next Section. 
+about 10 hours using a 300-core machine and the pipeline described in the next Section. 
 
 
 \subsection{Performance Testing} 
@@ -72,11 +73,11 @@ we generate simulated LSST photometry for each star as follows:
 Given relevant model parameters (e.g., $M_r$ and $[Fe/H]$ for main sequence and red giant stars, $M_r$ and log(g) for
 white dwarfs, the total system luminosity and the component luminosity ratio in the $r$ band for unresolved binaries),
 we use luminosity-color tracks (see Figure~\ref{fig:augmLocus}) to
-assign photometric noise-free colors. We do not use original TRILEGAL
+assign photometric noise-free colors. We do not use the original TRILEGAL
 colors because for proper statistical tests colors must be consistent
 with luminosity-color tracks used for likelihood computations. 
 \item
-Using apparent $r$ band magnitude from TRILEGAL simulation, corresponding to simulated distance and $M_r$, and 
+Using the apparent $r$ band magnitude from the TRILEGAL simulation, corresponding to simulated distance and $M_r$, and 
 colors from the previous step, we generate magnitudes in all the remaining bands.
 \item
 We generate per-band photometric uncertainties, $\sigma_b$, using eqs. 4 and 5 from \cite{2019ApJ...873..111I} and
@@ -88,8 +89,8 @@ Finally, we recompute photometric uncertainties to be treated as ``observational
 (because the first set of photometric uncertainties are derived using true noise-free magnitudes). 
 \end{enumerate} 
 
-For numerical tests, we select a region from the so-called SDSS Stripe 82, defined by $340^{\deg} < {\rm R.A.} < 350^{\deg}$ and
-$-1.3^{\deg} < \delta < 1.3^{\deg}$, which contains 280,000 simulated main sequence and red giants stars that satisfy
+For numerical tests, we select a region from the so-called SDSS Stripe 82, defined by $340^{\degree} < {\rm R.A.} < 350^{\degree}$ and
+$-1.3^{\degree} < \delta < 1.3^{\degree}$, which contains 280,000 simulated main sequence and red giants stars that satisfy
 $r<26$ and $u<27$. Their distributions of model parameters $M_r$, $[Fe/H]$, and interstellar dust extinction along the line of sight in
 the $r$ band, $A_r$,  in the $u$ vs. $g-i$ color-magnitude diagram are shown in Figure~\ref{fig:qpBmeans}. 
 
@@ -101,7 +102,7 @@ the $r$ band, $A_r$,  in the $u$ vs. $g-i$ color-magnitude diagram are shown in 
   line of sight in the $r$ band, $A_r$, for a TRILEGAL-simulated sample of 280,000 main
   sequence and red giants stars with $r<26$, $u<27$, $340^{\degree} < {\rm R.A.} < 350^{\degree}$
   and $-1.3^{\degree} < \delta < 1.3^{\degree}$ (a small patch from the SDSS Stripe 82 region) in the $u$ vs. $g-i$
-  color-magnitude diagram. The mean values are color-coded according to legend below each panel. Contours
+  color-magnitude diagram. The mean values are color-coded according to the legend below each panel. Contours
   visualize the sample distribution in each diagram. The strong variation of $M_r$ with the $g-i$ color is seen in the left panel,
   except for the small patch with $u<16.5$ and $1.0 < g-i < 1.5$ where red giant stars dominate. The
   diagonal iso-metallicity boundaries in the middle panel closely correspond to distance
@@ -111,7 +112,7 @@ the $r$ band, $A_r$,  in the $u$ vs. $g-i$ color-magnitude diagram are shown in 
 \label{fig:qpBmeans}
 \end{figure*}
 
-Figures~\ref{fig:perfVSestParamsMr} and \ref{fig:perfVSestParamsFeH} show summarized statistical performance of the Bayesian
+Figures~\ref{fig:perfVSestParamsMr} and \ref{fig:perfVSestParamsFeH} show the summarized statistical performance of the Bayesian
 method (bias, scatter, $\chi^2$) in the $u$ vs. $g-i$ color-magnitude diagram. In this test based on a high-galactic
 latitude field, we assumed that all stars are beyond the dust layer and fixed $A_r$ to its known true value (in practice provided by dust
 maps such as those from \citealt{schlegel_maps_1998}). When $A_r$ is considered as a free parameter in sky regions with small $A_r$,
@@ -234,17 +235,17 @@ LSST distance uncertainties of about 20\%, will be detected to distances of abou
 
 
 Analysis of the method's performance in the preceding subsection was based on a simulated sample with ``observed'' colors generated using
-exactly the same luminosity-color model tracks as those used in fitting. Therefore, that analysis cannot test validity of those tracks in an absolute sense.
+exactly the same luminosity-color model tracks as those used in fitting. Therefore, that analysis cannot test the validity of those tracks in an absolute sense.
 While these empirical luminosity-color model tracks were derived using SDSS observations of
 globular clusters with known distances and metallicities, here we validate them further using trigonometric distances recently obtained by Gaia.  
 
-For validation, we used SDSS Stripe 82 Standard Star Catalog, recalibrated by \cite{2021MNRAS.505.5941T},
+For validation, we used the SDSS Stripe 82 Standard Star Catalog, recalibrated by \cite{2021MNRAS.505.5941T},
 which provides the most precise available photometry in SDSS bands (due to averaging of many repeated SDSS observations). 
 For stars listed in the catalog, we extracted Gaia measurements and ``photogeometric'' distances from 
 \cite{bailer-jones_estimating_2021}. Out of 841,000 stars listed in the Standard Star Catalog, there are 415,000 stars with $r < 22$, $u<22$ and a Gaia
 match within 0.15 arcsec (after correcting for proper motion using Gaia measurements). Their distribution in color-color and
 color-magnitude diagrams is shown in Figures~\ref{fig:3dataDiags} and \ref{fig:3HRdiags}. 
-We estimated $M_r$ and $[Fe/H]$ for these stars used the same procedure and assumptions as for the simulated sample from the
+We estimated $M_r$ and $[Fe/H]$ for these stars using the same procedure and assumptions as for the simulated sample from the
 preceding subsection. In particular, we assumed that all stars are beyond the dust layer and fixed $A_r$ to its value provided by the dust
 maps from \cite{schlegel_maps_1998}.
 
@@ -263,10 +264,10 @@ estimates is 0.21 mag (corresponding to about 10\% distance uncertainty).  Recal
 estimates using simulated sample in the preceding section are 0.10 mag at the bright end, these somewhat larger uncertainties may
 imply additional statistical effects not accounted for in our analysis, and/or imperfect luminosity color-tracks.
 Figure~\ref{fig:gaiasdss1} demonstrates that there are no concerningly large systematic errors in photometric $M_r$ estimates with
-respect to photometric noise ($u$ band magnitude), $g-r$ color and photometric metallicity estimate (though note that the metallicity
+respect to photometric noise ($u$ band magnitude), $g-r$ color and photometric metallicity estimates (though note that the metallicity
 range corresponds only to disk stars).
 
-We extended our analysis to fainter magnitude limit by replacing Gaia's magnitudes based on trigonometric distance with those based on
+We extended our analysis to fainter magnitude limits by replacing Gaia's magnitudes based on trigonometric distance with those based on
 the so-called ``photogeometric'' distances from \cite{bailer-jones_estimating_2021}. This comparison goes about 2
 magnitudes deeper and also extends to low halo-like metallicity range. The scatter between photometric $M_r$ based on SDSS data and
 $M_r$ based on ``photogeometric'' distances is 0.38 mag. As shown in Figure~\ref{fig:gaiasdss2}, the systematic error

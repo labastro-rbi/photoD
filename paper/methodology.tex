@@ -10,7 +10,7 @@ of its performance are presented in the next Section.
 
 \subsection{Bayesian Approach to Stellar Photometric Distance Estimation}
 
-In most general terms, our aim is to estimate for each star an array (a vector) of model parameters $\vec{\theta}$,
+In the most general terms, our aim is to estimate for each star an array (a vector) of model parameters $\vec{\theta}$,
 for some model $M$ (e.g., main-sequence stars), using data vector $\vec{D}$ and priors for $M$ and $\vec{\theta}$.
 Data, or observations, include multi-band photometry that is used
 to construct colors, $\vec{c}$. In the case of SDSS, colors include $u-g$, $g-r$, $r-i$, $i-z$, and in the case of LSST also
@@ -31,19 +31,21 @@ consider stellar age as a model parameter and use it as a model label for reason
 The observed stellar colors also depend on the interstellar dust extinction along the line of sight. Hereafter
 we will assume (and justify further below) that dust extinction is fully specified by a single model parameter, $A_r$.
 $A_r$ is extinction in the $r$ band and extinction in other bands is proportional to $A_r$, with known constants
-of proportionality (this assumption can be relaxed, see below). Once $M_r$ and $A_r$ are constrained, the distance
-modulus $\Delta$ can be computed from
+of proportionality (this assumption can be relaxed, see below). Once $M_r$ and $A_r$ are constrained, that is, the
+posterior probability distribution $q(Q_r)$, where $Q_r=M_r+A_r$ is known, the distance modulus $\Delta$ can be
+computed using relationship
 \begin{equation}
   \label{eq:distmod}
-                   r = M_r + A_r + \Delta,
+                 r = M_r + A_r + \Delta.
 \end{equation}
-or in a probabilistic form
+In practice the uncertainty of the observed magnitude, $r^{obs}$, is always much smaller than the width of $q(Q_r)$
+distribution (at the bright end by an order of magnitude, $\sim$0.01 mag vs. $\sim$0.1 mag). Therefore,
 \begin{equation}
   \label{eq:distmodpdf}
-                       p(\Delta) = p(r) - p(M_r + A_r). 
+                         p(\Delta) = q(r^{obs} - \Delta),
 \end{equation}
-Note that in practice the uncertainty of the observed magnitude, $r^{obs}$, is always significantly smaller than
-the width of $p(M_r + A_r)$ distribution (at the bright end by an order of magnitude, $\sim$0.01 mag vs. $\sim$0.1 mag).
+with the mean values related as $\mean{\Delta}$ = $r^{obs} - \mean{Q_r}$ and the uncertainty of $\Delta$
+approximately equal to the standard deviation of $q(Q_r)$. 
 
 In summary, $\vec{D}$ = ($r$, $\vec{c}$) and $\vec{\theta}$ = ($M_r$, $[Fe/H]$, $A_r$).
 Data $\vec{D}$ and model parameters $\vec{\theta}$ are related via the Bayes theorem (see, e.g., Chapter 5 in \citealt{2020sdmm.book.....I}),
@@ -79,9 +81,16 @@ below in \S\ref{sec:ModSel}, where the correct normalization of the product $p(D
 
 \begin{figure*}[t!]
 \includegraphics[width=1.0\textwidth,angle=0]{figures/plot3diagsData.png} 
-\caption{An illustration of multiple stellar populations. The dots (of
-any color) in the left panel show color-magnitude diagram for 841,000 stars from the SDSS Stripe 82 Standard Star Catalog
-(variable sources are excluded, \citealt{2021MNRAS.505.5941T}) that have Gaia matches within 0.15 arcsec (after correcting for proper motion using Gaia measurements). A subset of 415,000 stars with $r < 22$ and $u<22$ are overplotted as blue dots, and 409,000 of those that also have $0.2 < g-i < 3.5$ (dominated by main-sequence stars and red giants) are overplotted as cyan dots. Finally, 63,000 stars that have signal-to-noise ratio for Gaia’s parallax measurements of at least 20 are shown as green dots (these stars can be used for the calibration of luminosity-color relations). The same symbol color scheme is used in other two panels. The three yellow lines in the middle panel show stellar locus parametrization used by Green et al. (2014) for three values of metallicity (left to right): $[Fe/H] = -2, -1, 0$. In the right panel, the impact of metallicity on color-color tracks is negligible and all three are indistinguishable from each other. In the bottom of the middle panel, at $-0.5 < g-r < 0$, the three dark blue sequences correspond to (from left to right) He white dwarfs, H white dwarfs, and blue horizontal branch stars. The clouds of pale blue dots visible above the main stellar locus in the middle and right panels correspond to unresolved binary stars \citep{2004ApJ...615L.141S}.} \label{fig:3dataDiags}
+\caption{An illustration of multiple stellar populations.
+  The left panel is a color-magnitude diagram  for 841,000 stars from the SDSS Stripe 82 Standard Star Catalog
+(variable sources are excluded, \citealt{2021MNRAS.505.5941T}) that have Gaia matches within 0.15 arcsec (after correcting for proper
+motion using Gaia measurements). A subset of 415,000 stars with $r < 22$ and $u<22$ are overplotted as blue dots, and 409,000 of those that
+also have $0.2 < g-i < 3.5$ (dominated by main-sequence stars and red giants) are overplotted as cyan dots. Finally, 63,000 stars that have
+a signal-to-noise ratio for Gaia’s parallax measurements of at least
+20 are shown as green dots (these stars can be used for the
+calibration of luminosity-color relations). The same symbol color
+scheme is used in the other two panels. The three yellow lines in the
+middle panel show the stellar locus parametrization used by Green et al. (2014) for three values of metallicity (left to right): $[Fe/H] = -2, -1, 0$. In the right panel, the impact of metallicity on color-color tracks is negligible and all three are indistinguishable from each other. In the bottom of the middle panel, at $-0.5 < g-r < 0$, the three dark blue sequences correspond to (from left to right) He white dwarfs, H white dwarfs, and blue horizontal branch stars. The clouds of pale blue dots visible above the main stellar locus in the middle and right panels correspond to unresolved binary stars \citep{2004ApJ...615L.141S}.} \label{fig:3dataDiags}
 \end{figure*}
 
 
@@ -101,7 +110,8 @@ The main differences compared to these works include:
 \item Improved color tracks for main-sequence stars and (especially) red giants, including the use of very young ($<$1 Gyr) populations 
                and an extended $[Fe/H]$ range. 
 \item Priors based on sophisticated TRILEGAL simulations by \cite{2022ApJS..262...22D} that include multiple stellar populations and
-               also account for the Galaxy's bulge component. 
+               also account for the Galaxy's bulge component (see
+               \S\ref{sec:priors} below for more details). 
 \end{enumerate}
              
 We discuss these improvements in detail in the next few sections. 
@@ -156,8 +166,8 @@ using eqs. A2 and A7 from Ivezi\'{c} et al. (2008).  Note the discrepancy betwee
 and $g-i \sim 0.8-1.1$). The right panel shows a sample of 415,000 stars with $r < 22$ and $u<22$ as red dots (shown by blue dots in
 Figure~\ref{fig:3dataDiags}), and 409,000 of those that also have  $0.2 < g-i < 3.5$ as cyan dots. Their absolute magnitudes were computed
 using the so-called “photogeometric” distances from Bailer-Jones et al. (2021). The dot-dashed, solid and dashed black lines are the
-same as in the left and middle panels. About 10,000 outliers (about 2.5\% of the full
-sample) seen at $g-i = 0.4$ and $Mr > 7$ are predominantly found at the faint end ($r>20$).}
+same as in the left and middle panels. About 10,000 stars below the main sequence (about 2.5\% of the full sample) seen at $g-i = 0.4$ and
+$Mr > 7$ are predominantly found at the faint end ($r>20$) and may be outliers due to the low photometric signal-to-noise ratio.}
 \label{fig:3HRdiags}
 \end{figure*}
 
@@ -220,7 +230,8 @@ We ``augment'' the empirical SDSS-based isochrones in two steps:
   stellar locus at $[Fe/H]=+0.5$ agrees with SDSS-Gaia data (shown in the middle panel in Figure~\ref{fig:3HRdiags}).
 \item 
   For $M_r < M_{TO}$, where turn-off absolute magnitude $M_{TO}$ depends on age and ranges from $M_{TO}$=4 for age = 1 Gyr
-  to $M_{TO}$ = 5 for age = 10 Gyr, we ``attach'' model-based isochrones (we use DSED isochrones hereafter) to empirical
+  to $M_{TO}$ = 5 for age = 10 Gyr, we ``attach'' model-based
+  isochrones (we use DSED isochrones hereafter) to the empirical
   SDSS-based isochrones.
 \end{enumerate}
 
@@ -290,7 +301,7 @@ $[Fe/H]=0$ and $[Fe/H]=-1.5$, respectively. For the remaining two model paramete
 total system luminosity and the component luminosity ratio in the $r$ band. 
 
 We sample the M dwarf luminosity in the range $8.5 \le M_r \le 14.5$, with a step of 0.1 mag, and for each value
-generate a track by adding luminosity of a white dwarf, where the track is sampled on the same grid of $M_r$ but
+generate a track by adding the luminosity of a white dwarf, where the track is sampled on the same grid of $M_r$ but
 using white dwarf models (separately for H and He models). There are four model families (for two families of white dwarf
 models and two values of $[Fe/H]$ for M dwarfs), each with 3,721 $M_r$ vs. color entries. The color tracks for H white dwarfs
 and $[Fe/H]=-1.5$ M dwarfs are shown in Figure~\ref{fig:locusBinaries}. Analogous tracks for binaries composed of an M dwarf with
@@ -345,7 +356,7 @@ Dust extinction models, such as \cite{1989ApJ...345..245C} and
 \cite{1999PASP..111...63F}, parametrize extinction coefficients $C_{m}$ as functions of $R_V$, where
 $R_V = A_V/E(B-V)$ and $E(B-V)$ is the stellar ``color excess'' \citep{1989ApJ...345..245C}.
 
-Recent studies, such as \cite{2012ApJ...757..166B} based on SDSS data (including the Galactic plane), 
+Studies, such as \cite{2012ApJ...757..166B}, based on SDSS data (including the Galactic plane), 
 find that the scatter of $R_V$ around its mean value $R_V=3.1$ is very small. For this reason, we adopt
 empirical results from their Table 1: $C_m$ = (1.810, 1.400, 0.759, 0.561) in $(u, g, i, z)$, respectively ($C_r=1$
 by definition). This choice does not preclude the use of our framework to fit for $R_V$ as the fourth free
@@ -492,7 +503,7 @@ expectation value for the marginalized posterior and the vertical solid line mar
 
 In the next Section, we discuss a fast numerical pipeline implementation that can perform this computation for LSST-sized
 catalogs and provide a more quantitative analysis of the method's performance.  We conclude this Section with a brief
-discussion of Bayesian model selection method for assigning posterior probabilities to each stellar population used to interpret
+discussion of the Bayesian model selection method for assigning posterior probabilities to each stellar population used to interpret
 observations. 
 
 
