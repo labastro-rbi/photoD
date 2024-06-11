@@ -45,7 +45,7 @@ distribution (at the bright end by an order of magnitude, $\sim$0.01 mag vs. $\s
                          p(\Delta) = q(r^{obs} - \Delta),
 \end{equation}
 with the mean values related as $\mean{\Delta}$ = $r^{obs} - \mean{Q_r}$ and the uncertainty of $\Delta$
-approximately equal to the standard deviation of $q(Q_r)$. 
+approximately equal to the standard deviation of $q(Q_r)$. For related discussion, please see \S2.4 in \cite{bailer-jones_estimating_2021}.
 
 In summary, $\vec{D}$ = ($r$, $\vec{c}$) and $\vec{\theta}$ = ($M_r$, $[Fe/H]$, $A_r$).
 Data $\vec{D}$ and model parameters $\vec{\theta}$ are related via the Bayes theorem (see, e.g., Chapter 5 in \citealt{2020sdmm.book.....I}),
@@ -413,7 +413,7 @@ generated priors using SDSS-based analytic descriptions of the 3-dimensional ste
 \citep{2008ApJ...673..864J} and metallicity distribution for disk and halo components \citep{2008ApJ...684..287I}. 
 Since LSST aims to provide good coverage of the Galactic plane and the Bulge, where SDSS data did not provide strong
 constraints, we opted to utilize recent simulations that implement constraints from a variety of modern surveys (some
-include the Galactic plane and Bulge regions). 
+include the Galactic plane and Bulge regions). An analogous approach was taken by \cite{bailer-jones_estimating_2021}.
 
 \cite{dal_tio_simulating_2022} have generated a mock catalog of the Milky Way stars to LSST depth ($r$=27.5) and over
 the entire LSST survey area. The simulation is based on the TRILEGAL code, incorporates all principal stellar populations,
@@ -431,7 +431,7 @@ several characteristic sky positions. Several features are noticeable: i) there 
 that correspond to halo and disk stars; ii) the distribution towards the Galactic center (top row) is much more compact in
 the $M_r$ direction (because these subsamples are dominated by the Bulge stars at similar distances); iii) the whole 
 distribution shifts to fainter levels as the bin center ($r$) becomes fainter. We have experimented with different region
-sizes\footnote{We use HEALPix geometry, see https://healpix.jpl.nasa.gov.} and found that $\sim$10 deg$^2$
+sizes\footnote{Following \cite{bailer-jones_estimating_2021}, we use HEALPix geometry, see https://healpix.jpl.nasa.gov.} and found that $\sim$10 deg$^2$
 (HEALPix $N_{side}$=16 and 32, with 3,072 and 12,288 pixels over the full sky) is sufficiently small to capture the
 variation of $p(M_r, [Fe/H])$ maps across the sky.
  
