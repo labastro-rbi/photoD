@@ -221,6 +221,11 @@ def show2Dmap(Xgrid, Ygrid, Z, metadata, xLabel, yLabel, logScale=False):
     yMin = metadata[3]
     yMax = metadata[4]
     nYbin = metadata[5]
+    # glon = metadata[6]  # <--
+    # glat = metadata[7]  #  <--
+    # pix = metadata[8]   # <--
+    # r = metadata[-1]     # <---
+    
 
     fig, ax = plt.subplots(1,1,figsize=(6,4.5))
 
@@ -244,7 +249,9 @@ def show2Dmap(Xgrid, Ygrid, Z, metadata, xLabel, yLabel, logScale=False):
 
     plt.xlabel(xLabel)
     plt.ylabel(yLabel)
-    plt.savefig('x.png')
+    #plt.title(str(pix) + " l=" + str(np.round(glon, 2)) + " b=" + str(np.round(glat, 2)) + " r=" + 
+    #          str(r))
+    # plt.savefig('x.png')
     plt.show() 
 
 
@@ -456,8 +463,8 @@ def qpB(df, Qname, Dname='Mr', cmd=False, estQ=False):
         xAxis = 'gi'
         yAxis = 'umag'
         yTicks = [16, 18, 20, 22, 24, 26, 28]
-        xlabel = '$\mathrm{g-i}$'
-        ylabel = '$\mathrm{u mag}$'
+        xlabel = r'$\mathrm{g-i}$'
+        ylabel = r'$\mathrm{u mag}$'
     else:
         if estQ:
             xAxis = 'MrEst'
@@ -469,8 +476,8 @@ def qpB(df, Qname, Dname='Mr', cmd=False, estQ=False):
             xAxis = 'Mr'
             yAxis = 'FeH'
             yTicks = [-2.0, -1.5, -1.0, -0.5, 0.0, 0.5] 
-            xlabel = '$\mathrm{Mr}$'
-            ylabel = '$\mathrm{[Fe/H]}$'
+            xlabel = r'$\mathrm{Mr}$'
+            ylabel = r'$\mathrm{[Fe/H]}$'
         
     # counts
     dFeH_count, xedges, yedges = binned_statistic_2d(df[xAxis], df[yAxis], df[Qname], 'count', bins=50)
@@ -618,8 +625,8 @@ def qpBcmd(df, color='gi', mag='umag', scatter=False):
         xAxis = color
         yAxis = mag
         yTicks = [16, 18, 20, 22, 24, 26, 28]
-        xlabel = '$\mathrm{g-i}$'
-        ylabel = '$\mathrm{u mag}$'
+        xlabel = r'$\mathrm{g-i}$'
+        ylabel = r'$\mathrm{u mag}$'
         xMin = 0.0
         xMax = 4.0
         yMin = 27
@@ -628,8 +635,8 @@ def qpBcmd(df, color='gi', mag='umag', scatter=False):
         xAxis = 'Mr'
         yAxis = 'FeH'
         yTicks = [-2.0, -1.5, -1.0, -0.5, 0.0, 0.5] 
-        xlabel = '$\mathrm{Mr}$'
-        ylabel = '$\mathrm{[Fe/H]}$'
+        xlabel = r'$\mathrm{Mr}$'
+        ylabel = r'$\mathrm{[Fe/H]}$'
         
     # counts
     dFeH_count, xedges, yedges = binned_statistic_2d(df[xAxis], df[yAxis], df['Mr'], 'count', bins=50)

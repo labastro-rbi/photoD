@@ -8,8 +8,15 @@ import BayesTools as bt
 import PlotTools as pt
 from astropy.table import Table, vstack
 
+# LP hack
+MSRGlocus = "../data/LocusData/SDSSDSEDlocus_10Gyr.txt"
+WDlocusH  = "../data/LocusData/WD_Hydrogen_MrColorSequences.txt"
+WDlocusHe = "../data/LocusData/WD_Helium_MrColorSequences.txt"
+outfile = "/mnt/beegfs/scratch/photod/test_outputs/test1"
 
-def makeSimLSSTcatFromTRILEGAL(infile, MSRGlocus, WDlocusH, WDlocusHe, outfile, verbose=False):
+
+# def makeSimLSSTcatFromTRILEGAL(infile, MSRGlocus, WDlocusH, WDlocusHe, outfile, verbose=False):
+def makeSimLSSTcatFromTRILEGAL(infile, MSRGlocus=MSRGlocus, WDlocusH=WDlocusH, WDlocusHe=WDlocusHe, outfile=outfile, verbose=False):
 
     ## 1) given rmag, Ar and DM from TRILEGAL, generate Mr 
     ## 2) with this Mr and FeH, generate colors from locus data  
@@ -22,7 +29,8 @@ def makeSimLSSTcatFromTRILEGAL(infile, MSRGlocus, WDlocusH, WDlocusHe, outfile, 
     ## 1)
     ## read catalog produced at Astro Lab, using dumpCatalogFromPatch in makePriors.py
     ## magnitudes (umag, gmag...) are not corrected for extinction, but colors are
-    cat = lt.readAstroLabCatalog(infile, verbose=verbose)
+    # cat = lt.readAstroLabCatalog(infile, verbose=verbose) <-- LP this should not be needed as the function should operate on the chunk passed by LSDB. However infile -> cat
+    cat = infile.copy()
 
     # save original TRILEGAL magnitudes
     for b in ['u', 'g', 'r', 'i', 'z']:  
@@ -62,7 +70,10 @@ def makeSimLSSTcatFromTRILEGAL(infile, MSRGlocus, WDlocusH, WDlocusHe, outfile, 
     ## assign colors to WD subsample
     fHe = 0.2    ## 0.1 in LSST Science Book, section 6.11.6 but we need to emphasize He more
     lt.getWDcolorsFromMr(HWD, HeWD, fHe, catWD)    
-    ## and now can merge MSRG and WD catalogs 
+    ## and now can merge MSRG and WD catalogs
+    print("tGoodMSRG", tGoodMSRG)
+    print("catWD", catWD)
+    print(tGoodMSRG.shape, catWD.shape)
     tGoodOK =  vstack([tGoodMSRG, catWD])
     if verbose: print('Generated model colors, Nsource=', len(tGoodOK))
 

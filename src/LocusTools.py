@@ -1,4 +1,6 @@
 import numpy as np
+import dask.dataframe as dd
+import pandas as pd
 from astropy.table import Table, vstack
 from scipy.stats import gaussian_kde
 from scipy import interpolate
@@ -699,7 +701,9 @@ def readWDlocus(infile, verbose=False):
 def readTRILEGAL(infile=''):
         if (infile == ''):
                 # Dani Chao's example file produced using TRILEGAL simulation
-                infile = '../data/three_pix_triout.dat'
+                # infile = '../data/three_pix_triout.dat' <---
+                # infile = '/mnt/beegfs/scratch/lovro/temp/three_pix_triout.dat'
+                infile = '/mnt/beegfs/scratch/lovro/temp/hipscat_dump_one_healpix_nside32_100ksample.csv'
                 print('reading from default file:', infile)
         else:
                 print('reading from:', infile)
@@ -710,7 +714,9 @@ def readTRILEGAL(infile=''):
         # DM = m-M is called true distance modulus in DalTio+(2022), so presumably extinction is not included
         # and thus Mr = rmag - Ar - DM - 5  
         ## read TRILEGAL simulation (per healpix, as extracted by Dani, ~1-2M stars)
-        trilegal = Table.read(infile, format='ascii', names=colnames)
+        # trilegal = Table.read(infile, format='ascii', names=colnames) <<-- replaced with pd.read_csv
+        trilegal = pd.read_csv(infile) #, format='ascii', names=colnames)
+        trilegal = Table.from_pandas(trilegal)
         # dust extinction: Berry+ give Ar = 2.75E(B-V) and DalTio+ used Av=3.10E(B-V)
         trilegal['Ar'] = 2.75 * trilegal['Av'] / 3.10   
         C = extcoeff()
@@ -721,6 +727,28 @@ def readTRILEGAL(infile=''):
         trilegal['iz'] = trilegal['imag'] - trilegal['zmag'] - (C['i'] - C['z'])*trilegal['Ar']   
         trilegal['gi'] = trilegal['gr'] + trilegal['ri']     
         return trilegal 
+
+## Added 15.5.2024
+def readTRILEGALLSDB(trilegal):
+        colnames = ['glon', 'glat', 'comp', 'logage', 'FeH', 'DM', 'Av', 'logg', 'gmag', 'rmag', 'imag', 'umag', 'zmag', 'label']
+        # comp: Galactic component the star belongs to: 1 → thin disk; 2 → thick disk; 3 → halo; 4 → bulge; 5 → Magellanic Clouds.
+        # logage with age in years
+        # DM = m-M is called true distance modulus in DalTio+(2022), so presumably extinction is not included
+        # and thus Mr = rmag - Ar - DM - 5  
+        ## read TRILEGAL simulation (per healpix, as extracted by Dani, ~1-2M stars)
+        # trilegal = Table.read(infile, format='ascii', names=colnames) <<-- replaced with pd.read_csv
+        trilegal = trilegal[colnames].copy()
+        # dust extinction: Berry+ give Ar = 2.75E(B-V) and DalTio+ used Av=3.10E(B-V)
+        trilegal.loc[:, 'Ar'] = 2.75 * trilegal.loc[:, 'Av'] / 3.10   
+        C = extcoeff()
+        # correcting colors for extinction effects 
+        trilegal.loc[:, 'ug'] = trilegal.loc[:, 'umag'] - trilegal.loc[:, 'gmag'] - (C['u'] - C['g'])*trilegal.loc[:, 'Ar']  
+        trilegal.loc[:, 'gr'] = trilegal.loc[:, 'gmag'] - trilegal.loc[:, 'rmag'] - (C['g'] - C['r'])*trilegal.loc[:, 'Ar']   
+        trilegal.loc[:, 'ri'] = trilegal.loc[:, 'rmag'] - trilegal.loc[:, 'imag'] - (C['r'] - C['i'])*trilegal.loc[:, 'Ar']   
+        trilegal.loc[:, 'iz'] = trilegal.loc[:, 'imag'] - trilegal.loc[:, 'zmag'] - (C['i'] - C['z'])*trilegal.loc[:, 'Ar']   
+        trilegal.loc[:, 'gi'] = trilegal.loc[:, 'gr'] + trilegal.loc[:, 'ri']
+        return trilegal 
+
 
 
 def readTRILEGALLSST(inTLfile='default', chiTest=False):
@@ -1059,32 +1087,139 @@ def getColorsFromMrFeH(L, Lvalues, colors=''):
     k = i + j*(imax+2) + 1
     for color in colors:
         Lvalues[color] = L[color][k]
- 
 
-        
-        
+
+# def getWDcolorsFromMr(LwdH, LwdHe, fHe, Lvalues, colors=''):
+#     SDSScolors = ['ug', 'gr', 'ri', 'iz']
+#     if (colors == ''): colors = SDSScolors
+#     for c in colors:
+#          Lvalues[c] = 0*Lvalues['Mr'] -9.99
+#     # random number for selecting He subset of white dwarfs
+#     rnd = np.random.uniform(low=0.0, high=1.0, size=len(Lvalues))
+#     # loop over all stars
+#     for j in range(0,len(Lvalues)):
+#          if (rnd[j] < fHe):
+#              distSq = (LwdHe['Mr']-Lvalues['Mr'][j])**2
+#              for c in colors:
+#                   Lvalues[c][j] = LwdHe[c][np.argmin(distSq)] 
+#          else:
+#              distSq = (LwdH['Mr']-Lvalues['Mr'][j])**2
+#              for c in colors:
+#                   Lvalues[c][j] = LwdH[c][np.argmin(distSq)] 
+#     return 
+
+
+# def getWDcolorsFromMr(LwdH, LwdHe, fHe, Lvalues, colors=''):
+#     SDSScolors = ['ug', 'gr', 'ri', 'iz']
+#     if colors == '':
+#         colors = SDSScolors
+#     for c in colors:
+#         # Lvalues.loc[:, c] = 0 * Lvalues['Mr'].copy() - 9.99
+#         Lvalues.loc[:, c] = 0 * Lvalues.loc[:, 'Mr'] - 9.99
+#     rnd = np.random.uniform(low=0.0, high=1.0, size=len(Lvalues))
+#     for j in range(0, len(Lvalues)):
+#         if rnd[j] < fHe:
+#             distSq = (LwdHe['Mr'] - Lvalues['Mr'].iloc[j]) ** 2
+#             for c in colors:
+#                 Lvalues.loc[j, c] = LwdHe[c][np.argmin(distSq)]
+#         else:
+#             # distSq = (LwdH['Mr'] - Lvalues['Mr'].loc[j]) ** 2
+#             # print(type(LwdH), LwdH['Mr'])
+#             # print(Lvalues['Mr'])
+#             # print(j, Lvalues)
+#             distSq = (LwdH['Mr'] - Lvalues['Mr'].iloc[j]) ** 2
+#             for c in colors:
+#                 Lvalues.at[j, c] = LwdH[c][np.argmin(distSq)]
+#     return Lvalues
+
+
 def getWDcolorsFromMr(LwdH, LwdHe, fHe, Lvalues, colors=''):
-    SDSScolors = ['ug', 'gr', 'ri', 'iz']
-    if (colors == ''): colors = SDSScolors
-    for c in colors:
-         Lvalues[c] = 0*Lvalues['Mr'] -9.99
-    # random number for selecting He subset of white dwarfs
-    rnd = np.random.uniform(low=0.0, high=1.0, size=len(Lvalues))
-    # loop over all stars
-    for j in range(0,len(Lvalues)):
-         if (rnd[j] < fHe):
-             distSq = (LwdHe['Mr']-Lvalues['Mr'][j])**2
-             for c in colors:
-                  Lvalues[c][j] = LwdHe[c][np.argmin(distSq)] 
-         else:
-             distSq = (LwdH['Mr']-Lvalues['Mr'][j])**2
-             for c in colors:
-                  Lvalues[c][j] = LwdH[c][np.argmin(distSq)] 
-    return 
 
-
+    if len(Lvalues) == 0:
+        return Lvalues
         
+    # Define SDSS colors if not provided
+    SDSScolors = ['ug', 'gr', 'ri', 'iz']
+    if not colors:
+        colors = SDSScolors
+
+    # Initialize columns in Lvalues
+    for c in colors:
+        Lvalues.loc[:, c] = 0 * Lvalues.loc[:, 'Mr'] - 9.99
+
+    # Random number for selecting He subset of white dwarfs
+    rnd = np.random.uniform(low=0.0, high=1.0, size=len(Lvalues))
+
+    # Determine which white dwarf table to use based on the random number
+    Lwd = np.where(rnd < fHe, LwdHe, LwdH)
+
+    # Compute squared distances
+    distSq = (Lwd['Mr'][:, np.newaxis] - Lvalues['Mr'].values[np.newaxis, :]) ** 2
+
+    # Find the index of the minimum distance for each star
+    min_indices = np.argmin(distSq, axis=0)
+
+    # Assign values to Lvalues based on the minimum distance
+    for c in colors:
+        Lvalues[c] = Lwd[c][min_indices]
+
+    return Lvalues
+
+
 def getColorsFromMrFeHDSED(L, Lvalues, colors=''):
+    # L is an astropy Table, Lvalues a Pandas DataFrame
+    # Prebaciti sve u numpy pa probati vrtiti kao loop
+    # taj kod zapravo nije ni bitan za LSST jer sada se koristi samo zato da se osprave boje koje nisu dobre u TRILEGALu
+    # Teoretski se to može i ignorirati i uzeti smao TRILEGAL boje
+    SDSScolors = ['ug', 'gr', 'ri', 'iz']
+    if not colors:
+        colors = SDSScolors
+    # Calculate squared distances using vectorized operations
+    distSq_Mr = ((L['Mr'][:, np.newaxis] - Lvalues['Mr'].values) ** 2) / 0.01 ** 2
+    distSq_FeH = ((L['FeH'][:, np.newaxis] - Lvalues['FeH'].values) ** 2) / 0.1 ** 2
+    distSq_total = distSq_Mr + distSq_FeH
+
+    # Find indices of minimum distances for each row
+    min_indices = np.argmin(distSq_total, axis=0)
+
+    # Assign values to Lvalues based on minimum distances
+    Lvalues['MrAssigned'] = L['Mr'][min_indices].data
+    for c in colors:
+        Lvalues[c] = L[c][min_indices].data
+
+    return Lvalues
+
+
+# def getColorsFromMrFeHDSED(L, Lvalues, colors=''):
+#     # Define SDSS colors if not provided
+#     SDSScolors = ['ug', 'gr', 'ri', 'iz']
+#     if not colors:
+#         colors = SDSScolors
+    
+#     # Initialize columns in Lvalues
+#     Lvalues = Lvalues.copy()
+#     Lvalues.loc[:, 'MrAssigned'] = 0 * Lvalues.loc[:, 'Mr'] - 9.99
+#     for c in colors:
+#         Lvalues[c] = -9.99
+
+#     # Compute distances and assign values
+#     for j in range(len(Lvalues)):
+#         # Compute squared distances for each row in L
+#         distSq = ((L['Mr'] - Lvalues['Mr'].iloc[j])**2 / 0.01**2 +
+#                   (L['FeH'] - Lvalues['FeH'].iloc[j])**2 / 0.1**2)
+        
+#         # Find the index of the minimum distance
+#         min_index = np.argmin(distSq)
+
+#         # Assign values to Lvalues based on the minimum distance
+#         Lvalues.at[j, 'MrAssigned'] = L['Mr'][min_index].data
+#         for c in colors:
+#             Lvalues.at[j, c] = L[c][min_index].data
+
+#     return Lvalues
+    
+
+def getColorsFromMrFeHDSED_old(L, Lvalues, colors=''):
     SDSScolors = ['ug', 'gr', 'ri', 'iz']
     if (colors == ''): colors = SDSScolors
     Lvalues['MrAssigned'] = 0*Lvalues['Mr'] -9.99
@@ -1097,7 +1232,7 @@ def getColorsFromMrFeHDSED(L, Lvalues, colors=''):
              Lvalues[c][j] = L[c][np.argmin(distSq)] 
     return 
 
-        
+    
 def getColorsFromGivenMrFeH(myMr, myFeH, L, gp, colors=""):
     SDSScolors = ['ug', 'gr', 'ri', 'iz'] 
     if (colors==""): colors = SDSScolors
