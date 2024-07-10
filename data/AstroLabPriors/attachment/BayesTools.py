@@ -133,74 +133,74 @@ def dumpPriorMaps(sample, fileRootname, show2Dmap=True, verbose=True, NrowMax=20
         # it takes about 2 mins on Mac OS Apple M1 Pro
         # so about 70 hours for 2,000 healpix samples 
         # maps per healpix are about 2 MB, total 4 GB
-        if (len(tSmap) < 1):
+        if (len(tSmap) < 10):
             print('ERROR: no data to make map (see dumpPriorMaps)')
-            xGrid, yGrid, Z = 0 
+            # xGrid, yGrid, Z = 0 
         else:
             xGrid, yGrid, Z = get2Dmap(tSmap, labels, metadata)
-        # display for sanity tests, it can be turned off
-        if show2Dmap: pt.show2Dmap(xGrid, yGrid, Z, metadata, labels[0], labels[1], logScale=True)
-        # store this particular map (given healpix and r band magnitude slice) 
-        extfile = "-%02d" % (rind)
-        # it is assumed that fileRootname knows which healpix is being processed,
-        # as well as the magnitude range specified by rmagMin and rmagMax
-        outfile = fileRootname + extfile + '.npz' 
-        Zrshp = Z.reshape(xGrid.shape)
-        tSsize = np.size(tS)
-        mdExt = np.concatenate((metadata, np.array([rmagMin, rmagMax, rmagNsteps, rmagBinWidth, tSsize, r])))
-        np.savez(outfile, xGrid=xGrid, yGrid=yGrid, kde=Zrshp, metadata=mdExt, labels=labels)
-        ## summary info
-        s1 = str("%5.1f  " % rMin) + str("%5.1f  " % rMax) + str("%10.0f  " % len(tS))
-        # dust extinction information
-        A1 = np.min(tS['av'])
-        A2 = np.median(tS['av'])
-        A3 = np.max(tS['av'])
-        s2 = str("%6.2f " % A1) + str("%6.2f " % A2) + str("%6.2f " % A3) 
-        # evolutionary stats
-        df = tS 
-        dfTms = df[df['label']==1]
-        dfTpms = df[(df['label']>1)&(df['label']<7)]
-        dfTagb = df[(df['label']>6)&(df['label']<9)] 
-        dfTwd = df[df['label']==9]
-        Tms = len(dfTms)
-        Tpms = len(dfTpms)
-        Tagb = len(dfTagb)
-        Twd = len(dfTwd)
-        # probabilities
-        Ttotal = Tms + Tpms + Tagb + Twd
-        if (Ttotal>0):
-            pms = Tms/Ttotal
-            ppms = Tpms/Ttotal
-            pagb = Tagb/Ttotal    
-            pwd = Twd/Ttotal
-        else: pms = ppms = pagb = pwd = -1
-        s3 = str("%8.3e " % pms) + str("%8.3e " % ppms) + str("%8.3e " % pagb) + str("%8.3e " % pwd)
-        # age distribution
-        dfA1 = df[df['logage']<7]
-        dfA2 = df[df['logage']<8]
-        dfA3 = df[df['logage']<9]
-        dfA4 = df[df['logage']<10] 
-        Atotal = len(df)
-        pA1 = len(dfA1)/Atotal
-        pA2 = len(dfA2)/Atotal
-        pA3 = len(dfA3)/Atotal
-        pA4 = len(dfA4)/Atotal
-        s4 = str("%8.3e " % pA1) + str("%8.3e " % pA2) + str("%8.3e " % pA3) + str("%8.3e " % pA4)  
-        # galactic components
-        dfC1 = df[df['gc']==1]
-        dfC2 = df[df['gc']==2]
-        dfC3 = df[df['gc']==3]
-        dfC4 = df[df['gc']==4]
-        dfC5 = df[df['gc']==5]
-        Ctotal = len(df)
-        pC1 = len(dfC1)/Ctotal
-        pC2 = len(dfC2)/Ctotal
-        pC3 = len(dfC3)/Ctotal
-        pC4 = len(dfC4)/Ctotal
-        pC5 = len(dfC5)/Ctotal
-        s5 = str("%8.3e " % pC1) + str("%8.3e " % pC2) + str("%8.3e " % pC3) + str("%8.3e " % pC4) + str("%8.3e " % pC5)
-        s = s1 + s2 + s3 + s4 + s5 + "\n"
-        foutsum.write(s)
+            # display for sanity tests, it can be turned off
+            if show2Dmap: pt.show2Dmap(xGrid, yGrid, Z, metadata, labels[0], labels[1], logScale=True)
+            # store this particular map (given healpix and r band magnitude slice) 
+            extfile = "-%02d" % (rind)
+            # it is assumed that fileRootname knows which healpix is being processed,
+            # as well as the magnitude range specified by rmagMin and rmagMax
+            outfile = fileRootname + extfile + '.npz' 
+            Zrshp = Z.reshape(xGrid.shape)
+            tSsize = np.size(tS)
+            mdExt = np.concatenate((metadata, np.array([rmagMin, rmagMax, rmagNsteps, rmagBinWidth, tSsize, r])))
+            np.savez(outfile, xGrid=xGrid, yGrid=yGrid, kde=Zrshp, metadata=mdExt, labels=labels)
+            ## summary info
+            s1 = str("%5.1f  " % rMin) + str("%5.1f  " % rMax) + str("%10.0f  " % len(tS))
+            # dust extinction information
+            A1 = np.min(tS['av'])
+            A2 = np.median(tS['av'])
+            A3 = np.max(tS['av'])
+            s2 = str("%6.2f " % A1) + str("%6.2f " % A2) + str("%6.2f " % A3) 
+            # evolutionary stats
+            df = tS 
+            dfTms = df[df['label']==1]
+            dfTpms = df[(df['label']>1)&(df['label']<7)]
+            dfTagb = df[(df['label']>6)&(df['label']<9)] 
+            dfTwd = df[df['label']==9]
+            Tms = len(dfTms)
+            Tpms = len(dfTpms)
+            Tagb = len(dfTagb)
+            Twd = len(dfTwd)
+            # probabilities
+            Ttotal = Tms + Tpms + Tagb + Twd
+            if (Ttotal>0):
+                pms = Tms/Ttotal
+                ppms = Tpms/Ttotal
+                pagb = Tagb/Ttotal    
+                pwd = Twd/Ttotal
+            else: pms = ppms = pagb = pwd = -1
+            s3 = str("%8.3e " % pms) + str("%8.3e " % ppms) + str("%8.3e " % pagb) + str("%8.3e " % pwd)
+            # age distribution
+            dfA1 = df[df['logage']<7]
+            dfA2 = df[df['logage']<8]
+            dfA3 = df[df['logage']<9]
+            dfA4 = df[df['logage']<10] 
+            Atotal = len(df)
+            pA1 = len(dfA1)/Atotal
+            pA2 = len(dfA2)/Atotal
+            pA3 = len(dfA3)/Atotal
+            pA4 = len(dfA4)/Atotal
+            s4 = str("%8.3e " % pA1) + str("%8.3e " % pA2) + str("%8.3e " % pA3) + str("%8.3e " % pA4)  
+            # galactic components
+            dfC1 = df[df['gc']==1]
+            dfC2 = df[df['gc']==2]
+            dfC3 = df[df['gc']==3]
+            dfC4 = df[df['gc']==4]
+            dfC5 = df[df['gc']==5]
+            Ctotal = len(df)
+            pC1 = len(dfC1)/Ctotal
+            pC2 = len(dfC2)/Ctotal
+            pC3 = len(dfC3)/Ctotal
+            pC4 = len(dfC4)/Ctotal
+            pC5 = len(dfC5)/Ctotal
+            s5 = str("%8.3e " % pC1) + str("%8.3e " % pC2) + str("%8.3e " % pC3) + str("%8.3e " % pC4) + str("%8.3e " % pC5)
+            s = s1 + s2 + s3 + s4 + s5 + "\n"
+            foutsum.write(s)
     foutsum.close() 
     return 
  
