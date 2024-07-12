@@ -73,9 +73,9 @@ def retrievePatch_LSDB(df, verbose=False):
 def dumpPriorsFromPatch(df, rootname, show2Dmap=True, verbose=True):
     # NB map parameters are set in dumpPriorMaps(), by calling getBayesConstants()
     if verbose: print('dumping maps...')
-    bt.dumpPriorMaps(df, rootname, show2Dmap=show2Dmap, verbose=verbose)
+    r = bt.dumpPriorMaps(df, rootname, show2Dmap=show2Dmap, verbose=verbose)
     print('done with', rootname)
-    return
+    return r
 
 def printGalacticComponentStats(df, verbose=True):
     C1 = df[df['gc']==1]
