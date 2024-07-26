@@ -1,4 +1,4 @@
-### tools to support the production of metadata and maps with priors based on TRILEGAL simulations
+## tools to support the production of metadata and maps with priors based on TRILEGAL simulations
 
 ## import supporting local tools: 
 import LocusTools as lt
