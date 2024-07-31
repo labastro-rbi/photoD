@@ -147,7 +147,7 @@ def dumpPriorMaps_testing(sample, fileRootname, pix, show2Dmap=False, verbose=Tr
         # alternative version
         rfilter = (sample.loc[:, "rmag"]>rMin) & (sample.loc[:, "rmag"]<rMax)
         tS = sample[rfilter]
-        print("tS", type(tS))
+        # print("tS", type(tS))
 
         if verbose: print('r=', rMin, 'to', rMax, 'N=', len(sample), 'Ns=', len(tS))
         if (len(tS)>NrowMax):
@@ -177,11 +177,11 @@ def dumpPriorMaps_testing(sample, fileRootname, pix, show2Dmap=False, verbose=Tr
             # as well as the magnitude range specified by rmagMin and rmagMax
             outfile = fileRootname + extfile + '.npz' 
             Zrshp = Z.reshape(xGrid.shape)
-            tSsize = np.size(tS)
+            tSsize = np.size(tS) # Total size of array: rows*cols
             mdExt = np.concatenate((metadata, np.array([rmagMin, rmagMax, rmagNsteps, rmagBinWidth, tSsize, r])))
             np.savez(outfile, xGrid=xGrid, yGrid=yGrid, kde=Zrshp, metadata=mdExt, labels=labels)
             ## summary info
-            s1 = str("%5.1f  " % rMin) + str("%5.1f  " % rMax) + str("%10.0f  " % len(tS))
+            s1 = str("%5.1f  " % rMin) + str("%5.1f  " % rMax) + str("%10.0f  " % len(tS)) # Ntotal!
             # dust extinction information
             A1 = np.min(tS['Av'])
             A2 = np.median(tS['Av'])
