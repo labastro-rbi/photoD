@@ -10,11 +10,17 @@ LSDB = Large Survey Database
 
 \subsection{LSDB and Healpix Implementation} 
 
-Implementation of the Bayesian algorithm described in preceding sections assumes that priors can be assumed constant
-over some sky region, hereafter a patch (see \S\ref{sec:priors}). In practice,  patches need to be at least several sq. deg.
-large in order to have enough stars to compute priors. At the same time, they should not be too large to satisfy the assumption
-of constancy. Both of these size limits vary across the sky due to Galactic structure effects. 
+Implementation of the Bayesian algorithm described in preceding sections assumes that priors can be assumed constant over some sky region, hereafter a patch (see \S\ref{sec:priors}). In practice,  patches need to be at least several sq. deg. large in order to have enough stars to compute priors. At the same time, they should not be too large to satisfy the assumption of constancy. Both of these size limits vary across the sky due to Galactic structure effects. 
 
-One of the recent tools developed to efficiently loop across the sky patches and perform some per-patch calculations
-is the  Large Survey Database...
+One of the recent tools developed to efficiently loop across the sky patches and perform some per-patch calculations is the \href{https://lsdb.readthedocs.io/}{Large Survey Database}\footnote{https://lsdb.readthedocs.io/}.
+
+The combination of the HiPSCat and LSDB workflow are particularly efficient and useful for a science case tackled by the PhotoD. HiPSCat effectively partitions the sky in pixels based on the density of the sources, therefore creating pixels that contain roughly the same number of stars. This strategy is appropriate both scientifically, as the resolution of the map (area subtended by the pixel) depends on the number of stars within (e.g. smaller pixels and higher resolution in the galactic plane and lower in the halo), and computationally because the size of the each chunk that is sent to processing is approximately the same, which therefore optimizes the execution of the code. In our particular case, we are using HiPSCat pixels that are a few hundred megabytes in size.
  
+ 
+\subsection{Pipeline Performance}
+
+We have performed several benchmarks to estimate the performance of the PhotoD code. In our initial tests based on the SDSS Stripe 82 data we found that the distances for a billion stars can be estimated in about 100 days on a Mac M1 Pro laptop using one core (10 milliseconds per star). 
+
+In further testing, we used outputs from the TRILEGAL simulation and found that the parallel processing performed with LSDB scaled well with respect to the single core values. On a local cluster node with dual AMD EPYC 9474F 48-core processors we were able to achieve per-star figures similar to single-core processing, therefore reducing the required processing time to about a week. Our ongoing tests are showing that when all 10 nodes (400 cores) of the Ruđer Bošković Institute's Narval cluster are used, we may be able to estimate distances for about 10 billion stars in about two days. 
+
+The output catalog containing LSST photometry (with errors) and minimalistic auxiliary metadata for 10 billion stars are would amount to about 1 TB of data. The code outputs, including a covariance matrix of the three fitted parameters, would have approximately the same volume. 
