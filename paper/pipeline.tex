@@ -16,7 +16,7 @@ processing framework capable of orchestrating such a solution.
 \subsection{LSDB and Healpix Implementation} 
 
 For our work, we've adopted the \href{https://lsdb.readthedocs.io/}{\em Large Survey Database} (LSDB; \cite{2024AAS...24326109W})
-framework.  LSDB is a distributed computing framework written in Python,
+framework. LSDB is a distributed computing framework written in Python,
 which enables multi-node and multi-core computation on large (PB-scale),
 partitioned, catalog datasets.  It extends the concepts of the LSD toolkit
 \citep{2011AAS...21743319J}
@@ -42,7 +42,9 @@ partitioned, searchable, table.
 
 %One of the recent tools developed to efficiently loop across the sky patches and perform some per-patch calculations is the \href{https://lsdb.readthedocs.io/}{Large Survey Database}\footnote{https://lsdb.readthedocs.io/}.
 
-The combination of the HiPSCat and LSDB workflow are particularly efficient and useful for a science case tackled by the PhotoD. HiPSCat effectively partitions the sky in pixels based on the density of the sources, therefore creating pixels that contain roughly the same number of stars. This strategy is appropriate both scientifically, as the resolution of the map (area subtended by the pixel) depends on the number of stars within (e.g. smaller pixels and higher resolution in the galactic plane and lower in the halo), and computationally because the size of the each chunk that is sent to processing is approximately the same, which therefore optimizes the execution of the code. In our particular case, we are using HiPSCat pixels that are a few hundred megabytes in size.
+This workflow is particularly efficient and well-suited for the scientific objectives addressed by {\em PhotoD}, as it leverages the variable resolution of the map based on the star density within each region. For instance, in the galactic plane where star density is higher, smaller pixels provide higher resolution, while in the halo, where star density is lower, larger pixels suffice.
+
+This approach is also computationally advantageous because it maintains consistent chunk sizes for processing. Each data chunk, regardless of its spatial resolution, is approximately the same size, optimizing the execution of the code. In our specific case, the data chunks correspond to pixels that are a few hundred megabytes in size.
  
  
 \subsection{Pipeline Performance}
