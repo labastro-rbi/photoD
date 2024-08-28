@@ -3,16 +3,44 @@
 \section{All-sky PhotoD Pipeline Implementation \label{sec:LSDBpipe}}
 
 
-{\bf Lovro:} will here describe LSDB implementation (with Neven's help) and pipeline performance on the full TRILEGAL catalog...
-
-LSDB = Large Survey Database 
-
-
-\subsection{LSDB and Healpix Implementation} 
+% {\bf Lovro:} will here describe LSDB implementation (with Neven's help) and pipeline performance on the full TRILEGAL catalog...
 
 Implementation of the Bayesian algorithm described in preceding sections assumes that priors can be assumed constant over some sky region, hereafter a patch (see \S\ref{sec:priors}). In practice,  patches need to be at least several sq. deg. large in order to have enough stars to compute priors. At the same time, they should not be too large to satisfy the assumption of constancy. Both of these size limits vary across the sky due to Galactic structure effects. 
 
-One of the recent tools developed to efficiently loop across the sky patches and perform some per-patch calculations is the \href{https://lsdb.readthedocs.io/}{Large Survey Database}\footnote{https://lsdb.readthedocs.io/}.
+The scale of the dataset expected from LSST -- O(10Bn) objects -- makes this
+computation challenging to perform on a single core or computer. Ideally,
+one would wish to execute the computation in parallel on many (hundreds) of cores,
+likely housed on a number of separate nodes. This requires a distributed
+processing framework capable of orchestrating such a solution.
+
+\subsection{LSDB and Healpix Implementation} 
+
+For our work, we've adopted the \href{https://lsdb.readthedocs.io/}{\em Large Survey Database} (LSDB; \cite{2024AAS...24326109W})
+framework.  LSDB is a distributed computing framework written in Python,
+which enables multi-node and multi-core computation on large (PB-scale),
+partitioned, catalog datasets.  It extends the concepts of the LSD toolkit
+\citep{2011AAS...21743319J}
+to astronomical catalogs where the distribution of objects on the sky is
+very uneven -- such as is the case for Galactic star counts.  Leveraging
+broadly adopted community libraries such as astropy, Pandas, and Dask, LSDB
+presents a user-friendly API on which it is possible to build our pipeline.
+
+Specifically, LSDB allows us to define a piece of computation (the PhotoD
+function, written in Python) that should be executed either on every object in
+the catalog, or on a per-patch basis (where the patch has a potentially
+dynamically sized solid angle). For example, we compute priors for each of the 
+patches (\S\ref{sec:priors}). LSDB then ensures that these functions are successfully run over the entire (arbitrarily sized) catalog. LSDB handles the data distribution and
+movement between multiple nodes in the cluster, automatically handles
+transient failures, and writes the output (in parallel) to another
+partitioned, searchable, table.
+
+% Using this approach, we were able to process simulated catalogs up to XX in
+% size, using YY nodes, in XX wall-clock hours. Extrapolating to expectations
+% for Rubin's DR1, we calculate the same cluster will be able to repeat this
+% computation on real data in ZZ hours.
+
+
+%One of the recent tools developed to efficiently loop across the sky patches and perform some per-patch calculations is the \href{https://lsdb.readthedocs.io/}{Large Survey Database}\footnote{https://lsdb.readthedocs.io/}.
 
 The combination of the HiPSCat and LSDB workflow are particularly efficient and useful for a science case tackled by the PhotoD. HiPSCat effectively partitions the sky in pixels based on the density of the sources, therefore creating pixels that contain roughly the same number of stars. This strategy is appropriate both scientifically, as the resolution of the map (area subtended by the pixel) depends on the number of stars within (e.g. smaller pixels and higher resolution in the galactic plane and lower in the halo), and computationally because the size of the each chunk that is sent to processing is approximately the same, which therefore optimizes the execution of the code. In our particular case, we are using HiPSCat pixels that are a few hundred megabytes in size.
  
