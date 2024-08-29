@@ -9,14 +9,14 @@ Implementation of the Bayesian algorithm described in preceding sections assumes
 
 The scale of the dataset expected from LSST -- O(10Bn) objects -- makes this
 computation challenging to perform on a single core or computer. Ideally,
-one would wish to execute the computation in parallel on many (hundreds) of cores,
+one would wish to execute the computation in parallel on many (hundreds of) cores,
 likely housed on a number of separate nodes. This requires a distributed
 processing framework capable of orchestrating such a solution.
 
 \subsection{LSDB and Healpix Implementation} 
 
-For our work, we've adopted the \href{https://lsdb.readthedocs.io/}{\em Large Survey Database} (LSDB; \cite{2024AAS...24326109W})
-framework. LSDB is a distributed computing framework written in Python,
+For our work, we have adopted the \href{https://lsdb.readthedocs.io/}{\em Large Survey Database} 
+\citep[LSDB;][]{2024AAS...24326109W} framework. LSDB is a distributed computing framework written in Python,
 which enables multi-node and multi-core computation on large (PB-scale),
 partitioned, catalog datasets.  It extends the concepts of the LSD toolkit
 \citep{2011AAS...21743319J}
@@ -42,15 +42,15 @@ partitioned, searchable, table.
 
 %One of the recent tools developed to efficiently loop across the sky patches and perform some per-patch calculations is the \href{https://lsdb.readthedocs.io/}{Large Survey Database}\footnote{https://lsdb.readthedocs.io/}.
 
-This workflow is particularly efficient and well-suited for the scientific objectives addressed by {\em PhotoD}, as it leverages the variable resolution of the map based on the star density within each region. For instance, in the galactic plane where star density is higher, smaller pixels provide higher resolution, while in the halo, where star density is lower, larger pixels suffice.
+This workflow is particularly efficient and well-suited for the scientific objectives addressed by {\em PhotoD}, as it leverages the variable resolution of the map based on the star density within each region. For instance, in the Galactic plane where star density is higher, smaller pixels provide higher resolution, while in the halo, where star density is lower, larger pixels suffice.
 
 This approach is also computationally advantageous because it maintains consistent chunk sizes for processing. Each data chunk, regardless of its spatial resolution, is approximately the same size, optimizing the execution of the code. In our specific case, the data chunks correspond to pixels that are a few hundred megabytes in size.
  
  
 \subsection{Pipeline Performance}
 
-We have performed several benchmarks to estimate the performance of the PhotoD code. In our initial tests based on the SDSS Stripe 82 data we found that the distances for a billion stars can be estimated in about 100 days on a Mac M1 Pro laptop using one core (10 milliseconds per star). 
+We have performed several benchmarks to estimate the performance of the PhotoD code. In our initial tests based on the SDSS Stripe 82 data we found that the distances for a billion stars can be estimated in about 100 days on a Mac M1 Pro laptop using one core (corresponding to 10 milliseconds per star). 
 
-In further testing, we used outputs from the TRILEGAL simulation and found that the parallel processing performed with LSDB scaled well with respect to the single core values. On a local cluster node with dual AMD EPYC 9474F 48-core processors we were able to achieve per-star figures similar to single-core processing, therefore reducing the required processing time to about a week. Our ongoing tests are showing that when all 10 nodes (400 cores) of the Ruđer Bošković Institute's Narval cluster are used, we may be able to estimate distances for about 10 billion stars in about two days. 
+In further testing, we used outputs from the TRILEGAL simulation and found that the parallel processing performed with LSDB scaled well with respect to the single core values. On a local cluster node with dual AMD EPYC 9474F 48-core processors, we were able to achieve per-star figures similar to single-core processing, therefore reducing the required processing time to about a week. Our ongoing tests are showing that when all 10 nodes (400 cores) of the Ruđer Bošković Institute's Narval cluster are used, we may be able to estimate distances for 10 billion stars in about two days. 
 
 The output catalog containing LSST photometry (with errors) and minimalistic auxiliary metadata for 10 billion stars are would amount to about 1 TB of data. The code outputs, including a covariance matrix of the three fitted parameters, would have approximately the same volume. 
