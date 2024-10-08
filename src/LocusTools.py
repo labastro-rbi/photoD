@@ -8,6 +8,7 @@ from scipy.interpolate import CubicSpline
 from scipy.interpolate import griddata
 import BayesTools as bt
 import PlotTools as pt
+from scipy.spatial import KDTree
 
 # def MSlocus(gi, FeH):
 # def RGlocus(gi, FeH): 
@@ -1165,23 +1166,32 @@ def getWDcolorsFromMr(LwdH, LwdHe, fHe, Lvalues, colors=''):
 
     return Lvalues
 
+### KDTree approach
+
+def with_kdtree(x_model: np.ndarray, x_data, y_model, y_data):
+    tree = KDTree(np.stack([x_model, y_model], axis=-1))
+    return tree.query(np.stack([x_data, y_data], axis=-1)) # 
+
+
 
 def getColorsFromMrFeHDSED(L, Lvalues, colors=''):
     # L is an astropy Table, Lvalues a Pandas DataFrame
     # Prebaciti sve u numpy pa probati vrtiti kao loop
-    # taj kod zapravo nije ni bitan za LSST jer sada se koristi samo zato da se osprave boje koje nisu dobre u TRILEGALu
+    # taj kod zapravo nije ni bitan za LSST jer sada se koristi samo zato da se poprave boje koje nisu dobre u TRILEGALu
     # Teoretski se to može i ignorirati i uzeti smao TRILEGAL boje
     SDSScolors = ['ug', 'gr', 'ri', 'iz']
     if not colors:
         colors = SDSScolors
     # Calculate squared distances using vectorized operations
-    distSq_Mr = ((L['Mr'][:, np.newaxis] - Lvalues['Mr'].values) ** 2) / 0.01 ** 2
-    distSq_FeH = ((L['FeH'][:, np.newaxis] - Lvalues['FeH'].values) ** 2) / 0.1 ** 2
-    distSq_total = distSq_Mr + distSq_FeH
+    ## distSq_Mr = ((L['Mr'][:, np.newaxis] - Lvalues['Mr'].values) ** 2) / 0.01 ** 2
+    ## distSq_FeH = ((L['FeH'][:, np.newaxis] - Lvalues['FeH'].values) ** 2) / 0.1 ** 2
+    ## distSq_total = distSq_Mr + distSq_FeH
 
     # Find indices of minimum distances for each row
-    min_indices = np.argmin(distSq_total, axis=0)
+    ## min_indices = np.argmin(distSq_total, axis=0)
 
+    min_indices = with_kdtree(L['Mr'], Lvalues['Mr'], L['FeH'], Lvalues['FeH'])[1]
+    
     # Assign values to Lvalues based on minimum distances
     Lvalues['MrAssigned'] = L['Mr'][min_indices].data
     for c in colors:
