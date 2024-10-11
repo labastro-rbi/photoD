@@ -129,7 +129,7 @@ def dumpPriorMaps_testing(sample, fileRootname, pix, show2Dmap=False, verbose=Tr
     rmagNsteps = bc['rmagNsteps']
 
     # -------
-    metadata = np.array([FeHmin, FeHmax, FeHNpts, MrFaint, MrBright, MrNpts, np.mean(sample['glon']), np.mean(sample['glat']), pix])
+    metadata = np.array([FeHmin, FeHmax, FeHNpts, MrFaint, MrBright, MrNpts, np.mean(sample['glon']), np.mean(sample['glat']), pix.order, pix.pixel])
     rGrid = np.linspace(rmagMin, rmagMax, rmagNsteps)
     # summary file 
     outsumfile = fileRootname + '-SummaryStats.txt'
@@ -165,14 +165,14 @@ def dumpPriorMaps_testing(sample, fileRootname, pix, show2Dmap=False, verbose=Tr
             print('ERROR: no data to make map (see dumpPriorMaps)')
             # xGrid, yGrid, Z = 0
             # xGrid = yGrid = Z = np.zeros(0) # <-- ispravio, bolje bi bilo staviti pass
-            pass  # <-- dodao pass. još bolje bi bilo dodati ga iznad.
+            # pass  # <-- dodao pass. još bolje bi bilo dodati ga iznad.
         else:
             xGrid, yGrid, Z = get2Dmap(tSmap, labels, metadata)
             # display for sanity tests, it can be turned off
             if show2Dmap:
                 pt.show2Dmap(xGrid, yGrid, Z, metadata, labels[0], labels[1], logScale=True)
             # store this particular map (given healpix and r band magnitude slice) 
-            extfile = "-%02d" % (rind) + "-%s" % (pix)     # re.findall(r'\d+', input_string)
+            extfile = "-%02d" % (rind)     # re.findall(r'\d+', input_string)
             # it is assumed that fileRootname knows which healpix is being processed,
             # as well as the magnitude range specified by rmagMin and rmagMax
             outfile = fileRootname + extfile + '.npz' 
@@ -372,7 +372,7 @@ def readPriors(rootname, locusData, MrColumn='Mr'):
     rGrid = np.linspace(rmagMin, rmagMax, rmagNsteps)
     priors, rmagBinWidth = readPrior(rmagMin, rmagMax, rmagNsteps, rootname)
     if (bc['rmagBinWidth'] != rmagBinWidth):
-        error('inconsistency with rmagBinWidth in readPriors (see src/BayesTools.py)')
+        raise ValueError(f'inconsistency with rmagBinWidth in readPriors (see src/BayesTools.py) {bc['rmagBinWidth']} != {rmagBinWidth}')
     priorGrid = {}
     for rind, r in enumerate(rGrid):  
         # interpolate prior map onto locus Mr-FeH grid 
@@ -396,7 +396,7 @@ def readPrior(rmagMin, rmagMax, rmagNsteps,rootname):
         extfile = "-%02d" % (rind)
         infile = rootname + extfile + '.npz' 
         priors[rind] = np.load(infile)
-    rmagBinWidth = priors[0]['metadata'][9] # volatile
+    rmagBinWidth = priors[0]['metadata'][13] # volatile
     return priors, rmagBinWidth
 
 
@@ -821,13 +821,13 @@ def makeBayesEstimates2D(catalog, fitColors, locusData, priorsRootName, outfile,
     mdLocus = getMetadataLikelihood(locusData)
 
     # setup arrays for holding results
-    catalog['MrEst'] = 0*catalog['Mr'] - 99 
-    catalog['MrEstUnc'] = 0*catalog['Mr'] -1 
-    catalog['FeHEst'] = 0*catalog['Mr'] - 99
-    catalog['FeHEstUnc'] = 0*catalog['Mr'] - 1 
-    catalog['chi2min'] = 0*catalog['Mr'] + 999
-    catalog['MrdS'] = 0*catalog['Mr'] - 1 
-    catalog['FeHdS'] = 0*catalog['Mr'] - 1 
+    catalog['MrEst'] = 0.0*catalog['Mr'] - 99 
+    catalog['MrEstUnc'] = 0.0*catalog['Mr'] -1 
+    catalog['FeHEst'] = 0.0*catalog['Mr'] - 99
+    catalog['FeHEstUnc'] = 0.0*catalog['Mr'] - 1 
+    catalog['chi2min'] = 0.0*catalog['Mr'] + 999
+    catalog['MrdS'] = 0.0*catalog['Mr'] - 1 
+    catalog['FeHdS'] = 0.0*catalog['Mr'] - 1 
 
     # loop over all stars (could be parallelized) 
     for i in range(iStart, iEnd):
@@ -963,18 +963,18 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
     print('MrBright, MrFaint=', MrBright, MrFaint)
     
     # setup arrays for holding results
-    catalog['MrEst'] = 0*catalog['Mr'] - 99 
-    catalog['MrEstUnc'] = 0*catalog['Mr'] -1 
-    catalog['FeHEst'] = 0*catalog['Mr'] - 99
-    catalog['FeHEstUnc'] = 0*catalog['Mr'] - 1 
-    catalog['ArEst'] = 0*catalog['Mr'] - 99 
-    catalog['ArEstUnc'] = 0*catalog['Mr'] -1 
-    catalog['QrEst'] = 0*catalog['Mr'] - 99 
-    catalog['QrEstUnc'] = 0*catalog['Mr'] -1 
-    catalog['chi2min'] = 0*catalog['Mr'] - 99
-    catalog['MrdS'] = 0*catalog['Mr'] - 1 
-    catalog['FeHdS'] = 0*catalog['Mr'] - 1 
-    catalog['ArdS'] = 0*catalog['Mr'] - 1 
+    catalog['MrEst'] = 0.0*catalog['Mr'] - 99 
+    catalog['MrEstUnc'] = 0.0*catalog['Mr'] -1 
+    catalog['FeHEst'] = 0.0*catalog['Mr'] - 99
+    catalog['FeHEstUnc'] = 0.0*catalog['Mr'] - 1 
+    catalog['ArEst'] = 0.0*catalog['Mr'] - 99 
+    catalog['ArEstUnc'] = 0.0*catalog['Mr'] -1 
+    catalog['QrEst'] = 0.0*catalog['Mr'] - 99 
+    catalog['QrEstUnc'] = 0.0*catalog['Mr'] -1 
+    catalog['chi2min'] = 0.0*catalog['Mr'] - 99
+    catalog['MrdS'] = 0.0*catalog['Mr'] - 1 
+    catalog['FeHdS'] = 0.0*catalog['Mr'] - 1 
+    catalog['ArdS'] = 0.0*catalog['Mr'] - 1 
 
     ### maximum grid values for Ar from master locus 
     ArGridSmallMax = np.max(ArGridList['ArSmall'])
@@ -1003,8 +1003,11 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
         else:
             ### THIS BLOCK USES A LIST OF THREE 3D MODEL LOCII, with 3 different resolutions for Ar
             # note that here true Ar is used (catalog['Ar'][i]); for real stars, need to use SFD or another extinction map
-            ArMax = ArCoeff[0]*catalog['Ar'][i] + ArCoeff[1]
-            ArMin = ArCoeff[3]*catalog['Ar'][i] + ArCoeff[4]
+            # ArMax = ArCoeff[0]*catalog['Ar'][i] + ArCoeff[1]
+            # ArMin = ArCoeff[3]*catalog['Ar'][i] + ArCoeff[4]
+
+            ArMax = ArCoeff[0]*catalog['Ar'].iloc[i] + ArCoeff[1]
+            ArMin = ArCoeff[3]*catalog['Ar'].iloc[i] + ArCoeff[4]
            
             # depending on ArMax, pick the adequate Ar resolution of locus3D
             if (ArMax < ArGridSmallMax):
@@ -1140,21 +1143,21 @@ def writeBayesEstimates(catalog, outfile, iStart, iEnd, do3D=False):
     else:
         fout.write("      glon       glat        FeHEst FeHUnc  MrEst  MrUnc  chi2min    MrdS     FeHdS \n")
     for i in range(iStart, iEnd):
-        r1 = catalog['glon'][i]
-        r2 = catalog['glat'][i]
-        r3 = catalog['FeHEst'][i]
-        r4 = catalog['FeHEstUnc'][i]
-        r5 = catalog['MrEst'][i]
-        r6 = catalog['MrEstUnc'][i]
-        r7 = catalog['chi2min'][i]
-        r8 = catalog['MrdS'][i]
-        r9 = catalog['FeHdS'][i]
+        r1 = catalog['glon'].iloc[i]
+        r2 = catalog['glat'].iloc[i]
+        r3 = catalog['FeHEst'].iloc[i]
+        r4 = catalog['FeHEstUnc'].iloc[i]
+        r5 = catalog['MrEst'].iloc[i]
+        r6 = catalog['MrEstUnc'].iloc[i]
+        r7 = catalog['chi2min'].iloc[i]
+        r8 = catalog['MrdS'].iloc[i]
+        r9 = catalog['FeHdS'].iloc[i]
         s = str("%12.8f " % r1) + str("%12.8f  " % r2) + str("%6.2f  " % r3) + str("%5.2f  " % r4)
         s = s + str("%6.2f  " % r5) + str("%5.2f  " % r6) 
         if do3D:
-            r15 = catalog['ArEst'][i]
-            r16 = catalog['ArEstUnc'][i]
-            r19 = catalog['ArdS'][i]
+            r15 = catalog['ArEst'].iloc[i]
+            r16 = catalog['ArEstUnc'].iloc[i]
+            r19 = catalog['ArdS'].iloc[i]
             s = s + str("%6.2f  " % r15) + str("%5.2f  " % r16) + str("%5.2f  " % r7) + str("%8.1f  " % r8)  
             s = s + str("%8.1f  " % r9) + str("%8.1f  " % r19) + str("%8.0f" % i) + "\n"
         else:

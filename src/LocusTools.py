@@ -1432,9 +1432,11 @@ def getPhotoDchi2map3D(i, colors, colorReddCoeffs, data2fit, locus, ArCoeff, mas
         ObsColorErr = {}
         for color in colors:
             # print('    color=', color)
-            ObsColor[color] = data2fit[color][i]
+            # ObsColor[color] = data2fit[color][i]
+            ObsColor[color] = data2fit[color].iloc[i]
             errname = color + 'Err'
-            ObsColorErr[color] = data2fit[errname][i]
+            # ObsColorErr[color] = data2fit[errname][i]
+            ObsColorErr[color] = data2fit[errname].iloc[i]
 
         ## return chi2map (data cube) for each grid point in locus3D 
         if masterLocus:

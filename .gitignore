@@ -304,3 +304,4 @@ TSWLatexianTemp*
 ===> Ignore
 notebooks/read_and_plot_npz.ipynb
 notebooks/read_and_plot_npz.ipynb
+src/__pycache__/*
