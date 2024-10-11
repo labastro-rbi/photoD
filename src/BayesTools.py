@@ -76,9 +76,9 @@ def get2Dmap(sample, labels, metadata):
     try:
         kde = gaussian_kde(data)     
         # evaluate on a regular grid
-        xMin = metadata[0]
-        xMax = metadata[1]
-        nXbin = int(metadata[2])
+        xMin = metadata[0] # FeHmin
+        xMax = metadata[1] # FeHMax
+        nXbin = int(metadata[2]) # FeHNpts ??? why
         yMin = metadata[3]
         yMax = metadata[4]
         nYbin = int(metadata[5])
@@ -190,9 +190,9 @@ def dumpPriorMaps_testing(sample, fileRootname, pix, show2Dmap=False, verbose=Tr
             # evolutionary stats
             df = tS
             dfTms = df[df['label']==1]
-            dfTpms = df[(df['label']>1)&(df['label']<7)]
-            dfTagb = df[(df['label']>6)&(df['label']<9)] 
-            dfTwd = df[df['label']==9]
+            dfTpms = df[(df['label']>1)&(df['label']<7)] # according to TRILEGAL labels column these would be SGB, RGB, CHeB (4,5,6). Nomenclature is confusing because "pms" usually corresponds to pre-main sequence. Given the cuts, this would rather apply to post main sequence.
+            dfTagb = df[(df['label']>6)&(df['label']<9)] # EAGBs & TPAGBs
+            dfTwd = df[df['label']==9] # PAGBs + WDs
             Tms = len(dfTms)
             Tpms = len(dfTpms)
             Tagb = len(dfTagb)
