@@ -305,3 +305,10 @@ TSWLatexianTemp*
 notebooks/read_and_plot_npz.ipynb
 notebooks/read_and_plot_npz.ipynb
 src/__pycache__/*
+
+# Virtual environment
+.venv/
+
+# Priors
+results
+plots
