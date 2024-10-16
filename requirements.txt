@@ -1,0 +1,3 @@
+lsdb
+astroML
+hipscat_import
