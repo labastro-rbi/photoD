@@ -1543,8 +1543,6 @@ def make3DlocusFast(locus3D0, ArGrid, colors, colorCorrection, FeH1d, Mr1d):
 
 def make3DlocusFastDSED(locus3D0, ArGrid, colors, colorCorrection, FeH1d, Mr1d):
 
-    # Is this exactly the same as make3DlocusFast?
-    
     N3rd = np.size(ArGrid)
     locus3D = np.repeat(locus3D0[:, :, np.newaxis], N3rd, axis=2)
     for i in range(0,np.size(FeH1d)):
