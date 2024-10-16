@@ -372,7 +372,7 @@ def readPriors(rootname, locusData, MrColumn='Mr'):
     rGrid = np.linspace(rmagMin, rmagMax, rmagNsteps)
     priors, rmagBinWidth = readPrior(rmagMin, rmagMax, rmagNsteps, rootname)
     if (bc['rmagBinWidth'] != rmagBinWidth):
-        raise ValueError(f'inconsistency with rmagBinWidth in readPriors (see src/BayesTools.py) {bc['rmagBinWidth']} != {rmagBinWidth}')
+        raise ValueError(f"inconsistency with rmagBinWidth in readPriors (see src/BayesTools.py) {bc['rmagBinWidth']} != {rmagBinWidth}")
     priorGrid = {}
     for rind, r in enumerate(rGrid):  
         # interpolate prior map onto locus Mr-FeH grid 
