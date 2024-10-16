@@ -731,11 +731,12 @@ def readTRILEGAL(infile=''):
 
 ## Added 15.5.2024
 def readTRILEGALLSDB(trilegal):
+    ### NOTE THAT THIS IS NO LONGER NEEDED AS TRILEGAL IS IMPORTED INTO HIPSCAT WITH COLUMN NAMES FIXED, AND THE REQUIRED COLUMNS ADDED!!!!
         colnames = ['glon', 'glat', 'comp', 'logage', 'FeH', 'DM', 'Av', 'logg', 'gmag', 'rmag', 'imag', 'umag', 'zmag', 'label']
         # comp: Galactic component the star belongs to: 1 → thin disk; 2 → thick disk; 3 → halo; 4 → bulge; 5 → Magellanic Clouds.
         # logage with age in years
         # DM = m-M is called true distance modulus in DalTio+(2022), so presumably extinction is not included
-        # and thus Mr = rmag - Ar - DM - 5  
+        # and thus Mr = rmag - Ar - DM 
         ## read TRILEGAL simulation (per healpix, as extracted by Dani, ~1-2M stars)
         # trilegal = Table.read(infile, format='ascii', names=colnames) <<-- replaced with pd.read_csv
         trilegal = trilegal[colnames].copy()
