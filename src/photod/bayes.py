@@ -2,7 +2,7 @@ import photod.locus as lt
 import numpy as np
 
 from photod.priors import getBayesConstants, readPriors, getPriorMapIndex, make3Dprior
-from photod.others import getMargDistr3D, getStats, Entropy
+from photod.stats import getMargDistr3D, getStats, Entropy
 from photod.plotting import showCornerPlot3, showMargPosteriors3D, showQrCornerPlot, show3Flat2Dmaps
 
 def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList, priorsRootName, outfile, \

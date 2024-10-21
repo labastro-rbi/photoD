@@ -1,7 +1,7 @@
 from matplotlib.colors import LogNorm
 import numpy as np
 import matplotlib.pyplot as plt
-from photod.others import getStats, getMargDistr3D, getMargDistr
+from photod.stats import getStats, getMargDistr3D, getMargDistr
 
 def showMargPosteriors3D(x1d1, margp1, xLab1, yLab1, x1d2, margp2, xLab2, yLab2, x1d3, margp3, xLab3, yLab3, trueX1, trueX2, trueX3): 
  
