@@ -6,6 +6,7 @@ from scipy.stats import gaussian_kde
 import LocusTools as lt 
 import PlotTools as pt
 from astropy.table import Table
+import healpy as hp
 
 import pandas as pd # <-- added for debugging
 
@@ -390,10 +391,14 @@ def readPriors(rootname, locusData, MrColumn='Mr'):
         
 def readPrior(rmagMin, rmagMax, rmagNsteps,rootname):
     # read all maps, index by rmag index 
+    print("rootname:", rootname)
     rGrid = np.linspace(rmagMin, rmagMax, rmagNsteps)
     priors = {}
     for rind, r in enumerate(rGrid):
+        # print("rind: ", rind)
+        # print("r:", r)
         extfile = "-%02d" % (rind)
+        # print("extfile:", extfile)
         infile = rootname + extfile + '.npz' 
         priors[rind] = np.load(infile)
     rmagBinWidth = priors[0]['metadata'][13] # volatile
@@ -904,9 +909,9 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
     
     if (iEnd < iStart):
         iStart = 0
-        iEnd = np.size(catalog)
-     
+        iEnd = np.size(catalog) 
     # read maps with priors (and interpolate on the Mr-FeH grid given by locusData, which is same for all stars)
+    print("priorsRootName:", priorsRootName)
     priorGrid = readPriors(rootname=priorsRootName, locusData=locusData, MrColumn=MrColumn)
     # get prior map indices using observed r band mags
     priorind = getPriorMapIndex(catalog['rmag'])
