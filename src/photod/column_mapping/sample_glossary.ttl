@@ -1,0 +1,48 @@
+# Proposed URI base, DRAFT only
+@base <http://lsst.org/lincc/column_mapping/> .
+
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+@prefix entity: <entity/> .
+@prefix type: <type/> .
+@prefix term: <term/> .
+@prefix prop: <prop/> .
+
+entity:SampleGlossary a type:Glossary ;
+    rdfs:label "Sample Glossary" ;
+    prop:hasDefinition "A glossary of terms used in the sample column mapping" .
+
+term:Distance a type:Concept ;
+              prop:definedIn entity:SampleGlossary ;
+    rdfs:label "Distance" ;
+    prop:hasDefinition "The amount of space between two objects" .
+
+term:DistanceFromSunAU a type:Concept ;
+             skos:broader term:Distance ;
+             prop:definedIn entity:SampleGlossary ;
+    rdfs:label "Distance from Sun (AU)" ;
+    prop:hasDefinition "Distance from the Sun in astronomical units" .
+
+term:AstronomicalUnit a type:Concept ;
+                      prop:definedIn entity:SampleGlossary ;
+    rdfs:label "Astronomical Unit" ;
+    prop:hasDefinition "Distance from the Sun to the Earth" .
+
+term:Mass a type:Concept ;
+          prop:definedIn entity:SampleGlossary ;
+    rdfs:label "Mass" ;
+    prop:hasDefinition "Amount of matter in an object" .
+
+term:MassInKilograms a type:Concept ;
+                     prop:definedIn entity:SampleGlossary ;
+                     skos:broader term:Mass ;
+    rdfs:label "Mass measured in kilograms" ;
+    prop:hasDefinition "Mass of the object in kilograms" .
+
+term:NumberOfMoons a type:Concept ;
+                   prop:definedIn entity:SampleGlossary ;
+    rdfs:label "Number of Moons" ;
+    prop:hasDefinition "Number of moons orbiting the object" .

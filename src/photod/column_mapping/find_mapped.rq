@@ -1,0 +1,24 @@
+# For a given function and table, discover what mappings are available via the glossary.
+
+# Proposed URI base, DRAFT only
+BASE <http://lsst.org/lincc/column_mapping/>
+
+PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX xsd:   <http://www.w3.org/2001/XMLSchema#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+
+PREFIX entity: <entity/>
+PREFIX type: <type/>
+PREFIX prop: <prop/>
+PREFIX term: <term/>
+
+SELECT ?parameterID ?columnID WHERE {
+    ?function a type:Function .
+    ?table a type:Table .
+    ?parameter a type:Parameter ; prop:usedInFunction ?function ; prop:hasIdentifier ?parameterID .
+    ?column a type:Column ; prop:hasTable ?table ; prop:hasIdentifier ?columnID .
+    ?concept a type:Concept ; prop:hasDefinition ?conceptDescription .
+    ?column prop:expressesConcept ?concept .
+    ?parameter prop:expressesConcept ?concept .
+}

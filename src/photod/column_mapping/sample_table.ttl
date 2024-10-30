@@ -1,0 +1,43 @@
+# Proposed URI base, DRAFT only
+@base <http://lsst.org/lincc/column_mapping/> .
+
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+# Sample table containing sample columns
+
+@prefix entity: <entity/> .
+@prefix type: <type/> .
+@prefix prop: <prop/> .
+@prefix term: <term/> .
+
+entity:SampleTable a type:Table ;
+    rdfs:label "Sample Table" ;
+    rdfs:comment "A table containing sample columns" .
+
+entity:distanceFromSun a type:Column ;
+                       prop:expressesConcept term:DistanceFromSunAU ;
+                       prop:hasIdentifier "sun_dist" ;
+    rdfs:label "Distance from Sun" ;
+    rdfs:comment "Distance from the Sun in astronomical units" ;
+    rdfs:range xsd:decimal ;
+    prop:hasTable entity:SampleTable .
+
+entity:mass a type:Column ;
+            prop:expressesConcept term:MassInKilograms ;
+            prop:hasIdentifier "mass_kg" ;
+    rdfs:label "Mass" ;
+    rdfs:comment "Mass of the object in kilograms" ;
+    rdfs:range xsd:decimal ;
+    prop:hasTable entity:SampleTable .
+
+entity:numberOfMoons a type:Column ;
+                     prop:expressesConcept term:NumberOfMoons ;
+                     prop:hasIdentifier "num_moons" ;
+    rdfs:label "Number of Moons" ;
+    rdfs:comment "Number of moons orbiting the object" ;
+    rdfs:range xsd:integer ;
+    prop:hasTable entity:SampleTable .
+

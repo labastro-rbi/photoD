@@ -1,0 +1,20 @@
+# Retrieve glossary terms and descriptions.
+
+# Proposed URI base, DRAFT only
+BASE <http://lsst.org/lincc/column_mapping/>
+
+PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX xsd:   <http://www.w3.org/2001/XMLSchema#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+
+PREFIX entity: <entity/>
+PREFIX type: <type/>
+PREFIX prop: <prop/>
+PREFIX concept: <concept/>
+
+SELECT ?concept ?conceptLabel ?definition WHERE {
+    ?glossary a type:Glossary .
+    ?concept a type:Concept ; prop:definedIn ?glossary ;
+             rdfs:label ?conceptLabel ; prop:hasDefinition ?definition .
+}
