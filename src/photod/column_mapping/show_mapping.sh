@@ -17,3 +17,7 @@ arq \
     --data=sample_function.ttl \
     --data=sample_table.ttl \
     --data=sample_glossary.ttl
+echo "Full glossary"
+arq \
+    --query=show_glossary.rq \
+    --data=sample_glossary.ttl
