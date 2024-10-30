@@ -998,7 +998,7 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
 
                 
         ### produce likelihood array for this star, using provided locus color model 
-        if (0):
+        if (0): ## Always false
             ### THIS BLOCK GENERATES A 3D MODEL LOCUS FOR EACH STAR (obsolete)
             Ar1d, chi2map = lt.getPhotoDchi2map3D(i, fitColors, reddCoeffs, catalog, locusData, ArCoeff)
             # likelihood map 
@@ -1007,7 +1007,7 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
             likeCube = make3Dlikelihood(L3d)
         else:
             ### THIS BLOCK USES A LIST OF THREE 3D MODEL LOCII, with 3 different resolutions for Ar
-            # note that here true Ar is used (catalog['Ar'][i]); for real stars, need to use SFD or another extinction map
+            # note that here ***true Ar*** is used (catalog['Ar'][i]); for real stars, need to use SFD or another extinction map!!!
             # ArMax = ArCoeff[0]*catalog['Ar'][i] + ArCoeff[1]
             # ArMin = ArCoeff[3]*catalog['Ar'][i] + ArCoeff[4]
 
@@ -1031,7 +1031,7 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
             # subselect from chosen 3D locus (simply to have fewer Ar points and thus faster execution) 
             Ar1d = ArGrid[(ArGrid>=ArMin)&(ArGrid<=ArMax)]
  
-            if restrictLocus: 
+            if restrictLocus:  ## Just for testing
                 ######### TEST: can we subsample in 3D? ################
                 # *** based on 3D Bayes results for star i= 100592: 
                 minMr = 4.521381434007792  -  3*0.30204335173302443

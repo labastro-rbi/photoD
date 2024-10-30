@@ -1277,7 +1277,7 @@ def getMrFromFeHtLoc(Locus, Catalog):
 def getLocusChi2colors(colorNames, Mcolors, Ocolors, Oerrors):
     chi2 = 0*Mcolors[colorNames[0]]
     for color in colorNames:   
-        chi2 += ((Ocolors[color]-Mcolors[color])/Oerrors[color])**2 
+        chi2 += ((Ocolors[color]-Mcolors[color])/Oerrors[color])**2 ## Should the denominator be outside the squared part?
     return chi2
 
 
@@ -1404,7 +1404,8 @@ def getPhotoDchi2map(i, colors, data2fit, locus):
 ## the upper limit on Ar comes from an external Ar (e.g. ArSFD for obs, or used Ar in sims)
 ## NB the grid for Ar is defined here 
 def getPhotoDchi2map3D(i, colors, colorReddCoeffs, data2fit, locus, ArCoeff, masterLocus=True):
-
+        # data2fit == catalog data
+        # colorReddCoeffs == reddCoeffs
         # first adopt, or generate, 3D model locus
         if masterLocus:
             locus3D = locus 
@@ -1416,7 +1417,7 @@ def getPhotoDchi2map3D(i, colors, colorReddCoeffs, data2fit, locus, ArCoeff, mas
             if (nArGrid>1000):
                 print('resetting nArGrid to 1000 in getPhotoDchi2map3D, from:', nArGrid)
                 nArGrid = 1000
-            if (1):
+            if (1):  # Always true
                 ArGrid = np.linspace(0, ArMax, nArGrid)
             else:
                 # this is for testing performance when Ar prior is delta function centered on true value
@@ -1437,7 +1438,7 @@ def getPhotoDchi2map3D(i, colors, colorReddCoeffs, data2fit, locus, ArCoeff, mas
             ObsColor[color] = data2fit[color].iloc[i]
             errname = color + 'Err'
             # ObsColorErr[color] = data2fit[errname][i]
-            ObsColorErr[color] = data2fit[errname].iloc[i]
+            ObsColorErr[color] = data2fit[errname].iloc[i]  ## This block looks just like a copy of data2fit[color & errname]?
 
         ## return chi2map (data cube) for each grid point in locus3D 
         if masterLocus:
