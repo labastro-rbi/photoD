@@ -125,9 +125,24 @@ def step_1(ArCoeff, ArGridList, ArGridMediumMax, ArGridSmallMax, catalog, i, loc
     # note that here true Ar is used (catalog['Ar'][i]); for real stars, need to use SFD or another extinction map
     # ArMax = ArCoeff[0]*catalog['Ar'][i] + ArCoeff[1]
     # ArMin = ArCoeff[3]*catalog['Ar'][i] + ArCoeff[4]
-    ArMax = ArCoeff[0] * catalog['Ar'].iloc[i] + ArCoeff[1]
-    ArMin = ArCoeff[3] * catalog['Ar'].iloc[i] + ArCoeff[4]
+    ArMax, ArMin = multiply_coeffs(ArCoeff, catalog, i)
     # depending on ArMax, pick the adequate Ar resolution of locus3D
+    ArGrid, locus3D = select_grid(ArGridList, ArGridMediumMax, ArGridSmallMax, ArMax, locus3DList)
+    # subselect from chosen 3D locus (simply to have fewer Ar points and thus faster execution)
+    Ar1d, locus3Dok = filter_grid(ArGrid, ArMax, ArMin, locus3D)
+    # print('selected locus3Dok with', len(locus3Dok), ' elements, from locus3D with', len(locus3D))
+    return Ar1d, locus3Dok
+
+
+def filter_grid(ArGrid, ArMax, ArMin, locus3D):
+    Ar1d = ArGrid[(ArGrid >= ArMin) & (ArGrid <= ArMax)]
+    # simply limit by maximum plausible extinction Ar
+    # print('trying to select from locus3D with', len(locus3D), ' elements, ArMax=', ArMax)
+    locus3Dok = locus3D[(locus3D['Ar'] >= ArMin) & (locus3D['Ar'] <= ArMax)]
+    return Ar1d, locus3Dok
+
+
+def select_grid(ArGridList, ArGridMediumMax, ArGridSmallMax, ArMax, locus3DList):
     if (ArMax < ArGridSmallMax):
         ArGrid = ArGridList['ArSmall']
         locus3D = locus3DList['ArSmall']
@@ -141,13 +156,13 @@ def step_1(ArCoeff, ArGridList, ArGridMediumMax, ArGridSmallMax, catalog, i, loc
             ArGrid = ArGridList['ArLarge']
             locus3D = locus3DList['ArLarge']
             # print('selected ArLarge locus3D with', len(locus3D), ' elements')
-    # subselect from chosen 3D locus (simply to have fewer Ar points and thus faster execution)
-    Ar1d = ArGrid[(ArGrid >= ArMin) & (ArGrid <= ArMax)]
-    # simply limit by maximum plausible extinction Ar
-    # print('trying to select from locus3D with', len(locus3D), ' elements, ArMax=', ArMax)
-    locus3Dok = locus3D[(locus3D['Ar'] >= ArMin) & (locus3D['Ar'] <= ArMax)]
-    # print('selected locus3Dok with', len(locus3Dok), ' elements, from locus3D with', len(locus3D))
-    return Ar1d, locus3Dok
+    return ArGrid, locus3D
+
+
+def multiply_coeffs(ArCoeff, catalog, i):
+    ArMax = ArCoeff[0] * catalog['Ar'].iloc[i] + ArCoeff[1]
+    ArMin = ArCoeff[3] * catalog['Ar'].iloc[i] + ArCoeff[4]
+    return ArMax, ArMin
 
 
 def _setup_bayes3d(ArGridList, MrColumn, catalog, iEnd, iStart, locusData, priorsRootName):
