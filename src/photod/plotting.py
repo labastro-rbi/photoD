@@ -305,3 +305,82 @@ def getQmap(cube, FeH1d, Mr1d, Ar1d):
                     Ssum += cube[i, jk, k]
             Qmap[i, j] = Ssum
     return Qmap, Qr1d
+
+def plot_star(
+    i,
+    catalog,
+    margpostAr,
+    likeCube,
+    priorCube,
+    postCube,
+    mdLocus,
+    xLabel,
+    yLabel,
+    Mr1d,
+    margpostMr,
+    FeH1d,
+    margpostFeH,
+    Ar1d,
+):
+    # for testing and illustration
+    FeHStar = catalog["FeH"][i]
+    MrStar = catalog["Mr"][i]
+    ArStar = catalog["Ar"][i]
+    indA = np.argmax(margpostAr[2])
+    show3Flat2Dmaps(
+        priorCube[:, :, indA],
+        likeCube[:, :, indA],
+        postCube[:, :, indA],
+        mdLocus,
+        xLabel,
+        yLabel,
+        logScale=True,
+        x0=FeHStar,
+        y0=MrStar,
+    )
+    showMargPosteriors3D(
+        Mr1d,
+        margpostMr,
+        "Mr",
+        "p(Mr)",
+        FeH1d,
+        margpostFeH,
+        "FeH",
+        "p(FeH)",
+        Ar1d,
+        margpostAr,
+        "Ar",
+        "p(Ar)",
+        MrStar,
+        FeHStar,
+        ArStar,
+    )
+    # these show marginal 2D and 1D distributions (aka "corner plot")
+    showCornerPlot3(
+        postCube,
+        Mr1d,
+        FeH1d,
+        Ar1d,
+        mdLocus,
+        xLabel,
+        yLabel,
+        logScale=True,
+        x0=FeHStar,
+        y0=MrStar,
+        z0=ArStar,
+    )
+    # Qr vs. FeH posterior and marginal 1D distributions for Qr and FeH
+    Qr1d, margpostQr = showQrCornerPlot(
+        postCube, Mr1d, FeH1d, Ar1d, x0=FeHStar, y0=MrStar, z0=ArStar, logScale=True
+    )
+    catalog["QrEst"][i], catalog["QrEstUnc"][i] = getStats(Qr1d, margpostQr)
+    # basic info
+    print(" *** 3D Bayes results for star i=", i)
+    print("r mag:", catalog["rmag"][i], "g-r:", catalog["gr"][i], "chi2min:", catalog["chi2min"][i])
+    print("Mr: true=", MrStar, "estimate=", catalog["MrEst"][i], " +- ", catalog["MrEstUnc"][i])
+    print("FeH: true=", FeHStar, "estimate=", catalog["FeHEst"][i], " +- ", catalog["FeHEstUnc"][i])
+    print("Ar: true=", ArStar, "estimate=", catalog["ArEst"][i], " +- ", catalog["ArEstUnc"][i])
+    print("Qr: true=", MrStar + ArStar, "estimate=", catalog["QrEst"][i], " +- ", catalog["QrEstUnc"][i])
+    print("Mr drop in entropy:", catalog["MrdS"][i])
+    print("FeH drop in entropy:", catalog["FeHdS"][i])
+    print("Ar drop in entropy:", catalog["ArdS"][i])
