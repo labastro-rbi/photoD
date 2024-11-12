@@ -1,3 +1,4 @@
+import cProfile
 import photod.bayes as bt
 import photod.locus as lt
 
@@ -15,14 +16,16 @@ def test_make_bayes_estimates_3d(tmp_path, s82_0_5_df):
     priorsRootName = "/mnt/beegfs/scratch/scampos/photod/priors/TRILEGAL/S82/5/0"
     outfile = tmp_path / "results.txt"
 
-    bt.makeBayesEstimates3D(
-        s82_0_5_df.reset_index(drop=True),
-        fitColors,
-        locusData,
-        locus3DList,
-        ArGridList,
-        priorsRootName,
-        outfile,
-        iStart=0,
-        iEnd=len(s82_0_5_df),
-    )
+    with cProfile.Profile() as pr:
+        bt.makeBayesEstimates3D(
+            s82_0_5_df.reset_index(drop=True),
+            fitColors,
+            locusData,
+            locus3DList,
+            ArGridList,
+            priorsRootName,
+            outfile,
+            iStart=0,
+            iEnd=len(s82_0_5_df),
+        )
+    pr.dump_stats("/home/scampos/photoD/bayes-3d.pstat")
