@@ -1,0 +1,37 @@
+# Proposed URI base, DRAFT only
+@base <http://lsst.org/lincc/column_mapping/> .
+
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xs:   <http://www.w3.org/2001/XMLSchema#> .
+
+@prefix entity: <entity/> .
+@prefix type: <type/> .
+@prefix prop: <prop/> .
+@prefix term: <term/> .
+
+entity:SampleFunction a type:Function ;
+    rdfs:label "Sample Function" ;
+    rdfs:comment "A function that uses sample parameters" .
+
+entity:radiusInAU a type:Parameter ;
+                  prop:expressesConcept term:DistanceFromSunAU ;
+                  prop:hasIdentifier "rAU" ;
+    rdfs:label "Radius in Astronomical Units" ;
+    rdfs:comment "Radius of the object's orbit in astronomical units" ;
+    prop:usedInFunction entity:SampleFunction .
+
+entity:massInKg a type:Parameter ;
+                prop:expressesConcept term:MassInKilograms ;
+                prop:hasIdentifier "m" ;
+    rdfs:label "Mass in Kilograms" ;
+    rdfs:comment "Mass of the object in kilograms" ;
+    prop:usedInFunction entity:SampleFunction .
+
+entity:orbitalPeriodInDays a type:Parameter ;
+                           prop:hasIdentifier "op_d" ;
+    rdfs:label "Orbital Period in Days" ;
+    rdfs:comment "Time it takes for the object to complete one orbit around the Sun" ;
+    prop:usedInFunction entity:SampleFunction .
+
+

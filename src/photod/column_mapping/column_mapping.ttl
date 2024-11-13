@@ -1,0 +1,85 @@
+# Proposed URI base, DRAFT only
+@base <http://lsst.org/lincc/column_mapping/> .
+
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+@prefix entity: <entity/> .
+@prefix type: <type/> .
+@prefix prop: <prop/> .
+
+type:Concept a rdfs:Class ;
+    rdfs:label "Concept" ;
+    rdfs:comment "A concept meant or indicated by a column, parameter, or term" .
+
+type:Column a rdfs:Class ;
+    rdfs:label "Column" ;
+    rdfs:comment "A column in a table or file" .
+
+type:Table a rdfs:Class ;
+    rdfs:label "Table" ;
+    rdfs:comment "A table containing columns" .
+
+type:Parameter a rdfs:Class ;
+    rdfs:label "Parameter" ;
+    rdfs:comment "A named parameter in a function" .
+
+type:Function a rdfs:Class ;
+    rdfs:label "Function" ;
+    rdfs:comment "A function that uses parameters" .
+
+prop:usedInFunction a rdf:Property ;
+    rdfs:label "used in function" ;
+    rdfs:comment "A parameter is used in a function" ;
+    rdfs:domain entity:Parameter ;
+    rdfs:range entity:Function .
+
+prop:hasColumn a rdf:Property ;
+    rdfs:label "has column" ;
+    rdfs:comment "A table has a column" ;
+    rdfs:domain entity:Table ;
+    rdfs:range entity:Column .
+
+prop:hasTable a rdf:Property ;
+    rdfs:label "has table" ;
+    rdfs:comment "A column is in a table" ;
+    rdfs:domain entity:Column ;
+    rdfs:range entity:Table .
+
+prop:hasIdentifier a rdf:Property ;
+    rdfs:label "has identifier" ;
+    rdfs:comment "A column or table has a identifier" ;
+    rdfs:domain entity:Column, entity:Table, entity:Parameter, entity:Function ;
+    rdfs:range xsd:string .
+
+prop:hasDescription a rdf:Property ;
+    rdfs:label "has description" ;
+    rdfs:comment "A column or table has a description" ;
+    rdfs:domain entity:Column, entity:Table, entity:Parameter, entity:Function ;
+    rdfs:range xsd:string .
+
+# Glossary
+type:Glossary a rdfs:Class ;
+    rdfs:label "Glossary" ;
+    rdfs:comment "A glossary of terms" .
+
+prop:definedIn a rdf:Property ;
+    rdfs:label "defined in" ;
+    rdfs:comment "A concept is defined in a glossary" ;
+    rdfs:domain entity:Concept ;
+    rdfs:range entity:Glossary .
+
+prop:hasDefinition a rdf:Property ;
+    rdfs:label "has definition" ;
+    rdfs:comment "A concept has a definition" ;
+    rdfs:domain entity:Concept ;
+    rdfs:range xsd:string .
+
+prop:expressesConcept a rdf:Property ;
+    rdfs:label "expresses the concept" ;
+    rdfs:comment "the way a column or parameter expresses a concept" ;
+    rdfs:domain entity:Column, entity:Parameter ;
+    rdfs:range entity:Concept .
