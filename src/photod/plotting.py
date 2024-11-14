@@ -303,12 +303,12 @@ def getQmap(cube, FeH1d, Mr1d, Ar1d):
                 jk = int((Mr - Mr1d[0]) / (Mr1d[1] - Mr1d[0]))
                 if (jk >= 0) & (jk < np.size(Mr1d)):
                     Ssum += cube[i, jk, k]
-            Qmap[i, j] = Ssum
+            Qmap = Qmap.at[i, j].set(Ssum)
+            #Qmap[i, j] = Ssum
     return Qmap, Qr1d
 
 def plot_star(
-    i,
-    catalog,
+    star,
     margpostAr,
     likeCube,
     priorCube,
@@ -323,9 +323,9 @@ def plot_star(
     Ar1d,
 ):
     # for testing and illustration
-    FeHStar = catalog["FeH"][i]
-    MrStar = catalog["Mr"][i]
-    ArStar = catalog["Ar"][i]
+    FeHStar = star["FeH"]
+    MrStar = star["Mr"]
+    ArStar = star["Ar"]
     indA = np.argmax(margpostAr[2])
     show3Flat2Dmaps(
         priorCube[:, :, indA],
@@ -373,8 +373,9 @@ def plot_star(
     Qr1d, margpostQr = showQrCornerPlot(
         postCube, Mr1d, FeH1d, Ar1d, x0=FeHStar, y0=MrStar, z0=ArStar, logScale=True
     )
-    catalog["QrEst"][i], catalog["QrEstUnc"][i] = getStats(Qr1d, margpostQr)
+    QrEst, QrEstUnc = getStats(Qr1d, margpostQr)
     # basic info
+    """
     print(" *** 3D Bayes results for star i=", i)
     print("r mag:", catalog["rmag"][i], "g-r:", catalog["gr"][i], "chi2min:", catalog["chi2min"][i])
     print("Mr: true=", MrStar, "estimate=", catalog["MrEst"][i], " +- ", catalog["MrEstUnc"][i])
@@ -384,3 +385,5 @@ def plot_star(
     print("Mr drop in entropy:", catalog["MrdS"][i])
     print("FeH drop in entropy:", catalog["FeHdS"][i])
     print("Ar drop in entropy:", catalog["ArdS"][i])
+    """
+    return QrEst, QrEstUnc

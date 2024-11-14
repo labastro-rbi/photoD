@@ -95,14 +95,10 @@ def loop_bayes_3d(
     yLabel,
 ):
     Ar1d, locus3Dok = ArGridList["ArLarge"], locus3DList["ArLarge"]
-
     colors = catalog[list(fitColors)].to_numpy(dtype=np.float64)
     color_err_names = [color+"Err" for color in list(fitColors)]
     colors_err = catalog[color_err_names].to_numpy(dtype=np.float64)
-    
-    #locus_colors = locus3Dok[list(fitColors)].view((float, len(fitColors)))
     locus_colors = np.stack([locus3Dok[color] for color in fitColors], axis=-1)
-
     priorGrid = jnp.array(list(priorGrid.values()))
     priorind = jnp.array(priorind)
 
@@ -110,17 +106,38 @@ def loop_bayes_3d(
         None, 0, 0, 0, None, None, None, None, None, None
     )))
     
-    results, chi2min = func(locus_colors, colors, colors_err, priorind, Ar1d, FeH1d, Mr1d, priorGrid, dFeH, dMr)
-    print(results, chi2min)
+    likeCube, priorCube, postCube, margpostMr, margpostFeH, margpostAr, stats = func(
+        locus_colors, colors, colors_err, priorind, Ar1d, FeH1d, Mr1d, priorGrid, dFeH, dMr)
+
+    def get_star_stat(stat_dict, index):
+        return {key: value[index] for key, value in stat_dict.items()}
+
+    for i in myStars:
+        QrEst, QrEstUnc = plot_star(
+            catalog.iloc[i],
+            get_star_stat(margpostAr, i),
+            likeCube[i],
+            priorCube[i],
+            postCube[i],
+            mdLocus,
+            xLabel,
+            yLabel,
+            Mr1d,
+            get_star_stat(margpostMr, i),
+            FeH1d,
+            get_star_stat(margpostFeH, i),
+            Ar1d
+        )
+        print(QrEst, QrEstUnc)
 
 ######
 
 def loop_each_star(locus_colors, colors, colors_err, priorind, Ar1d, FeH1d, Mr1d, priorGrid, dFeH, dMr):
     chi2map = calculate_chi2(locus_colors, colors, colors_err)
     dAr, likeCube, priorCube, chi2min = new_like_and_prior(Ar1d, FeH1d, Mr1d, chi2map, priorGrid, priorind)
-    postCube = post(likeCube, priorCube)
-    results = new_postprocess(Ar1d, FeH1d, Mr1d, dAr, dFeH, dMr, postCube, priorCube)
-    return results, chi2min
+    postCube = priorCube * likeCube
+    margpostMr, margpostFeH, margpostAr, stats = new_postprocess(Ar1d, FeH1d, Mr1d, dAr, dFeH, dMr, likeCube, postCube, priorCube)
+    return likeCube, priorCube, postCube, margpostMr, margpostFeH, margpostAr, stats
 
 def calculate_chi2(Mcolors, Ocolors, Oerrors):
     # Remove the last axis (color)
@@ -135,20 +152,21 @@ def new_like_and_prior(Ar1d, FeH1d, Mr1d, chi2map, priorGrid, priorind):
     priorCube = make3Dprior(prior2d, Ar1d.size)
     return dAr, likeCube, priorCube, jnp.min(chi2map)
 
-def new_postprocess(Ar1d, FeH1d, Mr1d, dAr, dFeH, dMr, postCube, priorCube):
+def new_postprocess(Ar1d, FeH1d, Mr1d, dAr, dFeH, dMr, likeCube, postCube, priorCube):
     ## process to get expectation values and uncertainties
     # marginalize and get stats
     margpostMr = {}
     margpostFeH = {}
     margpostAr = {}
     margpostMr[0], margpostFeH[0], margpostAr[0] = getMargDistr3D(priorCube, dMr, dFeH, dAr)
+    margpostMr[1], margpostFeH[1], margpostAr[1] = getMargDistr3D(likeCube, dMr, dFeH, dAr)
     margpostMr[2], margpostFeH[2], margpostAr[2] = getMargDistr3D(postCube, dMr, dFeH, dAr)
     
     MrEst, MrEstUnc = getStats(Mr1d, margpostMr[2])
     FeHEst, FeHEstUnc = getStats(FeH1d, margpostFeH[2])
     ArEst, ArEstUnc = getStats(Ar1d, margpostAr[2])
 
-    return {
+    stats = {
         "MrEst": MrEst,
         "FeHEst": FeHEst,
         "FeHEstUnc": FeHEstUnc,
@@ -159,6 +177,7 @@ def new_postprocess(Ar1d, FeH1d, Mr1d, dAr, dFeH, dMr, postCube, priorCube):
         "FeHdS": Entropy(margpostFeH[2]) - Entropy(margpostFeH[0]),
         "ArdS": Entropy(margpostAr[2]) - Entropy(margpostAr[0])
     }
+    return margpostMr, margpostFeH, margpostAr, stats
 
 #######
 
