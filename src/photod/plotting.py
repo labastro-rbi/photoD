@@ -304,8 +304,8 @@ def getQmap(cube, FeH1d, Mr1d, Ar1d):
                 if (jk >= 0) & (jk < np.size(Mr1d)):
                     Ssum += cube[i, jk, k]
             Qmap = Qmap.at[i, j].set(Ssum)
-            #Qmap[i, j] = Ssum
     return Qmap, Qr1d
+
 
 def plot_star(
     star,

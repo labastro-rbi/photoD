@@ -1,7 +1,7 @@
 import jax
+import jax.numpy as jnp
 import nested_pandas as nd
 import numpy as np
-import jax.numpy as jnp
 from astropy.table import Table
 
 import photod.locus as lt
@@ -20,243 +20,68 @@ def makeBayesEstimates3D(
     outfile: str,
     iStart: int = 0,
     iEnd: int = -1,
-    myStars: list = [],
-    verbose: bool = False,
+    plotStars: list = [],
     MrColumn: str = "Mr",
 ):
-    (
-        ArCoeff,
-        ArGridMediumMax,
-        ArGridSmallMax,
-        FeH1d,
-        Mr1d,
-        dFeH,
-        dMr,
-        iEnd,
-        iStart,
-        mdLocus,
-        priorGrid,
-        priorind,
-        reddCoeffs,
-        xLabel,
-        yLabel,
-    ) = _setup_bayes3d(ArGridList, MrColumn, catalog, iEnd, iStart, locusData, priorsRootName)
-
-    #######################################################################
-    loop_bayes_3d(
-        ArCoeff,
-        ArGridList,
-        ArGridMediumMax,
-        ArGridSmallMax,
-        FeH1d,
-        Mr1d,
-        catalog,
-        dFeH,
-        dMr,
-        fitColors,
-        iEnd,
-        iStart,
-        locus3DList,
-        mdLocus,
-        myStars,
-        priorGrid,
-        priorind,
-        reddCoeffs,
-        verbose,
-        xLabel,
-        yLabel,
-    )
-
-    # store results
-    # writeBayesEstimates(catalog, outfile, iStart, iEnd, do3D=True)
-
-
-def loop_bayes_3d(
-    ArCoeff,
-    ArGridList,
-    ArGridMediumMax,
-    ArGridSmallMax,
-    FeH1d,
-    Mr1d,
-    catalog,
-    dFeH,
-    dMr,
-    fitColors,
-    iEnd,
-    iStart,
-    locus3DList,
-    mdLocus,
-    myStars,
-    priorGrid,
-    priorind,
-    reddCoeffs,
-    verbose,
-    xLabel,
-    yLabel,
-):
-    Ar1d, locus3Dok = ArGridList["ArLarge"], locus3DList["ArLarge"]
-    colors = catalog[list(fitColors)].to_numpy(dtype=np.float64)
-    color_err_names = [color+"Err" for color in list(fitColors)]
-    colors_err = catalog[color_err_names].to_numpy(dtype=np.float64)
-    locus_colors = np.stack([locus3Dok[color] for color in fitColors], axis=-1)
-    priorGrid = jnp.array(list(priorGrid.values()))
-    priorind = jnp.array(priorind)
-
-    func = jax.jit(jax.vmap(loop_each_star, in_axes=(
-        None, 0, 0, 0, None, None, None, None, None, None
-    )))
-    
-    likeCube, priorCube, postCube, margpostMr, margpostFeH, margpostAr, stats = func(
-        locus_colors, colors, colors_err, priorind, Ar1d, FeH1d, Mr1d, priorGrid, dFeH, dMr)
-
-    def get_star_stat(stat_dict, index):
-        return {key: value[index] for key, value in stat_dict.items()}
-
-    for i in myStars:
-        QrEst, QrEstUnc = plot_star(
-            catalog.iloc[i],
-            get_star_stat(margpostAr, i),
-            likeCube[i],
-            priorCube[i],
-            postCube[i],
-            mdLocus,
-            xLabel,
-            yLabel,
-            Mr1d,
-            get_star_stat(margpostMr, i),
-            FeH1d,
-            get_star_stat(margpostFeH, i),
-            Ar1d
-        )
-        print(QrEst, QrEstUnc)
-
-######
-
-def loop_each_star(locus_colors, colors, colors_err, priorind, Ar1d, FeH1d, Mr1d, priorGrid, dFeH, dMr):
-    chi2map = calculate_chi2(locus_colors, colors, colors_err)
-    dAr, likeCube, priorCube, chi2min = new_like_and_prior(Ar1d, FeH1d, Mr1d, chi2map, priorGrid, priorind)
-    postCube = priorCube * likeCube
-    margpostMr, margpostFeH, margpostAr, stats = new_postprocess(Ar1d, FeH1d, Mr1d, dAr, dFeH, dMr, likeCube, postCube, priorCube)
-    return likeCube, priorCube, postCube, margpostMr, margpostFeH, margpostAr, stats
-
-def calculate_chi2(Mcolors, Ocolors, Oerrors):
-    # Remove the last axis (color)
-    return jnp.sum(jnp.square((Ocolors - Mcolors) / Oerrors), axis=-1)
-
-def new_like_and_prior(Ar1d, FeH1d, Mr1d, chi2map, priorGrid, priorind):
-    likeGrid = jnp.exp(-0.5 * chi2map)
-    likeCube = likeGrid.reshape(FeH1d.size, Mr1d.size, Ar1d.size)
-    dAr = Ar1d[1] - Ar1d[0] if Ar1d.size > 1 else 0.01
-    ## generate 3D (Mr, FeH, Ar) prior from 2D (Mr, FeH) prior using uniform prior for Ar
-    prior2d = priorGrid[priorind].reshape(FeH1d.size, Mr1d.size)
-    priorCube = make3Dprior(prior2d, Ar1d.size)
-    return dAr, likeCube, priorCube, jnp.min(chi2map)
-
-def new_postprocess(Ar1d, FeH1d, Mr1d, dAr, dFeH, dMr, likeCube, postCube, priorCube):
-    ## process to get expectation values and uncertainties
-    # marginalize and get stats
-    margpostMr = {}
-    margpostFeH = {}
-    margpostAr = {}
-    margpostMr[0], margpostFeH[0], margpostAr[0] = getMargDistr3D(priorCube, dMr, dFeH, dAr)
-    margpostMr[1], margpostFeH[1], margpostAr[1] = getMargDistr3D(likeCube, dMr, dFeH, dAr)
-    margpostMr[2], margpostFeH[2], margpostAr[2] = getMargDistr3D(postCube, dMr, dFeH, dAr)
-    
-    MrEst, MrEstUnc = getStats(Mr1d, margpostMr[2])
-    FeHEst, FeHEstUnc = getStats(FeH1d, margpostFeH[2])
-    ArEst, ArEstUnc = getStats(Ar1d, margpostAr[2])
-
-    stats = {
-        "MrEst": MrEst,
-        "FeHEst": FeHEst,
-        "FeHEstUnc": FeHEstUnc,
-        "MrEstUnc": MrEstUnc,
-        "ArEst": ArEst,
-        "ArEstUnc": ArEstUnc,
-        "MrdS": Entropy(margpostMr[2]) - Entropy(margpostMr[0]),
-        "FeHdS": Entropy(margpostFeH[2]) - Entropy(margpostFeH[0]),
-        "ArdS": Entropy(margpostAr[2]) - Entropy(margpostAr[0])
-    }
-    return margpostMr, margpostFeH, margpostAr, stats
-
-#######
-
-def postprocess(Ar1d, FeH1d, Mr1d, catalog, dAr, dFeH, dMr, i, likeCube, postCube, priorCube):
-    ## process to get expectation values and uncertainties
-    # marginalize and get stats
-    margpostMr = {}
-    margpostFeH = {}
-    margpostAr = {}
-    margpostMr[0], margpostFeH[0], margpostAr[0] = getMargDistr3D(priorCube, dMr, dFeH, dAr)
-    margpostMr[1], margpostFeH[1], margpostAr[1] = getMargDistr3D(likeCube, dMr, dFeH, dAr)
-    margpostMr[2], margpostFeH[2], margpostAr[2] = getMargDistr3D(postCube, dMr, dFeH, dAr)
-    # stats
-    catalog["MrEst"][i], catalog["MrEstUnc"][i] = getStats(Mr1d, margpostMr[2])
-    catalog["FeHEst"][i], catalog["FeHEstUnc"][i] = getStats(FeH1d, margpostFeH[2])
-    catalog["ArEst"][i], catalog["ArEstUnc"][i] = getStats(Ar1d, margpostAr[2])
-    catalog["MrdS"][i] = Entropy(margpostMr[2]) - Entropy(margpostMr[0])
-    catalog["FeHdS"][i] = Entropy(margpostFeH[2]) - Entropy(margpostFeH[0])
-    catalog["ArdS"][i] = Entropy(margpostAr[2]) - Entropy(margpostAr[0])
-    return margpostAr, margpostFeH, margpostMr
-
-
-def post(likeCube, priorCube):
-    postCube = priorCube * likeCube
-    return postCube
-
-
-def like_and_prior(Ar1d, FeH1d, Mr1d, catalog, chi2map, i, priorGrid, priorind):
-    ## likelihood map
-    likeGrid = np.exp(-0.5 * chi2map)
-    # print('likeGrid:', likeGrid.shape)
-    likeCube = likeGrid.reshape(np.size(FeH1d), np.size(Mr1d), np.size(Ar1d))
-    # print('likeCube:', likeCube.shape)
-    #############################################################################################
-    if Ar1d.size > 1:
-        dAr = Ar1d[1] - Ar1d[0]
-    else:
-        dAr = 0.01
-    catalog["chi2min"][i] = np.min(chi2map)
-    ## generate 3D (Mr, FeH, Ar) prior from 2D (Mr, FeH) prior using uniform prior for Ar
-    prior2d = priorGrid[priorind[i]].reshape(np.size(FeH1d), np.size(Mr1d))
-    priorCube = make3Dprior(prior2d, np.size(Ar1d))
-    return dAr, likeCube, priorCube
-
-
-def step_1(ArCoeff, ArGridMediumMax, ArGridSmallMax, catalog_Ar):
-    # Compute ArMax and ArMin for each star
-    ArMax = ArCoeff[0] * catalog_Ar + ArCoeff[1]
-    # Select the appropriate ArGrid and locus3D based on ArMax values
-    small_mask = ArMax < ArGridSmallMax
-    medium_mask = (ArMax >= ArGridSmallMax) & (ArMax < ArGridMediumMax)
-    grid_selections = np.select([small_mask, medium_mask], ["ArSmall", "ArMedium"], default="ArLarge")
-    return grid_selections
-
-
-def _setup_bayes3d(ArGridList, MrColumn, catalog, iEnd, iStart, locusData, priorsRootName):
     if iEnd < iStart:
         iStart = 0
-        iEnd = np.size(catalog)
+        iEnd = len(catalog)
+
+    (
+        FeH1d,
+        Mr1d,
+        dFeH,
+        dMr,
+        mdLocus,
+        priorGrid,
+        priorIndices,
+        xLabel,
+        yLabel,
+    ) = _setup_bayes3d(catalog, locusData, priorsRootName, MrColumn)
+
+    colors, colorsErr, Ar1d, locusColors, priorGrid, priorIndices, plotStars = prepare_arguments_for_jax(
+        catalog,
+        fitColors,
+        ArGridList,
+        locus3DList,
+        priorGrid,
+        priorIndices,
+        plotStars,
+        iStart,
+        iEnd,
+    )
+
+    likeCube, priorCube, chi2min, postCube, margpostMr, margpostFeH, margpostAr, statistics = (
+        run_bayes_with_jax(
+            colors, colorsErr, priorIndices, locusColors, Ar1d, FeH1d, Mr1d, dFeH, dMr, priorGrid
+        )
+    )
+
+    write_bayes_estimates(catalog, chi2min, statistics, outfile, iStart, iEnd, do3D=True)
+
+    plot_stars(
+        catalog,
+        margpostAr,
+        margpostMr,
+        margpostFeH,
+        likeCube,
+        priorCube,
+        postCube,
+        mdLocus,
+        xLabel,
+        yLabel,
+        Mr1d,
+        FeH1d,
+        Ar1d,
+        plotStars,
+    )
+
+
+def _setup_bayes3d(catalog, locusData, priorsRootName, MrColumn):
     # read maps with priors (and interpolate on the Mr-FeH grid given by locusData, which is same for all stars)
     priorGrid = readPriors(rootname=priorsRootName, locusData=locusData, MrColumn=MrColumn)
     # get prior map indices using observed r band mags
-    priorind = getPriorMapIndex(catalog["rmag"])
-    # properties of Ar grid for prior and likelihood
-    bc = getBayesConstants()
-    ArCoeff = {}
-    ArCoeff[0] = bc["ArCoeff0"]
-    ArCoeff[1] = bc["ArCoeff1"]
-    ArCoeff[2] = bc["ArCoeff2"]
-    ArCoeff[3] = bc["ArCoeff3"]
-    ArCoeff[4] = bc["ArCoeff4"]
-    # color corrections due to dust reddening (for each Ar in the grid for this particular star)
-    # for finding extinction, too
-    C = lt.extcoeff()
-    reddCoeffs = {}
-    reddCoeffs["ug"] = C["u"] - C["g"]
-    reddCoeffs["gr"] = C["g"] - C["r"]
-    reddCoeffs["ri"] = C["r"] - C["i"]
-    reddCoeffs["iz"] = C["i"] - C["z"]
+    priorIndices = getPriorMapIndex(catalog["rmag"])
     # Mr and FeH 1-D grid properties extracted from locus data (same for all stars)
     xLabel = "FeH"
     yLabel = "Mr"
@@ -277,42 +102,106 @@ def _setup_bayes3d(ArGridList, MrColumn, catalog, iEnd, iStart, locusData, prior
     mdLocus = np.array([FeHmin, FeHmax, FeHNpts, MrFaint, MrBright, MrNpts])
     print("Mr1d=", np.min(Mr1d), np.max(Mr1d), len(Mr1d))
     print("MrBright, MrFaint=", MrBright, MrFaint)
-    # setup arrays for holding results
-    catalog["MrEst"] = 0.0 * catalog["Mr"] - 99
-    catalog["MrEstUnc"] = 0.0 * catalog["Mr"] - 1
-    catalog["FeHEst"] = 0.0 * catalog["Mr"] - 99
-    catalog["FeHEstUnc"] = 0.0 * catalog["Mr"] - 1
-    catalog["ArEst"] = 0.0 * catalog["Mr"] - 99
-    catalog["ArEstUnc"] = 0.0 * catalog["Mr"] - 1
-    catalog["QrEst"] = 0.0 * catalog["Mr"] - 99
-    catalog["QrEstUnc"] = 0.0 * catalog["Mr"] - 1
-    catalog["chi2min"] = 0.0 * catalog["Mr"] - 99
-    catalog["MrdS"] = 0.0 * catalog["Mr"] - 1
-    catalog["FeHdS"] = 0.0 * catalog["Mr"] - 1
-    catalog["ArdS"] = 0.0 * catalog["Mr"] - 1
-    ### maximum grid values for Ar from master locus
-    ArGridSmallMax = np.max(ArGridList["ArSmall"])
-    ArGridMediumMax = np.max(ArGridList["ArMedium"])
     return (
-        ArCoeff,
-        ArGridMediumMax,
-        ArGridSmallMax,
         FeH1d,
         Mr1d,
         dFeH,
         dMr,
-        iEnd,
-        iStart,
         mdLocus,
         priorGrid,
-        priorind,
-        reddCoeffs,
+        priorIndices,
         xLabel,
         yLabel,
     )
 
 
-def writeBayesEstimates(catalog, outfile, iStart, iEnd, do3D=False):
+def prepare_arguments_for_jax(
+    catalog, fitColors, ArGridList, locus3DList, priorGrid, priorIndices, plotStars, iStart, iEnd
+):
+    """Load the bayes method arguments and selects the stars whose indices fall in [iStart, iEnd[."""
+    # TODO: Create object to hold these arguments?
+    Ar1d, locusColors3d = ArGridList["ArLarge"], locus3DList["ArLarge"]  # We fixed this
+    # Stack all locus data by colors
+    locusColors = np.stack([locusColors3d[color] for color in fitColors], axis=-1)
+    # Select colors for stars with indices in [iStart, iEnd[
+    colors = catalog[list(fitColors)].to_numpy(dtype=np.float64)[iStart:iEnd]
+    colorErrNames = [color + "Err" for color in fitColors]
+    colorsErr = catalog[colorErrNames].to_numpy(dtype=np.float64)[iStart:iEnd]
+    # Select priors for stars in [iStart, iEnd[
+    priorGrid = jnp.array(list(priorGrid.values()))
+    priorIndices = jnp.array(priorIndices)[iStart:iEnd]
+    # Filter stars to plot to make sure they are within [iStart, iEnd[
+    plotStars = [star for star in plotStars if star >= iStart and star < iEnd]
+    print(f"Plotting stars in [{iStart}, {iEnd}[: ", plotStars)
+    return colors, colorsErr, Ar1d, locusColors, priorGrid, priorIndices, plotStars
+
+
+def run_bayes_with_jax(colors, colorsErr, priorIndices, locusColors, Ar1d, FeH1d, Mr1d, dFeH, dMr, priorGrid):
+    """Use JAX's vmap to iterate over each star. The iterable arguments are `colors`, `colorsErr`, `priorIndices`."""
+    jax_func = jax.jit(jax.vmap(loop_over_each_star, in_axes=(0, 0, 0, None, None, None, None, None, None, None)))
+    return jax_func(colors, colorsErr, priorIndices, locusColors, Ar1d, FeH1d, Mr1d, priorGrid, dFeH, dMr)
+
+
+def loop_over_each_star(colors, colorsErr, priorIndices, locusColors, Ar1d, FeH1d, Mr1d, priorGrid, dFeH, dMr):
+    """Internal method with the logic to be run for each star."""
+    chi2map = calculate_chi2(colors, colorsErr, locusColors)
+    dAr, likeCube, priorCube, chi2min = like_and_prior(Ar1d, FeH1d, Mr1d, chi2map, priorGrid, priorIndices)
+    postCube = priorCube * likeCube
+    margpostMr, margpostFeH, margpostAr, statistics = post_process(
+        Ar1d, FeH1d, Mr1d, dAr, dFeH, dMr, likeCube, postCube, priorCube
+    )
+    return likeCube, priorCube, chi2min, postCube, margpostMr, margpostFeH, margpostAr, statistics
+
+
+def calculate_chi2(colors, colorsErr, locusColors):
+    """Compute chi2 map using provided 3D model locus."""
+    # Remove the last axis (color), hence axis=-1
+    return jnp.sum(jnp.square((colors - locusColors) / colorsErr), axis=-1)
+
+
+def like_and_prior(Ar1d, FeH1d, Mr1d, chi2map, priorGrid, priorIndices):
+    """Compute the likelihood map, the 3D (Mr, FeH, Ar) prior from 2D (Mr, FeH) prior
+    using uniform prior for Ar, and the chi2min."""
+    likeGrid = jnp.exp(-0.5 * chi2map)
+    likeCube = likeGrid.reshape(FeH1d.size, Mr1d.size, Ar1d.size)
+    dAr = Ar1d[1] - Ar1d[0] if Ar1d.size > 1 else 0.01
+    ## generate 3D (Mr, FeH, Ar) prior from 2D (Mr, FeH) prior using uniform prior for Ar
+    prior2d = priorGrid[priorIndices].reshape(FeH1d.size, Mr1d.size)
+    priorCube = make3Dprior(prior2d, Ar1d.size)
+    return dAr, likeCube, priorCube, jnp.min(chi2map)
+
+
+def post_process(Ar1d, FeH1d, Mr1d, dAr, dFeH, dMr, likeCube, postCube, priorCube):
+    """Get expectation values and uncertainties marginalize and get statistics."""
+    margpostMr = {}
+    margpostFeH = {}
+    margpostAr = {}
+
+    margpostMr[0], margpostFeH[0], margpostAr[0] = getMargDistr3D(priorCube, dMr, dFeH, dAr)
+    margpostMr[1], margpostFeH[1], margpostAr[1] = getMargDistr3D(likeCube, dMr, dFeH, dAr)
+    margpostMr[2], margpostFeH[2], margpostAr[2] = getMargDistr3D(postCube, dMr, dFeH, dAr)
+
+    MrEst, MrEstUnc = getStats(Mr1d, margpostMr[2])
+    FeHEst, FeHEstUnc = getStats(FeH1d, margpostFeH[2])
+    ArEst, ArEstUnc = getStats(Ar1d, margpostAr[2])
+
+    statistics = {
+        "FeHEst": FeHEst,
+        "FeHEstUnc": FeHEstUnc,
+        "MrEst": MrEst,
+        "MrEstUnc": MrEstUnc,
+        "ArEst": ArEst,
+        "ArEstUnc": ArEstUnc,
+        "MrdS": Entropy(margpostMr[2]) - Entropy(margpostMr[0]),
+        "FeHdS": Entropy(margpostFeH[2]) - Entropy(margpostFeH[0]),
+        "ArdS": Entropy(margpostAr[2]) - Entropy(margpostAr[0]),
+    }
+
+    return margpostMr, margpostFeH, margpostAr, statistics
+
+
+def write_bayes_estimates(catalog, chi2min, statistics, outfile, iStart, iEnd, do3D=False):
+    """Output the bayes estimates to a file."""
     fout = open(outfile, "w")
     if do3D:
         fout.write(
@@ -321,24 +210,65 @@ def writeBayesEstimates(catalog, outfile, iStart, iEnd, do3D=False):
     else:
         fout.write("      glon       glat        FeHEst FeHUnc  MrEst  MrUnc  chi2min    MrdS     FeHdS \n")
     for i in range(iStart, iEnd):
-        r1 = catalog["glon"].iloc[i]
-        r2 = catalog["glat"].iloc[i]
-        r3 = catalog["FeHEst"].iloc[i]
-        r4 = catalog["FeHEstUnc"].iloc[i]
-        r5 = catalog["MrEst"].iloc[i]
-        r6 = catalog["MrEstUnc"].iloc[i]
-        r7 = catalog["chi2min"].iloc[i]
-        r8 = catalog["MrdS"].iloc[i]
-        r9 = catalog["FeHdS"].iloc[i]
+        r1 = catalog["glon"][i]
+        r2 = catalog["glat"][i]
+        r3 = statistics["FeHEst"][i]
+        r4 = statistics["FeHEstUnc"][i]
+        r5 = statistics["MrEst"][i]
+        r6 = statistics["MrEstUnc"][i]
+        r7 = chi2min[i]
+        r8 = statistics["MrdS"][i]
+        r9 = statistics["FeHdS"][i]
         s = str("%12.8f " % r1) + str("%12.8f  " % r2) + str("%6.2f  " % r3) + str("%5.2f  " % r4)
         s = s + str("%6.2f  " % r5) + str("%5.2f  " % r6)
         if do3D:
-            r15 = catalog["ArEst"].iloc[i]
-            r16 = catalog["ArEstUnc"].iloc[i]
-            r19 = catalog["ArdS"].iloc[i]
+            r15 = statistics["ArEst"][i]
+            r16 = statistics["ArEstUnc"][i]
+            r19 = statistics["ArdS"][i]
             s = s + str("%6.2f  " % r15) + str("%5.2f  " % r16) + str("%5.2f  " % r7) + str("%8.1f  " % r8)
             s = s + str("%8.1f  " % r9) + str("%8.1f  " % r19) + str("%8.0f" % i) + "\n"
         else:
             s = s + str("%5.2f  " % r7) + str("%8.1f  " % r8) + str("%8.1f  " % r9) + "\n"
         fout.write(s)
     fout.close()
+
+
+def plot_stars(
+    catalog,
+    margpostAr,
+    margpostMr,
+    margpostFeH,
+    likeCube,
+    priorCube,
+    postCube,
+    mdLocus,
+    xLabel,
+    yLabel,
+    Mr1d,
+    FeH1d,
+    Ar1d,
+    plotStars,
+):
+    """Create all plots for the specified stars."""
+
+    def get_value_for_star(stat_dict, index):
+        return {key: value[index] for key, value in stat_dict.items()}
+
+    for i in plotStars:
+        print(f"Plotting star {i}")
+        QrEst, QrEstUnc = plot_star(
+            catalog.iloc[i],
+            get_value_for_star(margpostAr, i),
+            likeCube[i],
+            priorCube[i],
+            postCube[i],
+            mdLocus,
+            xLabel,
+            yLabel,
+            Mr1d,
+            get_value_for_star(margpostMr, i),
+            FeH1d,
+            get_value_for_star(margpostFeH, i),
+            Ar1d,
+        )
+        print(QrEst, QrEstUnc)
