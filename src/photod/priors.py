@@ -4,6 +4,8 @@ from scipy.stats import gaussian_kde
 
 import photod.plotting as pt
 
+from photod.bayes_constants import BayesConstants
+
 
 ## given 2D numpy array, make a 3D numpy array by replicating it N3rd times
 ## e.g. for prior.shape = (51, 1502) and N3rd=20, returns (51, 1502, 20)
@@ -11,15 +13,16 @@ def make3Dprior(prior, N3rd):
     return np.repeat(prior[:, :, np.newaxis], N3rd, axis=2)
 
 
-def readPriors(rootname, locusData, MrColumn="Mr"):
+def readPriors(rootname, locusData, MrColumn="Mr", bc = None):
     # TRILEGAL-based maps were pre-computed for this range...
-    bc = getBayesConstants()
-    rmagMin = bc["rmagMin"]
-    rmagMax = bc["rmagMax"]
-    rmagNsteps = bc["rmagNsteps"]
+    bc = bc if bc is not None else BayesConstants()
+    rmagMin = bc.rmagMin
+    rmagMin = bc.rmagMin
+    rmagMax = bc.rmagMax
+    rmagNsteps = bc.rmagNsteps
     rGrid = np.linspace(rmagMin, rmagMax, rmagNsteps)
     priors, rmagBinWidth = readPrior(rmagMin, rmagMax, rmagNsteps, rootname)
-    if bc["rmagBinWidth"] != rmagBinWidth:
+    if bc.rmagBinWidth != rmagBinWidth:
         raise ValueError(
             f"inconsistency with rmagBinWidth in readPriors (see src/BayesTools.py) {bc['rmagBinWidth']} != {rmagBinWidth}"
         )
@@ -53,62 +56,34 @@ def readPrior(rmagMin, rmagMax, rmagNsteps, rootname):
 
 
 # get prior map indices for provided array of observed r band mags
-def getPriorMapIndex(rObs):
-    bc = getBayesConstants()
-    rmagMin = bc["rmagMin"]
-    rmagMax = bc["rmagMax"]
-    rmagNsteps = bc["rmagNsteps"]
+def getPriorMapIndex(rObs, bc = None):
+    bc = bc if bc is not None else BayesConstants()
+    rmagMin = bc.rmagMin
+    rmagMax = bc.rmagMax
+    rmagNsteps = bc.rmagNsteps
     rGrid = np.linspace(rmagMin, rmagMax, rmagNsteps)
     rind = np.arange(rmagNsteps)
-    zint = np.interp(rObs, rGrid, rind) + bc["rmagBinWidth"]
+    zint = np.interp(rObs, rGrid, rind) + bc.rmagBinWidth
     return zint.astype(int)
 
 
-### numerical model specifications and constants for Bayesian PhotoD method
-def getBayesConstants():
-    BayesConst = {}
-    # parameters for stellar locus (main sequence and red giants) table, as well as priors
-    BayesConst["FeHmin"] = -2.5  # the range of considered [Fe/H], in priors and elsewhere
-    BayesConst["FeHmax"] = 1.0
-    BayesConst["FeHNpts"] = 36  # defines the grid step for [Fe/H]
-    BayesConst["MrFaint"] = 17.0  # the range of considered Mr, in priors and elsewhere
-    BayesConst["MrBright"] = -2.0
-    BayesConst["MrNpts"] = 96  # defines the grid step for Mr
-    BayesConst["rmagBinWidth"] = 0.5  # could be dependent on rmag and larger for bright mags...
-    # parameters for pre-computed TRILEGAL-based prior maps
-    BayesConst["rmagMin"] = 14
-    BayesConst["rmagMax"] = 27
-    BayesConst["rmagNsteps"] = 27
-    # parameters for dust extinction grid when fitting 3D (Mr, FeH, Ar)
-    # prior for Ar is flat from (0*Ar+0.0) to (1.3*Ar+0.1) with a step of 0.01 mag ***
-    # where 1.3 <= ArCoef0, 0.1 <= ArCoef1 and 0.01 mag <= ArCoef2 are set here (or user supplied)
-    # ArMin: ArCoeff3*Ar + ArCoeff4
-    BayesConst["ArCoeff0"] = 1.3
-    BayesConst["ArCoeff1"] = 0.1
-    BayesConst["ArCoeff2"] = 0.01
-    # allow Ar as small as 0
-    BayesConst["ArCoeff3"] = 0.0
-    BayesConst["ArCoeff4"] = 0.0
-    return BayesConst
-
-
-def dumpPriorMaps_testing(sample, fileRootname, pix, show2Dmap=False, verbose=True, NrowMax=200000):
+def dumpPriorMaps_testing(sample, fileRootname, pix, show2Dmap=False, verbose=True, NrowMax=200000, bayes_constants = None):
 
     ## data frame called "sample" here must have the following columns: 'FeH', 'Mr', 'rmag'
     labels = ["FeH", "Mr", "rmag"]
     print("sample", type(sample))
     ## numerical model specifications and constants for Bayesian PhotoD method
-    bc = getBayesConstants()
-    FeHmin = bc["FeHmin"]
-    FeHmax = bc["FeHmax"]
-    FeHNpts = bc["FeHNpts"]
-    MrFaint = bc["MrFaint"]
-    MrBright = bc["MrBright"]
-    MrNpts = bc["MrNpts"]
-    rmagBinWidth = bc["rmagBinWidth"]
-    rmagMin = bc["rmagMin"]
-    rmagMax = bc["rmagMax"]
-    rmagNsteps = bc["rmagNsteps"]
+    bc = bayes_constants if bayes_constants is not None else BayesConstants()
+    FeHmin = bc.FeHmin
+    FeHmax = bc.FeHmax
+    FeHNpts = bc.FeHNpts
+    MrFaint = bc.MrFaint
+    MrBright = bc.MrBright
+    MrNpts = bc.MrNpts
+    rmagBinWidth = bc.rmagBinWidth
+    rmagMin = bc.rmagMin
+    rmagMax = bc.rmagMax
+    rmagNsteps = bc.rmagNsteps
 
     # -------
     metadata = np.array(
