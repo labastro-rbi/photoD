@@ -234,22 +234,11 @@ def getPhotoDchi2map3D(i, colors, colorReddCoeffs, data2fit, locus, ArCoeff, mas
 # for a given set of observed colors Ocolors, with errors Oerrors 
 # colors to be used in chi2 computation are listed in colorNames
 # Mcolors is astropy Table 
-
-# original version
-# def getLocusChi2colors(colorNames, Mcolors, Ocolors, Oerrors):
-#     chi2 = 0*Mcolors[colorNames[0]]
-#     for color in colorNames:   
-#         chi2 += ((Ocolors[color]-Mcolors[color])/Oerrors[color])**2 
-#     return chi2
-
-# LP's try
 def getLocusChi2colors(colorNames, Mcolors, Ocolors, Oerrors):
-    chi2 = 0
-    for color in colorNames:
-        diff = Ocolors[color] - Mcolors[color]
-        chi2 += (diff / Oerrors[color]) ** 2
+    chi2 = 0*Mcolors[colorNames[0]]
+    for color in colorNames:   
+        chi2 += ((Ocolors[color]-Mcolors[color])/Oerrors[color])**2 
     return chi2
-
 
 ### WHY IS THIS CODE SCALING WITH THE SQUARE OF ArGrid LENGTH???    
 # replace each row in locus (astropy Table) with np.size(ArGrid) rows where colors in colors
