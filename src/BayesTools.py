@@ -1370,7 +1370,9 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
             dAr = Ar1d[1] - Ar1d[0]
         else:
             dAr = 0.01
-        catalog['chi2min'][i] = np.min(chi2map)
+        # catalog['chi2min'][i] = np.min(chi2map)
+        catalog.loc[i, 'chi2min'] = np.min(chi2map)
+        
         
         # 2D Mr-FeH prior map replicated to get the same Mr-FeH-Ar grid as likelihood map
         if (restrictLocus):
@@ -1402,12 +1404,19 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
         margpostMr[2], margpostFeH[2], margpostAr[2] = getMargDistr3D(postCube, dMr, dFeH, dAr) 
 
         # stats
-        catalog['MrEst'][i], catalog['MrEstUnc'][i] = getStats(Mr1d, margpostMr[2])
-        catalog['FeHEst'][i], catalog['FeHEstUnc'][i] = getStats(FeH1d, margpostFeH[2])
-        catalog['ArEst'][i], catalog['ArEstUnc'][i] = getStats(Ar1d, margpostAr[2])
-        catalog['MrdS'][i] = Entropy(margpostMr[2]) - Entropy(margpostMr[0])
-        catalog['FeHdS'][i] = Entropy(margpostFeH[2]) - Entropy(margpostFeH[0])
-        catalog['ArdS'][i] = Entropy(margpostAr[2]) - Entropy(margpostAr[0])
+        # catalog['MrEst'][i], catalog['MrEstUnc'][i] = getStats(Mr1d, margpostMr[2])
+        # catalog['FeHEst'][i], catalog['FeHEstUnc'][i] = getStats(FeH1d, margpostFeH[2])
+        # catalog['ArEst'][i], catalog['ArEstUnc'][i] = getStats(Ar1d, margpostAr[2])
+        # catalog['MrdS'][i] = Entropy(margpostMr[2]) - Entropy(margpostMr[0])
+        # catalog['FeHdS'][i] = Entropy(margpostFeH[2]) - Entropy(margpostFeH[0])
+        # catalog['ArdS'][i] = Entropy(margpostAr[2]) - Entropy(margpostAr[0])
+
+        catalog.loc[i, 'MrEst'], catalog.loc[i, 'MrEstUnc'] = getStats(Mr1d, margpostMr[2])
+        catalog.loc[i, 'FeHEst'], catalog.loc[i, 'FeHEstUnc'] = getStats(FeH1d, margpostFeH[2])
+        catalog.loc[i, 'ArEst'], catalog.loc[i, 'ArEstUnc'] = getStats(Ar1d, margpostAr[2])
+        catalog.loc[i, 'MrdS'] = Entropy(margpostMr[2]) - Entropy(margpostMr[0])
+        catalog.loc[i, 'FeHdS'] = Entropy(margpostFeH[2]) - Entropy(margpostFeH[0])
+        catalog.loc[i, 'ArdS'] = Entropy(margpostAr[2]) - Entropy(margpostAr[0])
 
         # for testing and illustration  
         if (i in myStars):
@@ -1422,7 +1431,8 @@ def makeBayesEstimates3D(catalog, fitColors, locusData, locus3DList, ArGridList,
             showCornerPlot3(postCube, Mr1d, FeH1d, Ar1d, mdLocus, xLabel, yLabel, logScale=True, x0=FeHStar, y0=MrStar, z0=ArStar)
             # Qr vs. FeH posterior and marginal 1D distributions for Qr and FeH
             Qr1d, margpostQr = showQrCornerPlot(postCube, Mr1d, FeH1d, Ar1d, x0=FeHStar, y0=MrStar, z0=ArStar, logScale=True)
-            catalog['QrEst'][i], catalog['QrEstUnc'][i] = getStats(Qr1d, margpostQr)
+            # catalog['QrEst'][i], catalog['QrEstUnc'][i] = getStats(Qr1d, margpostQr)
+            catalog.loc[i, 'QrEst'], catalog.loc[i, 'QrEstUnc'] = getStats(Qr1d, margpostQr)
             # basic info 
             print(' *** 3D Bayes results for star i=', i)
             print('r mag:', catalog['rmag'][i], 'g-r:', catalog['gr'][i], 'chi2min:', catalog['chi2min'][i])
