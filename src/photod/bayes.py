@@ -16,7 +16,8 @@ def make_bayes_estimates_3d(catalog, params: GlobalParams, iStart=0, iEnd=-1):
         iStart = 0
         iEnd = len(catalog)
     colors, colorsErr, priorIndices = select_stars_in_range(catalog, params, iStart, iEnd)
-    results = run_bayes_with_jax(colors, colorsErr, priorIndices, *params.get_args())
+    # Use JAX's vmap to iterate over each star. The iterable arguments are `colors`, `colorsErr`, `priorIndices`
+    results = BayesResults(*jax_func(colors, colorsErr, priorIndices, *params.get_args()))
     return results, get_estimates_df(catalog, results.chi2min, results.statistics, iStart, iEnd, do3D=True)
 
 
@@ -30,12 +31,6 @@ def select_stars_in_range(catalog, params, iStart, iEnd):
     priorIndices = getPriorMapIndex(catalog["rmag"])
     priorIndices = jnp.array(priorIndices)[iStart:iEnd]
     return colors, colorsErr, priorIndices
-
-
-def run_bayes_with_jax(colors, colorsErr, priorIndices, *global_params):
-    """Use JAX's vmap to iterate over each star. The iterable arguments are `colors`, `colorsErr`, `priorIndices`."""
-    jax_func = jax.jit(jax.vmap(loop_over_each_star, in_axes=(0,) * 3 + (None,) * 7))
-    return BayesResults(*jax_func(colors, colorsErr, priorIndices, *global_params))
 
 
 def loop_over_each_star(
@@ -167,3 +162,5 @@ def plot_stars(
             Ar1d,
         )
         print(QrEst, QrEstUnc)
+
+jax_func = jax.jit(jax.vmap(loop_over_each_star, in_axes=(0,) * 3 + (None,) * 7))
