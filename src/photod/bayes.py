@@ -2,7 +2,7 @@ import numpy as np
 
 import photod.locus as lt
 from photod.plotting import show3Flat2Dmaps, showCornerPlot3, showMargPosteriors3D, showQrCornerPlot
-from photod.priors import getBayesConstants, getPriorMapIndex, make3Dprior, readPriors
+from photod.priors import getPriorMapIndex, make3Dprior, readPriors
 from photod.stats import Entropy, getMargDistr3D, getStats
 
 
@@ -14,6 +14,7 @@ def makeBayesEstimates3D(
     ArGridList,
     priorsRootName,
     outfile,
+    bayes_constants,
     iStart=0,
     iEnd=-1,
     myStars=[],
@@ -31,13 +32,7 @@ def makeBayesEstimates3D(
     priorind = getPriorMapIndex(catalog["rmag"])
 
     # properties of Ar grid for prior and likelihood
-    bc = getBayesConstants()
-    ArCoeff = {}
-    ArCoeff[0] = bc["ArCoeff0"]
-    ArCoeff[1] = bc["ArCoeff1"]
-    ArCoeff[2] = bc["ArCoeff2"]
-    ArCoeff[3] = bc["ArCoeff3"]
-    ArCoeff[4] = bc["ArCoeff4"]
+    ArCoeff = bayes_constants.get_arcoeff_dict()
 
     # color corrections due to dust reddening (for each Ar in the grid for this particular star)
     # for finding extinction, too

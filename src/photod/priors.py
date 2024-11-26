@@ -13,15 +13,10 @@ def make3Dprior(prior, N3rd):
     return np.repeat(prior[:, :, np.newaxis], N3rd, axis=2)
 
 
-def readPriors(rootname, locusData, MrColumn="Mr", bc = None):
+def readPriors(rootname, locusData, bc, MrColumn="Mr"):
     # TRILEGAL-based maps were pre-computed for this range...
-    bc = bc if bc is not None else BayesConstants()
-    rmagMin = bc.rmagMin
-    rmagMin = bc.rmagMin
-    rmagMax = bc.rmagMax
-    rmagNsteps = bc.rmagNsteps
-    rGrid = np.linspace(rmagMin, rmagMax, rmagNsteps)
-    priors, rmagBinWidth = readPrior(rmagMin, rmagMax, rmagNsteps, rootname)
+    rGrid = np.linspace(bc.rmagMin, bc.rmagMax, bc.rmagNsteps)
+    priors, rmagBinWidth = readPrior(bc.rmagMin, bc.rmagMax, bc.rmagNsteps, rootname)
     if bc.rmagBinWidth != rmagBinWidth:
         raise ValueError(
             f"inconsistency with rmagBinWidth in readPriors (see src/BayesTools.py) {bc['rmagBinWidth']} != {rmagBinWidth}"
@@ -56,24 +51,19 @@ def readPrior(rmagMin, rmagMax, rmagNsteps, rootname):
 
 
 # get prior map indices for provided array of observed r band mags
-def getPriorMapIndex(rObs, bc = None):
-    bc = bc if bc is not None else BayesConstants()
-    rmagMin = bc.rmagMin
-    rmagMax = bc.rmagMax
-    rmagNsteps = bc.rmagNsteps
-    rGrid = np.linspace(rmagMin, rmagMax, rmagNsteps)
-    rind = np.arange(rmagNsteps)
+def getPriorMapIndex(rObs, bc):
+    rGrid = np.linspace(bc.rmagMin, bc.rmagMax, bc.rmagNsteps)
+    rind = np.arange(bc.rmagNsteps)
     zint = np.interp(rObs, rGrid, rind) + bc.rmagBinWidth
     return zint.astype(int)
 
 
-def dumpPriorMaps_testing(sample, fileRootname, pix, show2Dmap=False, verbose=True, NrowMax=200000, bayes_constants = None):
+def dumpPriorMaps_testing(sample, fileRootname, pix, bc, show2Dmap=False, verbose=True, NrowMax=200000):
 
     ## data frame called "sample" here must have the following columns: 'FeH', 'Mr', 'rmag'
     labels = ["FeH", "Mr", "rmag"]
     print("sample", type(sample))
     ## numerical model specifications and constants for Bayesian PhotoD method
-    bc = bayes_constants if bayes_constants is not None else BayesConstants()
     FeHmin = bc.FeHmin
     FeHmax = bc.FeHmax
     FeHNpts = bc.FeHNpts

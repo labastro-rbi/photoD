@@ -1,0 +1,17 @@
+{
+  "FeHmin":-2.5,
+  "FeHmax":1.0,
+  "FeHNpts":36,
+  "MrFaint":17.0,
+  "MrBright":-2.0,
+  "MrNpts":96,
+  "rmagBinWidth":0.5,
+  "rmagMin":14,
+  "rmagMax":27,
+  "rmagNsteps":27,
+  "ArCoeff0":1.3,
+  "ArCoeff1":0.1,
+  "ArCoeff2":0.01,
+  "ArCoeff3":0.0,
+  "ArCoeff4":0.0
+}
