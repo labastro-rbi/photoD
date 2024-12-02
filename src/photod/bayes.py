@@ -1,3 +1,4 @@
+from functools import partial
 import jax
 import jax.numpy as jnp
 import nested_pandas as nd
@@ -17,8 +18,12 @@ def make_bayes_estimates_3d(catalog, params: GlobalParams, iStart=0, iEnd=-1):
         iEnd = len(catalog)
     colors, colorsErr, priorIndices = select_stars_in_range(catalog, params, iStart, iEnd)
     # Use JAX's vmap to iterate over each star. The iterable arguments are `colors`, `colorsErr`, `priorIndices`
-    results = BayesResults(*jax_func(colors, colorsErr, priorIndices, *params.get_args()))
-    return results, get_estimates_df(catalog, results.chi2min, results.statistics, iStart, iEnd, do3D=True)
+    chi2min, statistics = jax.lax.map(
+        partial(loop_over_each_star, globalParams=params.get_args()), 
+        (colors, colorsErr, priorIndices),
+        batch_size=10000
+    )
+    return get_estimates_df(catalog, chi2min, statistics, iStart, iEnd, do3D=True)
 
 
 def select_stars_in_range(catalog, params, iStart, iEnd):
@@ -33,17 +38,18 @@ def select_stars_in_range(catalog, params, iStart, iEnd):
     return colors, colorsErr, priorIndices
 
 
-def loop_over_each_star(
-    colors, colorsErr, priorIndices, locusColors, Ar1d, FeH1d, Mr1d, priorGrid, dFeH, dMr
-):
+@jax.jit
+def loop_over_each_star(starData, globalParams):
     """Internal method with the logic to be run for each star."""
+    colors, colorsErr, priorIndices = starData
+    locusColors, Ar1d, FeH1d, Mr1d, priorGrid, dFeH, dMr = globalParams
     chi2map = calculate_chi2(colors, colorsErr, locusColors)
     dAr, likeCube, priorCube, chi2min = like_and_prior(Ar1d, FeH1d, Mr1d, chi2map, priorGrid, priorIndices)
     postCube = priorCube * likeCube
     margpostMr, margpostFeH, margpostAr, statistics = post_process(
         Ar1d, FeH1d, Mr1d, dAr, dFeH, dMr, likeCube, postCube, priorCube
     )
-    return likeCube, priorCube, chi2min, postCube, margpostMr, margpostFeH, margpostAr, statistics
+    return chi2min, statistics
 
 
 def calculate_chi2(colors, colorsErr, locusColors):
