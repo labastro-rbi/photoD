@@ -24,13 +24,14 @@ class GlobalParams:
         priorGrid = readPriors(self.priorsRootName, self.locusData, self.MrColumn)
         self.priorGrid = jnp.array(list(priorGrid.values()))
 
-        self._extract_Mr_and_FeH()
+        self._extractMrAndFeH()
 
         locusColors3d = self.locus3DList["ArLarge"]  # Currently fixed to the large resolution
+        
         # Stack all locus data by colors
         self.locusColors = np.stack([locusColors3d[color] for color in self.fitColors], axis=-1)
 
-    def _extract_Mr_and_FeH(self):
+    def _extractMrAndFeH(self):
         # Mr and FeH 1-D grid properties extracted from locus data (same for all stars)
         FeHGrid = self.locusData[self.xLabel]
         MrGrid = self.locusData[self.yLabel]
@@ -43,11 +44,11 @@ class GlobalParams:
         self.dFeH = dFeH
         self.dMr = dMr
 
-    def get_args(self):
+    def getArgs(self):
         """Arguments to run the calculations for each star"""
         return (self.locusColors, self.Ar1d, self.FeH1d, self.Mr1d, self.priorGrid, self.dFeH, self.dMr)
 
-    def get_plotting_args(self):
+    def getPlottingArgs(self):
         """Arguments to perform plotting for each star"""
         # metadata for plotting likelihood maps below
         FeHmin = np.min(self.FeH1d)

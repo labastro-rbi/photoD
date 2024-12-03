@@ -1,64 +1,73 @@
 from functools import partial
 import jax
 import jax.numpy as jnp
-import nested_pandas as nd
 import numpy as np
 import pandas as pd
 
 from photod.parameters import GlobalParams
-from photod.plotting import plot_star
+from photod.plotting import plotStar
 from photod.priors import getPriorMapIndex, make3Dprior
 from photod.results import BayesResults
 from photod.stats import Entropy, getMargDistr3D, getStats
 
 
-def make_bayes_estimates_3d(catalog, params: GlobalParams, iStart=0, iEnd=-1):
+def makeBayesEstimates3d(
+    starsData: pd.DataFrame,
+    globalParams: GlobalParams,
+    iStart: int = 0,
+    iEnd: int = -1,
+    batchSize: int = 10000,
+    returnAllInfo: bool = False,
+):
+    """Compute the Bayes Estimates for stars in `data`"""
     if iEnd < iStart:
         iStart = 0
-        iEnd = len(catalog)
-    colors, colorsErr, priorIndices = select_stars_in_range(catalog, params, iStart, iEnd)
-    # Use JAX's vmap to iterate over each star. The iterable arguments are `colors`, `colorsErr`, `priorIndices`
-    chi2min, statistics = jax.lax.map(
-        partial(loop_over_each_star, globalParams=params.get_args()), 
-        (colors, colorsErr, priorIndices),
-        batch_size=10000
-    )
-    return get_estimates_df(catalog, chi2min, statistics, iStart, iEnd, do3D=True)
+        iEnd = len(starsData)
+    # Preselect stars according to the provided indices
+    selectedStars, colors, colorsErr, priorIndices = selectStarsInRange(starsData, globalParams, iStart, iEnd)
+    # Use `jax.lax.map` to batch computations with scan/vmap and use memory efficiently.
+    # The BayesResult object is populated with the chi2min and statistics for each star.
+    # If `returnAllInfo` is True, the prior and posterior arrays will be included in the results.
+    func = partial(loopOverEachStar, globalParams=globalParams.getArgs(), returnAllInfo=returnAllInfo)
+    results = BayesResults(*jax.lax.map(func, (colors, colorsErr, priorIndices), batch_size=batchSize))
+    # Create the DataFrame with the expectation values and uncertainties
+    estimatesDf = getEstimates(selectedStars, results.chi2min, results.statistics, do3D=True)
+    return estimatesDf, results
 
 
-def select_stars_in_range(catalog, params, iStart, iEnd):
+def selectStarsInRange(catalog, params, iStart, iEnd):
     """Selects the stars whose indices fall in [iStart, iEnd[, and respective priors."""
     # Select colors for stars with indices in [iStart, iEnd[
-    colors = catalog[list(params.fitColors)].to_numpy(dtype=np.float64)[iStart:iEnd]
+    selectedStars = catalog.iloc[iStart:iEnd]
+    colors = selectedStars[list(params.fitColors)].to_numpy(dtype=np.float64)
     colorErrNames = [color + "Err" for color in params.fitColors]
-    colorsErr = catalog[colorErrNames].to_numpy(dtype=np.float64)[iStart:iEnd]
+    colorsErr = selectedStars[colorErrNames].to_numpy(dtype=np.float64)
     # Select priors for stars in [iStart, iEnd[
-    priorIndices = getPriorMapIndex(catalog["rmag"])
-    priorIndices = jnp.array(priorIndices)[iStart:iEnd]
-    return colors, colorsErr, priorIndices
+    priorIndices = jnp.array(getPriorMapIndex(selectedStars["rmag"]))
+    return selectedStars, colors, colorsErr, priorIndices
 
 
-@jax.jit
-def loop_over_each_star(starData, globalParams):
+@partial(jax.jit, static_argnames="returnAllInfo")
+def loopOverEachStar(starData, globalParams, returnAllInfo):
     """Internal method with the logic to be run for each star."""
     colors, colorsErr, priorIndices = starData
     locusColors, Ar1d, FeH1d, Mr1d, priorGrid, dFeH, dMr = globalParams
-    chi2map = calculate_chi2(colors, colorsErr, locusColors)
-    dAr, likeCube, priorCube, chi2min = like_and_prior(Ar1d, FeH1d, Mr1d, chi2map, priorGrid, priorIndices)
+    chi2map = calculateChi2(colors, colorsErr, locusColors)
+    dAr, likeCube, priorCube, chi2min = likeAndPrior(Ar1d, FeH1d, Mr1d, chi2map, priorGrid, priorIndices)
     postCube = priorCube * likeCube
-    margpostMr, margpostFeH, margpostAr, statistics = post_process(
-        Ar1d, FeH1d, Mr1d, dAr, dFeH, dMr, likeCube, postCube, priorCube
-    )
-    return chi2min, statistics
+    margpostMr, margpostFeH, margpostAr = getMargPosteriors(priorCube, likeCube, postCube, dMr, dFeH, dAr)
+    statistics = postProcess(Ar1d, FeH1d, Mr1d, margpostMr, margpostFeH, margpostAr)
+    otherInfo = [likeCube, priorCube, postCube, margpostMr, margpostFeH, margpostAr] if returnAllInfo else []
+    return chi2min, statistics, *otherInfo
 
 
-def calculate_chi2(colors, colorsErr, locusColors):
+def calculateChi2(colors, colorsErr, locusColors):
     """Compute chi2 map using provided 3D model locus."""
     # Remove the last axis (color), hence axis=-1
     return jnp.sum(jnp.square((colors - locusColors) / colorsErr), axis=-1)
 
 
-def like_and_prior(Ar1d, FeH1d, Mr1d, chi2map, priorGrid, priorIndices):
+def likeAndPrior(Ar1d, FeH1d, Mr1d, chi2map, priorGrid, priorIndices):
     """Compute the likelihood map, the 3D (Mr, FeH, Ar) prior from 2D (Mr, FeH) prior
     using uniform prior for Ar, and the chi2min."""
     likeGrid = jnp.exp(-0.5 * chi2map)
@@ -70,21 +79,23 @@ def like_and_prior(Ar1d, FeH1d, Mr1d, chi2map, priorGrid, priorIndices):
     return dAr, likeCube, priorCube, jnp.min(chi2map)
 
 
-def post_process(Ar1d, FeH1d, Mr1d, dAr, dFeH, dMr, likeCube, postCube, priorCube):
-    """Get expectation values and uncertainties marginalize and get statistics."""
+def getMargPosteriors(priorCube, likeCube, postCube, dMr, dFeH, dAr):
+    """Get posterior information"""
     margpostMr = {}
     margpostFeH = {}
     margpostAr = {}
-
     margpostMr[0], margpostFeH[0], margpostAr[0] = getMargDistr3D(priorCube, dMr, dFeH, dAr)
     margpostMr[1], margpostFeH[1], margpostAr[1] = getMargDistr3D(likeCube, dMr, dFeH, dAr)
     margpostMr[2], margpostFeH[2], margpostAr[2] = getMargDistr3D(postCube, dMr, dFeH, dAr)
+    return margpostMr, margpostFeH, margpostAr
 
+
+def postProcess(Ar1d, FeH1d, Mr1d, margpostMr, margpostFeH, margpostAr):
+    """Get expectation values and uncertainties marginalize and get statistics."""
     MrEst, MrEstUnc = getStats(Mr1d, margpostMr[2])
     FeHEst, FeHEstUnc = getStats(FeH1d, margpostFeH[2])
     ArEst, ArEstUnc = getStats(Ar1d, margpostAr[2])
-
-    statistics = {
+    return {
         "FeHEst": FeHEst,
         "FeHEstUnc": FeHEstUnc,
         "MrEst": MrEst,
@@ -96,41 +107,31 @@ def post_process(Ar1d, FeH1d, Mr1d, dAr, dFeH, dMr, likeCube, postCube, priorCub
         "ArdS": Entropy(margpostAr[2]) - Entropy(margpostAr[0]),
     }
 
-    return margpostMr, margpostFeH, margpostAr, statistics
 
-
-def get_estimates_df(catalog, chi2min, statistics, iStart, iEnd, do3D=False):
+def getEstimates(starsData, chi2min, statistics, do3D=False):
     """Construct the Bayes estimates Pandas DataFrame."""
-
-    def slice_statistics_arrays(statistics, iStart, iEnd):
-        """Slice arrays in the statistics dictionary"""
-        return {key: value[iStart:iEnd] for key, value in statistics.items()}
-
-    catalog_slice = catalog.iloc[iStart:iEnd]
-    chi2min_slice = chi2min[iStart:iEnd]
-    statistics_slice = slice_statistics_arrays(statistics, iStart, iEnd)
-    estimates_df = pd.DataFrame(
+    estimatesDf = pd.DataFrame(
         {
-            "glon": catalog_slice["glon"],
-            "glat": catalog_slice["glat"],
-            "FeHEst": statistics_slice["FeHEst"],
-            "FeHUnc": statistics_slice["FeHEstUnc"],
-            "MrEst": statistics_slice["MrEst"],
-            "MrUnc": statistics_slice["MrEstUnc"],
-            "chi2min": chi2min_slice,
-            "MrdS": statistics_slice["MrdS"],
-            "FeHdS": statistics_slice["FeHdS"],
+            "glon": starsData["glon"],
+            "glat": starsData["glat"],
+            "FeHEst": statistics["FeHEst"],
+            "FeHUnc": statistics["FeHEstUnc"],
+            "MrEst": statistics["MrEst"],
+            "MrUnc": statistics["MrEstUnc"],
+            "chi2min": chi2min,
+            "MrdS": statistics["MrdS"],
+            "FeHdS": statistics["FeHdS"],
         }
     )
     if do3D:
-        estimates_df["ArEst"] = statistics_slice["ArEst"]
-        estimates_df["ArUnc"] = statistics_slice["ArEstUnc"]
-        estimates_df["ArdS"] = statistics_slice["ArdS"]
-    return estimates_df
+        estimatesDf["ArEst"] = statistics["ArEst"]
+        estimatesDf["ArUnc"] = statistics["ArEstUnc"]
+        estimatesDf["ArdS"] = statistics["ArdS"]
+    return estimatesDf
 
 
-def plot_stars(
-    catalog,
+def plotStars(
+    starsData,
     margpostAr,
     margpostMr,
     margpostFeH,
@@ -143,18 +144,23 @@ def plot_stars(
     Mr1d,
     FeH1d,
     Ar1d,
-    plotStars,
+    starIndices,
 ):
-    """Create all plots for the specified stars."""
+    """Create the plots for the specified stars."""
 
-    def get_value_for_star(stat_dict, index):
-        return {key: value[index] for key, value in stat_dict.items()}
+    def getValueForStar(statDict, index):
+        return {key: value[index] for key, value in statDict.items()}
 
-    for i in plotStars:
-        print(f"Plotting star {i}")
-        QrEst, QrEstUnc = plot_star(
-            catalog.iloc[i],
-            get_value_for_star(margpostAr, i),
+    # Iterate over indices of stars in the results
+    for i in starIndices:
+        if i not in starsData.index:
+            print(f"Results for star {i} were not found. Skipping...")
+            continue
+
+        print(f"Plotting star {i}...")
+        QrEst, QrEstUnc = plotStar(
+            starsData.loc[i],
+            getValueForStar(margpostAr, i),
             likeCube[i],
             priorCube[i],
             postCube[i],
@@ -162,11 +168,9 @@ def plot_stars(
             xLabel,
             yLabel,
             Mr1d,
-            get_value_for_star(margpostMr, i),
+            getValueForStar(margpostMr, i),
             FeH1d,
-            get_value_for_star(margpostFeH, i),
+            getValueForStar(margpostFeH, i),
             Ar1d,
         )
         print(QrEst, QrEstUnc)
-
-jax_func = jax.jit(jax.vmap(loop_over_each_star, in_axes=(0,) * 3 + (None,) * 7))

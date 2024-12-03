@@ -307,7 +307,7 @@ def getQmap(cube, FeH1d, Mr1d, Ar1d):
     return Qmap, Qr1d
 
 
-def plot_star(
+def plotStar(
     star,
     margpostAr,
     likeCube,
