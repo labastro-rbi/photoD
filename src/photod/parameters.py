@@ -14,20 +14,14 @@ class GlobalParams:
     locusData: np.ndarray
     ArGridList: dict
     locus3DList: dict
-    priorsRootName: str
     xLabel: str = "FeH"
     yLabel: str = "Mr"
     MrColumn: str = "Mr"
 
     def __post_init__(self):
         self.Ar1d = self.ArGridList["ArLarge"]
-        priorGrid = readPriors(self.priorsRootName, self.locusData, self.MrColumn)
-        self.priorGrid = jnp.array(list(priorGrid.values()))
-
         self._extractMrAndFeH()
-
         locusColors3d = self.locus3DList["ArLarge"]  # Currently fixed to the large resolution
-        
         # Stack all locus data by colors
         self.locusColors = np.stack([locusColors3d[color] for color in self.fitColors], axis=-1)
 
@@ -46,7 +40,7 @@ class GlobalParams:
 
     def getArgs(self):
         """Arguments to run the calculations for each star"""
-        return (self.locusColors, self.Ar1d, self.FeH1d, self.Mr1d, self.priorGrid, self.dFeH, self.dMr)
+        return (self.locusColors, self.Ar1d, self.FeH1d, self.Mr1d, self.dFeH, self.dMr)
 
     def getPlottingArgs(self):
         """Arguments to perform plotting for each star"""

@@ -13,6 +13,7 @@ from photod.stats import Entropy, getMargDistr3D, getStats
 
 def makeBayesEstimates3d(
     starsData: pd.DataFrame,
+    priorGrid: np.ndarray,
     globalParams: GlobalParams,
     iStart: int = 0,
     iEnd: int = -1,
@@ -28,7 +29,7 @@ def makeBayesEstimates3d(
     # Use `jax.lax.map` to batch computations with scan/vmap and use memory efficiently.
     # The BayesResult object is populated with the chi2min and statistics for each star.
     # If `returnAllInfo` is True, the prior and posterior arrays will be included in the results.
-    func = partial(loopOverEachStar, globalParams=globalParams.getArgs(), returnAllInfo=returnAllInfo)
+    func = partial(loopOverEachStar, priorGrid=priorGrid, globalParams=globalParams.getArgs(), returnAllInfo=returnAllInfo)
     results = BayesResults(*jax.lax.map(func, (colors, colorsErr, priorIndices), batch_size=batchSize))
     # Create the DataFrame with the expectation values and uncertainties
     estimatesDf = getEstimates(selectedStars, results.chi2min, results.statistics, do3D=True)
@@ -48,10 +49,10 @@ def selectStarsInRange(catalog, params, iStart, iEnd):
 
 
 @partial(jax.jit, static_argnames="returnAllInfo")
-def loopOverEachStar(starData, globalParams, returnAllInfo):
+def loopOverEachStar(starData, priorGrid, globalParams, returnAllInfo):
     """Internal method with the logic to be run for each star."""
     colors, colorsErr, priorIndices = starData
-    locusColors, Ar1d, FeH1d, Mr1d, priorGrid, dFeH, dMr = globalParams
+    locusColors, Ar1d, FeH1d, Mr1d, dFeH, dMr = globalParams
     chi2map = calculateChi2(colors, colorsErr, locusColors)
     dAr, likeCube, priorCube, chi2min = likeAndPrior(Ar1d, FeH1d, Mr1d, chi2map, priorGrid, priorIndices)
     postCube = priorCube * likeCube
