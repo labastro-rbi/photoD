@@ -60,6 +60,8 @@ def test_make_bayes_estimates_3d(tmp_path, s82_0_5_dir, s82_priors_dir, locus_fi
         "ArEst",
         "ArUnc",
         "ArdS",
+        "D",
+        "DUnc"
     ]
     meta = npd.NestedFrame.from_dict({col: pd.Series([], dtype=float) for col in col_names})
 
