@@ -128,6 +128,14 @@ def getEstimates(starsData, chi2min, statistics, do3D=False):
         estimatesDf["ArEst"] = statistics["ArEst"]
         estimatesDf["ArUnc"] = statistics["ArEstUnc"]
         estimatesDf["ArdS"] = statistics["ArdS"]
+
+    delta = starsData["rmag"].to_numpy() - estimatesDf["MrEst"].to_numpy() - estimatesDf["ArEst"].to_numpy()
+    dist = 10 * 10 ** (delta/5)
+    estimatesDf["D"] = dist
+    delta_err = np.sqrt(starsData["rErr"].to_numpy() ** 2 + estimatesDf["MrUnc"].to_numpy() ** 2 + estimatesDf["ArUnc"].to_numpy() ** 2)
+    dist_err = np.log(10) * 0.2 * dist * delta_err
+    estimatesDf["DUnc"] = dist_err
+
     return estimatesDf
 
 
