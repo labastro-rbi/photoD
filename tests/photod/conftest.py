@@ -12,6 +12,22 @@ TEST_DIR = Path(__file__).parent.parent
 def test_data_dir():
     return Path(TEST_DIR) / "data"
 
+
 @pytest.fixture
-def s82_0_5_df(test_data_dir):
-    return lsdb.read_hats(test_data_dir / "s82_0_5").compute()
+def s82_0_5_df(s82_0_5_dir):
+    return lsdb.read_hats(s82_0_5_dir).compute()
+
+
+@pytest.fixture
+def s82_0_5_dir(test_data_dir):
+    return test_data_dir / "s82_0_5"
+
+
+@pytest.fixture
+def s82_priors_dir(test_data_dir):
+    return test_data_dir / "s82_priors"
+
+
+@pytest.fixture
+def locus_file_path(test_data_dir):
+    return test_data_dir / "locus" / "MSandRGBcolors_v1.3.txt"
