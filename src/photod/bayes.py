@@ -103,8 +103,9 @@ def postProcess(Ar1d, FeH1d, Mr1d, margpostMr, margpostFeH, margpostAr):
     FeHQuantiles = getPosteriorQuantiles(FeH1d, margpostFeH[2])
     ArQuantiles = getPosteriorQuantiles(Ar1d, margpostAr[2])
     # Calculate the quantiles for Mr, FeH and Ar and add them as columns to the result
+    quantile_names = ["lo","mean","hi"]
     posteriorsDict = {
-        f"{statisticsName}_quantile_{i}": quantile
+        f"{statisticsName}_quantile_{quantile_names[i]}": quantile
         for quantiles, statisticsName in zip([MrQuantiles, FeHQuantiles, ArQuantiles], ["Mr", "FeH", "Ar"])
         for i, quantile in enumerate(quantiles)
     }
