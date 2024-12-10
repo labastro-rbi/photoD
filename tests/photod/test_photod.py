@@ -42,8 +42,6 @@ def test_make_bayes_estimates_3d(tmp_path, s82_0_5_dir, s82_priors_dir, locus_fi
     locusData = lt.subsampleLocusData(OKlocus, kMr=10, kFeH=2)
 
     fitColors = ("ug", "gr", "ri", "iz")
-
-    fitColors = ("ug", "gr", "ri", "iz")
     ArGridList, locus3DList = lt.get3DmodelList(locusData, fitColors)
     globalParams = GlobalParams(fitColors, locusData, ArGridList, locus3DList)
 

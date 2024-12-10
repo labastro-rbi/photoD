@@ -8,7 +8,7 @@ from photod.parameters import GlobalParams
 from photod.plotting import plotStar
 from photod.priors import getPriorMapIndex, make3Dprior
 from photod.results import BayesResults
-from photod.stats import Entropy, getMargDistr3D, getStats
+from photod.stats import Entropy, getMargDistr3D, getPosteriorQuantiles
 
 
 def makeBayesEstimates3d(
@@ -32,7 +32,7 @@ def makeBayesEstimates3d(
     func = partial(loopOverEachStar, priorGrid=priorGrid, globalParams=globalParams.getArgs(), returnAllInfo=returnAllInfo)
     results = BayesResults(*jax.lax.map(func, (colors, colorsErr, priorIndices), batch_size=batchSize))
     # Create the DataFrame with the expectation values and uncertainties
-    estimatesDf = getEstimates(selectedStars, results.chi2min, results.statistics, do3D=True)
+    estimatesDf = getEstimates(selectedStars, results)
     return estimatesDf, results
 
 
@@ -53,12 +53,14 @@ def loopOverEachStar(starData, priorGrid, globalParams, returnAllInfo):
     """Internal method with the logic to be run for each star."""
     colors, colorsErr, priorIndices = starData
     locusColors, Ar1d, FeH1d, Mr1d, dFeH, dMr = globalParams
+    # Calculate the likelihoods in log-space
     chi2map = calculateChi2(colors, colorsErr, locusColors)
     dAr, likeCube, priorCube, chi2min = likeAndPrior(Ar1d, FeH1d, Mr1d, chi2map, priorGrid, priorIndices)
-    postCube = priorCube * likeCube
-    margpostMr, margpostFeH, margpostAr = getMargPosteriors(priorCube, likeCube, postCube, dMr, dFeH, dAr)
-    statistics = postProcess(Ar1d, FeH1d, Mr1d, margpostMr, margpostFeH, margpostAr)
-    otherInfo = [likeCube, priorCube, postCube, margpostMr, margpostFeH, margpostAr] if returnAllInfo else []
+    postCube = priorCube + likeCube
+    # Calculate the marginal posteriors
+    margpost, logMargPost = getMargPosteriors(priorCube, likeCube, postCube, dMr, dFeH, dAr)
+    statistics = postProcess(Ar1d, FeH1d, Mr1d, *margpost)
+    otherInfo = [likeCube, priorCube, postCube, *logMargPost] if returnAllInfo else []
     return chi2min, statistics, *otherInfo
 
 
@@ -71,8 +73,7 @@ def calculateChi2(colors, colorsErr, locusColors):
 def likeAndPrior(Ar1d, FeH1d, Mr1d, chi2map, priorGrid, priorIndices):
     """Compute the likelihood map, the 3D (Mr, FeH, Ar) prior from 2D (Mr, FeH) prior
     using uniform prior for Ar, and the chi2min."""
-    likeGrid = jnp.exp(-0.5 * chi2map)
-    likeCube = likeGrid.reshape(FeH1d.size, Mr1d.size, Ar1d.size)
+    likeCube = chi2map.reshape(FeH1d.size, Mr1d.size, Ar1d.size)
     dAr = Ar1d[1] - Ar1d[0] if Ar1d.size > 1 else 0.01
     ## generate 3D (Mr, FeH, Ar) prior from 2D (Mr, FeH) prior using uniform prior for Ar
     prior2d = priorGrid[priorIndices].reshape(FeH1d.size, Mr1d.size)
@@ -82,60 +83,49 @@ def likeAndPrior(Ar1d, FeH1d, Mr1d, chi2map, priorGrid, priorIndices):
 
 def getMargPosteriors(priorCube, likeCube, postCube, dMr, dFeH, dAr):
     """Get posterior information"""
-    margpostMr = {}
-    margpostFeH = {}
-    margpostAr = {}
-    margpostMr[0], margpostFeH[0], margpostAr[0] = getMargDistr3D(priorCube, dMr, dFeH, dAr)
-    margpostMr[1], margpostFeH[1], margpostAr[1] = getMargDistr3D(likeCube, dMr, dFeH, dAr)
-    margpostMr[2], margpostFeH[2], margpostAr[2] = getMargDistr3D(postCube, dMr, dFeH, dAr)
-    return margpostMr, margpostFeH, margpostAr
+    margpostMr, margpostFeH, margpostAr = {}, {}, {}
+    logMarPostMr, logMargPostFeH, logMargPostAr = {}, {}, {}
+    for idx, cube in enumerate([priorCube, likeCube, postCube]):
+        # We need to exponentiate the matrices, which are in log-space
+        distrMr, distrFeH, distrAr = getMargDistr3D(jnp.exp(cube), dMr, dFeH, dAr)
+        margpostMr[idx] = distrMr
+        margpostFeH[idx] = distrFeH
+        margpostAr[idx] = distrAr
+        logMarPostMr[idx] = jnp.log(distrMr)
+        logMargPostFeH[idx] = jnp.log(distrFeH)
+        logMargPostAr[idx] = jnp.log(distrAr)
+    return (margpostMr, margpostFeH, margpostAr), (logMarPostMr, logMargPostFeH, logMargPostAr)
 
 
 def postProcess(Ar1d, FeH1d, Mr1d, margpostMr, margpostFeH, margpostAr):
     """Get expectation values and uncertainties marginalize and get statistics."""
-    MrEst, MrEstUnc = getStats(Mr1d, margpostMr[2])
-    FeHEst, FeHEstUnc = getStats(FeH1d, margpostFeH[2])
-    ArEst, ArEstUnc = getStats(Ar1d, margpostAr[2])
+    MrQuantiles = getPosteriorQuantiles(Mr1d, margpostMr[2])
+    FeHQuantiles = getPosteriorQuantiles(FeH1d, margpostFeH[2])
+    ArQuantiles = getPosteriorQuantiles(Ar1d, margpostAr[2])
+    # Calculate the quantiles for Mr, FeH and Ar and add them as columns to the result
+    posteriorsDict = {
+        f"{statisticsName}_quantile_{i}": quantile
+        for quantiles, statisticsName in zip([MrQuantiles, FeHQuantiles, ArQuantiles], ["Mr", "FeH", "Ar"])
+        for i, quantile in enumerate(quantiles)
+    }
     return {
-        "FeHEst": FeHEst,
-        "FeHEstUnc": FeHEstUnc,
-        "MrEst": MrEst,
-        "MrEstUnc": MrEstUnc,
-        "ArEst": ArEst,
-        "ArEstUnc": ArEstUnc,
+        **posteriorsDict,
         "MrdS": Entropy(margpostMr[2]) - Entropy(margpostMr[0]),
         "FeHdS": Entropy(margpostFeH[2]) - Entropy(margpostFeH[0]),
         "ArdS": Entropy(margpostAr[2]) - Entropy(margpostAr[0]),
     }
 
 
-def getEstimates(starsData, chi2min, statistics, do3D=False):
+def getEstimates(starsData, results):
     """Construct the Bayes estimates Pandas DataFrame."""
     estimatesDf = pd.DataFrame(
         {
             "glon": starsData["glon"],
             "glat": starsData["glat"],
-            "FeHEst": statistics["FeHEst"],
-            "FeHUnc": statistics["FeHEstUnc"],
-            "MrEst": statistics["MrEst"],
-            "MrUnc": statistics["MrEstUnc"],
-            "chi2min": chi2min,
-            "MrdS": statistics["MrdS"],
-            "FeHdS": statistics["FeHdS"],
+            "chi2min": results.chi2min,
+            **results.statistics,
         }
     )
-    if do3D:
-        estimatesDf["ArEst"] = statistics["ArEst"]
-        estimatesDf["ArUnc"] = statistics["ArEstUnc"]
-        estimatesDf["ArdS"] = statistics["ArdS"]
-
-    delta = starsData["rmag"].to_numpy() - estimatesDf["MrEst"].to_numpy() - estimatesDf["ArEst"].to_numpy()
-    dist = 10 * 10 ** (delta/5)
-    estimatesDf["D"] = dist
-    delta_err = np.sqrt(starsData["rErr"].to_numpy() ** 2 + estimatesDf["MrUnc"].to_numpy() ** 2 + estimatesDf["ArUnc"].to_numpy() ** 2)
-    dist_err = np.log(10) * 0.2 * dist * delta_err
-    estimatesDf["DUnc"] = dist_err
-
     return estimatesDf
 
 
