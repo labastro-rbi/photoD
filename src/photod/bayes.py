@@ -8,7 +8,7 @@ from photod.parameters import GlobalParams
 from photod.plotting import plotStar
 from photod.priors import getPriorMapIndex, make3Dprior
 from photod.results import BayesResults
-from photod.stats import Entropy, getMargDistr3D, getPosteriorQuantiles
+from photod.stats import Entropy, getMargDistr3D, getPosteriorQuantiles, getQrQuantiles
 
 
 def makeBayesEstimates3d(
@@ -29,7 +29,12 @@ def makeBayesEstimates3d(
     # Use `jax.lax.map` to batch computations with scan/vmap and use memory efficiently.
     # The BayesResult object is populated with the chi2min and statistics for each star.
     # If `returnAllInfo` is True, the prior and posterior arrays will be included in the results.
-    func = partial(loopOverEachStar, priorGrid=priorGrid, globalParams=globalParams.getArgs(), returnAllInfo=returnAllInfo)
+    func = partial(
+        loopOverEachStar,
+        priorGrid=priorGrid,
+        globalParams=globalParams.getArgs(),
+        returnAllInfo=returnAllInfo,
+    )
     results = BayesResults(*jax.lax.map(func, (colors, colorsErr, priorIndices), batch_size=batchSize))
     # Create the DataFrame with the expectation values and uncertainties
     estimatesDf = getEstimates(selectedStars, results)
@@ -52,14 +57,14 @@ def selectStarsInRange(catalog, params, iStart, iEnd):
 def loopOverEachStar(starData, priorGrid, globalParams, returnAllInfo):
     """Internal method with the logic to be run for each star."""
     colors, colorsErr, priorIndices = starData
-    locusColors, Ar1d, FeH1d, Mr1d, dFeH, dMr = globalParams
+    locusColors, Ar1d, FeH1d, Mr1d, dFeH, dMr, QrGrid, QrIndices = globalParams
     # Calculate the likelihoods in log-space
     chi2map = calculateChi2(colors, colorsErr, locusColors)
     dAr, likeCube, priorCube, chi2min = likeAndPrior(Ar1d, FeH1d, Mr1d, chi2map, priorGrid, priorIndices)
     postCube = priorCube + likeCube
     # Calculate the marginal posteriors
     margpost, logMargPost = getMargPosteriors(priorCube, likeCube, postCube, dMr, dFeH, dAr)
-    statistics = postProcess(Ar1d, FeH1d, Mr1d, *margpost)
+    statistics = postProcess(Ar1d, FeH1d, Mr1d, postCube, QrGrid, QrIndices, *margpost)
     otherInfo = [likeCube, priorCube, postCube, *logMargPost] if returnAllInfo else []
     return chi2min, statistics, *otherInfo
 
@@ -73,7 +78,8 @@ def calculateChi2(colors, colorsErr, locusColors):
 def likeAndPrior(Ar1d, FeH1d, Mr1d, chi2map, priorGrid, priorIndices):
     """Compute the likelihood map, the 3D (Mr, FeH, Ar) prior from 2D (Mr, FeH) prior
     using uniform prior for Ar, and the chi2min."""
-    likeCube = chi2map.reshape(FeH1d.size, Mr1d.size, Ar1d.size)
+    likeGrid = -0.5 * chi2map
+    likeCube = likeGrid.reshape(FeH1d.size, Mr1d.size, Ar1d.size)
     dAr = Ar1d[1] - Ar1d[0] if Ar1d.size > 1 else 0.01
     ## generate 3D (Mr, FeH, Ar) prior from 2D (Mr, FeH) prior using uniform prior for Ar
     prior2d = priorGrid[priorIndices].reshape(FeH1d.size, Mr1d.size)
@@ -87,7 +93,7 @@ def getMargPosteriors(priorCube, likeCube, postCube, dMr, dFeH, dAr):
     logMarPostMr, logMargPostFeH, logMargPostAr = {}, {}, {}
     for idx, cube in enumerate([priorCube, likeCube, postCube]):
         # We need to exponentiate the matrices, which are in log-space
-        distrMr, distrFeH, distrAr = getMargDistr3D(jnp.exp(cube), dMr, dFeH, dAr)
+        distrMr, distrFeH, distrAr = getMargDistr3D(cube, dMr, dFeH, dAr)
         margpostMr[idx] = distrMr
         margpostFeH[idx] = distrFeH
         margpostAr[idx] = distrAr
@@ -97,18 +103,24 @@ def getMargPosteriors(priorCube, likeCube, postCube, dMr, dFeH, dAr):
     return (margpostMr, margpostFeH, margpostAr), (logMarPostMr, logMargPostFeH, logMargPostAr)
 
 
-def postProcess(Ar1d, FeH1d, Mr1d, margpostMr, margpostFeH, margpostAr):
+def postProcess(Ar1d, FeH1d, Mr1d, postCube, QrGrid, QrIndices, margpostMr, margpostFeH, margpostAr):
     """Get expectation values and uncertainties marginalize and get statistics."""
+
     MrQuantiles = getPosteriorQuantiles(Mr1d, margpostMr[2])
     FeHQuantiles = getPosteriorQuantiles(FeH1d, margpostFeH[2])
     ArQuantiles = getPosteriorQuantiles(Ar1d, margpostAr[2])
+    QrQuantiles = getQrQuantiles(jnp.exp(postCube), QrGrid, QrIndices)
+
     # Calculate the quantiles for Mr, FeH and Ar and add them as columns to the result
-    quantile_names = ["lo","mean","hi"]
+    quantile_names = ["lo", "median", "hi"]
     posteriorsDict = {
         f"{statisticsName}_quantile_{quantile_names[i]}": quantile
-        for quantiles, statisticsName in zip([MrQuantiles, FeHQuantiles, ArQuantiles], ["Mr", "FeH", "Ar"])
+        for quantiles, statisticsName in zip(
+            [MrQuantiles, FeHQuantiles, ArQuantiles, QrQuantiles], ["Mr", "FeH", "Ar", "Qr"]
+        )
         for i, quantile in enumerate(quantiles)
     }
+
     return {
         **posteriorsDict,
         "MrdS": Entropy(margpostMr[2]) - Entropy(margpostMr[0]),

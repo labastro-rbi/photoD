@@ -30,7 +30,16 @@ def getStats(x, pdf):
 
 def getPosteriorQuantiles(x, pdf):
     cumsum = jnp.cumsum(pdf)
-    cdf = cumsum / cumsum[-1]
-    # These quantiles for -+1 std
+    cdf = (cumsum - 0.5 * pdf) / cumsum[-1]
     quantiles = jnp.array([0.14, 0.5, 0.86])
     return jnp.interp(quantiles, cdf, x)
+
+def getQrQuantiles(postCube, QrGrid, QrIndices):
+    margPdfOverFeH = jnp.sum(postCube, axis=(0)).T
+    weightsQr = jnp.zeros_like(QrGrid)
+    weightsQr = weightsQr.at[QrIndices].add(margPdfOverFeH)
+    cumsum = jnp.cumsum(weightsQr)
+    cdf = (cumsum - 0.5 * weightsQr) / cumsum[-1]
+    quantiles = jnp.array([0.14, 0.5, 0.86])
+    QrQuantiles = jnp.interp(quantiles, cdf, QrGrid)
+    return QrQuantiles
