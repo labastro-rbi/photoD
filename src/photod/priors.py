@@ -2,13 +2,14 @@ import numpy as np
 from scipy.interpolate import griddata
 from scipy.stats import gaussian_kde
 
+import jax.numpy as jnp
 import photod.plotting as pt
 
 
 ## given 2D numpy array, make a 3D numpy array by replicating it N3rd times
 ## e.g. for prior.shape = (51, 1502) and N3rd=20, returns (51, 1502, 20)
 def make3Dprior(prior, N3rd):
-    return np.repeat(prior[:, :, np.newaxis], N3rd, axis=2)
+    return jnp.repeat(prior[:, :, jnp.newaxis], N3rd, axis=2)
 
 
 def readPriors(rootname, locusData, MrColumn="Mr"):
@@ -259,7 +260,7 @@ def get2Dmap(sample, labels, metadata):
         xgrid = np.linspace(xMin, xMax, nXbin)
         ygrid = np.linspace(yMin, yMax, nYbin)
         Xgrid, Ygrid = np.meshgrid(xgrid, ygrid)
-        Z = kde.evaluate(np.vstack([Xgrid.ravel(), Ygrid.ravel()]))
+        Z = kde.logpdf(np.vstack([Xgrid.ravel(), Ygrid.ravel()]))
         return (Xgrid, Ygrid, Z)
     except:
         # print("LinAlgError", metadata)
