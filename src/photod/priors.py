@@ -260,7 +260,7 @@ def get2Dmap(sample, labels, metadata):
         xgrid = np.linspace(xMin, xMax, nXbin)
         ygrid = np.linspace(yMin, yMax, nYbin)
         Xgrid, Ygrid = np.meshgrid(xgrid, ygrid)
-        Z = kde.logpdf(np.vstack([Xgrid.ravel(), Ygrid.ravel()]))
+        Z = kde.evaluate(np.vstack([Xgrid.ravel(), Ygrid.ravel()]))
         return (Xgrid, Ygrid, Z)
     except:
         # print("LinAlgError", metadata)

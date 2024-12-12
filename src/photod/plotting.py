@@ -268,17 +268,14 @@ def show3Flat2Dmaps(Z1, Z2, Z3, md, xLab, yLab, x0=-99, y0=-99, logScale=False, 
     from matplotlib.colors import LogNorm
 
     cmap = oneImage(axs[0], im1, myExtent, minFac, "Prior", showTrue, x0, y0, logScale=logScale)
+    fig.colorbar(cmap, ax=axs[0])
     cmap = oneImage(axs[1], im2, myExtent, minFac, "Likelihood", showTrue, x0, y0, logScale=logScale)
+    fig.colorbar(cmap, ax=axs[1])
     cmap = oneImage(axs[2], im3, myExtent, minFac, "Posterior", showTrue, x0, y0, logScale=logScale)
+    fig.colorbar(cmap, ax=axs[2])
 
     cax = fig.add_axes([0.84, 0.1, 0.1, 0.75])
     cax.set_axis_off()
-    if 0:
-        cb = fig.colorbar(cmap, ax=cax)
-        if logScale:
-            cb.set_label("density on log scale")
-        else:
-            cb.set_label("density on linear scale")
 
     for ax in axs.flat:
         ax.set(xlabel=xLab, ylabel=yLab)

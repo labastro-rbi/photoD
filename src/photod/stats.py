@@ -19,7 +19,8 @@ def getMargDistr3D(arr3d, dX, dY, dZ):
 
 def Entropy(p):
     # Because we cannot filter non-concrete arrays, 1 because log is 0
-    return -jnp.sum(jnp.exp(p) * p)
+    pOK = jnp.where(p > 0, p, 1)
+    return -jnp.sum(pOK * jnp.log2(pOK))
 
 
 def getStats(x, pdf):
