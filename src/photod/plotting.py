@@ -268,17 +268,14 @@ def show3Flat2Dmaps(Z1, Z2, Z3, md, xLab, yLab, x0=-99, y0=-99, logScale=False, 
     from matplotlib.colors import LogNorm
 
     cmap = oneImage(axs[0], im1, myExtent, minFac, "Prior", showTrue, x0, y0, logScale=logScale)
+    fig.colorbar(cmap, ax=axs[0])
     cmap = oneImage(axs[1], im2, myExtent, minFac, "Likelihood", showTrue, x0, y0, logScale=logScale)
+    fig.colorbar(cmap, ax=axs[1])
     cmap = oneImage(axs[2], im3, myExtent, minFac, "Posterior", showTrue, x0, y0, logScale=logScale)
+    fig.colorbar(cmap, ax=axs[2])
 
     cax = fig.add_axes([0.84, 0.1, 0.1, 0.75])
     cax.set_axis_off()
-    if 0:
-        cb = fig.colorbar(cmap, ax=cax)
-        if logScale:
-            cb.set_label("density on log scale")
-        else:
-            cb.set_label("density on linear scale")
 
     for ax in axs.flat:
         ax.set(xlabel=xLab, ylabel=yLab)
@@ -303,5 +300,87 @@ def getQmap(cube, FeH1d, Mr1d, Ar1d):
                 jk = int((Mr - Mr1d[0]) / (Mr1d[1] - Mr1d[0]))
                 if (jk >= 0) & (jk < np.size(Mr1d)):
                     Ssum += cube[i, jk, k]
-            Qmap[i, j] = Ssum
+            Qmap = Qmap.at[i, j].set(Ssum)
     return Qmap, Qr1d
+
+
+def plotStar(
+    star,
+    margpostAr,
+    likeCube,
+    priorCube,
+    postCube,
+    mdLocus,
+    xLabel,
+    yLabel,
+    Mr1d,
+    margpostMr,
+    FeH1d,
+    margpostFeH,
+    Ar1d,
+):
+    # for testing and illustration
+    FeHStar = star["FeH"]
+    MrStar = star["Mr"]
+    ArStar = star["Ar"]
+    indA = np.argmax(margpostAr[2])
+    show3Flat2Dmaps(
+        priorCube[:, :, indA],
+        likeCube[:, :, indA],
+        postCube[:, :, indA],
+        mdLocus,
+        xLabel,
+        yLabel,
+        logScale=True,
+        x0=FeHStar,
+        y0=MrStar,
+    )
+    showMargPosteriors3D(
+        Mr1d,
+        margpostMr,
+        "Mr",
+        "p(Mr)",
+        FeH1d,
+        margpostFeH,
+        "FeH",
+        "p(FeH)",
+        Ar1d,
+        margpostAr,
+        "Ar",
+        "p(Ar)",
+        MrStar,
+        FeHStar,
+        ArStar,
+    )
+    # these show marginal 2D and 1D distributions (aka "corner plot")
+    showCornerPlot3(
+        postCube,
+        Mr1d,
+        FeH1d,
+        Ar1d,
+        mdLocus,
+        xLabel,
+        yLabel,
+        logScale=True,
+        x0=FeHStar,
+        y0=MrStar,
+        z0=ArStar,
+    )
+    # Qr vs. FeH posterior and marginal 1D distributions for Qr and FeH
+    Qr1d, margpostQr = showQrCornerPlot(
+        postCube, Mr1d, FeH1d, Ar1d, x0=FeHStar, y0=MrStar, z0=ArStar, logScale=True
+    )
+    QrEst, QrEstUnc = getStats(Qr1d, margpostQr)
+    # basic info
+    """
+    print(" *** 3D Bayes results for star i=", i)
+    print("r mag:", catalog["rmag"][i], "g-r:", catalog["gr"][i], "chi2min:", catalog["chi2min"][i])
+    print("Mr: true=", MrStar, "estimate=", catalog["MrEst"][i], " +- ", catalog["MrEstUnc"][i])
+    print("FeH: true=", FeHStar, "estimate=", catalog["FeHEst"][i], " +- ", catalog["FeHEstUnc"][i])
+    print("Ar: true=", ArStar, "estimate=", catalog["ArEst"][i], " +- ", catalog["ArEstUnc"][i])
+    print("Qr: true=", MrStar + ArStar, "estimate=", catalog["QrEst"][i], " +- ", catalog["QrEstUnc"][i])
+    print("Mr drop in entropy:", catalog["MrdS"][i])
+    print("FeH drop in entropy:", catalog["FeHdS"][i])
+    print("Ar drop in entropy:", catalog["ArdS"][i])
+    """
+    return QrEst, QrEstUnc

@@ -1,0 +1,9 @@
+#HATS catalog
+obs_collection=s82_priors
+dataproduct_type=source
+hats_nrows=81
+hats_col_ra=ra
+hats_col_dec=dec
+hats_order=5
+hats_builder=Melissa DeLucchi
+hats_creation_date=2024-12-06T18\:01UTC
