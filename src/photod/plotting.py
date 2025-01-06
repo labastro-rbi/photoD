@@ -307,6 +307,8 @@ def getQmap(cube, FeH1d, Mr1d, Ar1d):
 def plotStar(
     star,
     margpostAr,
+    margpostMr,
+    margpostFeH,
     likeCube,
     priorCube,
     postCube,
@@ -314,9 +316,7 @@ def plotStar(
     xLabel,
     yLabel,
     Mr1d,
-    margpostMr,
     FeH1d,
-    margpostFeH,
     Ar1d,
 ):
     # for testing and illustration
@@ -371,16 +371,34 @@ def plotStar(
         postCube, Mr1d, FeH1d, Ar1d, x0=FeHStar, y0=MrStar, z0=ArStar, logScale=True
     )
     QrEst, QrEstUnc = getStats(Qr1d, margpostQr)
-    # basic info
-    """
-    print(" *** 3D Bayes results for star i=", i)
-    print("r mag:", catalog["rmag"][i], "g-r:", catalog["gr"][i], "chi2min:", catalog["chi2min"][i])
-    print("Mr: true=", MrStar, "estimate=", catalog["MrEst"][i], " +- ", catalog["MrEstUnc"][i])
-    print("FeH: true=", FeHStar, "estimate=", catalog["FeHEst"][i], " +- ", catalog["FeHEstUnc"][i])
-    print("Ar: true=", ArStar, "estimate=", catalog["ArEst"][i], " +- ", catalog["ArEstUnc"][i])
-    print("Qr: true=", MrStar + ArStar, "estimate=", catalog["QrEst"][i], " +- ", catalog["QrEstUnc"][i])
-    print("Mr drop in entropy:", catalog["MrdS"][i])
-    print("FeH drop in entropy:", catalog["FeHdS"][i])
-    print("Ar drop in entropy:", catalog["ArdS"][i])
-    """
     return QrEst, QrEstUnc
+
+
+def plotStars(starsData, bayesResults, *plottingArgs):
+    """Create the plots for the specified stars."""
+
+    def getValueForStar(statDict, index):
+        return {key: value[index] for key, value in statDict.items()}
+
+    # Drop the _healpix_29 index
+    stars = starsData.reset_index(drop=True)
+
+    if len(stars) != len(bayesResults):
+        raise ValueError("Stars data and results have different size")
+
+    # Iterate over each star in the results. These results are arrays
+    # of an element each because they were packed with JAX, and that is
+    # why we need to get the first elements of these arrays.
+    for i, result in enumerate(bayesResults):
+        print(f"Plotting star {i}...")
+        QrEst, QrEstUnc = plotStar(
+            stars.iloc[i],
+            getValueForStar(result.margpostAr, 0),
+            getValueForStar(result.margpostMr, 0),
+            getValueForStar(result.margpostFeH, 0),
+            result.likeCube[0],
+            result.priorCube[0],
+            result.postCube[0],
+            *plottingArgs,
+        )
+        print(QrEst, QrEstUnc)
