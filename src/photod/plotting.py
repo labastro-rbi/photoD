@@ -268,17 +268,14 @@ def show3Flat2Dmaps(Z1, Z2, Z3, md, xLab, yLab, x0=-99, y0=-99, logScale=False, 
     from matplotlib.colors import LogNorm
 
     cmap = oneImage(axs[0], im1, myExtent, minFac, "Prior", showTrue, x0, y0, logScale=logScale)
+    fig.colorbar(cmap, ax=axs[0])
     cmap = oneImage(axs[1], im2, myExtent, minFac, "Likelihood", showTrue, x0, y0, logScale=logScale)
+    fig.colorbar(cmap, ax=axs[1])
     cmap = oneImage(axs[2], im3, myExtent, minFac, "Posterior", showTrue, x0, y0, logScale=logScale)
+    fig.colorbar(cmap, ax=axs[2])
 
     cax = fig.add_axes([0.84, 0.1, 0.1, 0.75])
     cax.set_axis_off()
-    if 0:
-        cb = fig.colorbar(cmap, ax=cax)
-        if logScale:
-            cb.set_label("density on log scale")
-        else:
-            cb.set_label("density on linear scale")
 
     for ax in axs.flat:
         ax.set(xlabel=xLab, ylabel=yLab)
@@ -310,6 +307,8 @@ def getQmap(cube, FeH1d, Mr1d, Ar1d):
 def plotStar(
     star,
     margpostAr,
+    margpostMr,
+    margpostFeH,
     likeCube,
     priorCube,
     postCube,
@@ -317,9 +316,7 @@ def plotStar(
     xLabel,
     yLabel,
     Mr1d,
-    margpostMr,
     FeH1d,
-    margpostFeH,
     Ar1d,
 ):
     # for testing and illustration
@@ -374,16 +371,34 @@ def plotStar(
         postCube, Mr1d, FeH1d, Ar1d, x0=FeHStar, y0=MrStar, z0=ArStar, logScale=True
     )
     QrEst, QrEstUnc = getStats(Qr1d, margpostQr)
-    # basic info
-    """
-    print(" *** 3D Bayes results for star i=", i)
-    print("r mag:", catalog["rmag"][i], "g-r:", catalog["gr"][i], "chi2min:", catalog["chi2min"][i])
-    print("Mr: true=", MrStar, "estimate=", catalog["MrEst"][i], " +- ", catalog["MrEstUnc"][i])
-    print("FeH: true=", FeHStar, "estimate=", catalog["FeHEst"][i], " +- ", catalog["FeHEstUnc"][i])
-    print("Ar: true=", ArStar, "estimate=", catalog["ArEst"][i], " +- ", catalog["ArEstUnc"][i])
-    print("Qr: true=", MrStar + ArStar, "estimate=", catalog["QrEst"][i], " +- ", catalog["QrEstUnc"][i])
-    print("Mr drop in entropy:", catalog["MrdS"][i])
-    print("FeH drop in entropy:", catalog["FeHdS"][i])
-    print("Ar drop in entropy:", catalog["ArdS"][i])
-    """
     return QrEst, QrEstUnc
+
+
+def plotStars(starsData, bayesResults, *plottingArgs):
+    """Create the plots for the specified stars."""
+
+    def getValueForStar(statDict, index):
+        return {key: value[index] for key, value in statDict.items()}
+
+    # Drop the _healpix_29 index
+    stars = starsData.reset_index(drop=True)
+
+    if len(stars) != len(bayesResults):
+        raise ValueError("Stars data and results have different size")
+
+    # Iterate over each star in the results. These results are arrays
+    # of an element each because they were packed with JAX, and that is
+    # why we need to get the first elements of these arrays.
+    for i, result in enumerate(bayesResults):
+        print(f"Plotting star {i}...")
+        QrEst, QrEstUnc = plotStar(
+            stars.iloc[i],
+            getValueForStar(result.margpostAr, 0),
+            getValueForStar(result.margpostMr, 0),
+            getValueForStar(result.margpostFeH, 0),
+            result.likeCube[0],
+            result.priorCube[0],
+            result.postCube[0],
+            *plottingArgs,
+        )
+        print(QrEst, QrEstUnc)

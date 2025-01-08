@@ -27,3 +27,20 @@ def getStats(x, pdf):
     mean = jnp.sum(x * pdf) / jnp.sum(pdf)
     V = jnp.sum((x - mean) ** 2 * pdf) / jnp.sum(pdf)
     return mean, jnp.sqrt(V)
+
+
+def getPosteriorQuantiles(x, pdf):
+    cumsum = jnp.cumsum(pdf)
+    cdf = (cumsum - 0.5 * pdf) / cumsum[-1]
+    quantiles = jnp.array([0.14, 0.5, 0.86])
+    return jnp.interp(quantiles, cdf, x)
+
+def getQrQuantiles(postCube, QrGrid, QrIndices):
+    margPdfOverFeH = jnp.sum(postCube, axis=(0)).T
+    weightsQr = jnp.zeros_like(QrGrid)
+    weightsQr = weightsQr.at[QrIndices].add(margPdfOverFeH)
+    cumsum = jnp.cumsum(weightsQr)
+    cdf = (cumsum - 0.5 * weightsQr) / cumsum[-1]
+    quantiles = jnp.array([0.14, 0.5, 0.86])
+    QrQuantiles = jnp.interp(quantiles, cdf, QrGrid)
+    return QrQuantiles

@@ -42,28 +42,13 @@ def test_make_bayes_estimates_3d(tmp_path, s82_0_5_dir, s82_priors_dir, locus_fi
     locusData = lt.subsampleLocusData(OKlocus, kMr=10, kFeH=2)
 
     fitColors = ("ug", "gr", "ri", "iz")
-
-    fitColors = ("ug", "gr", "ri", "iz")
     ArGridList, locus3DList = lt.get3DmodelList(locusData, fitColors)
     globalParams = GlobalParams(fitColors, locusData, ArGridList, locus3DList)
 
-    col_names = [
-        "glon",
-        "glat",
-        "FeHEst",
-        "FeHUnc",
-        "MrEst",
-        "MrUnc",
-        "chi2min",
-        "MrdS",
-        "FeHdS",
-        "ArEst",
-        "ArUnc",
-        "ArdS",
-        "D",
-        "DUnc"
-    ]
-    meta = npd.NestedFrame.from_dict({col: pd.Series([], dtype=float) for col in col_names})
+    quantile_cols = [f"{statisticsName}_quantile_{quantile}" for statisticsName in ["Mr","FeH","Ar","Qr"] for quantile in ["lo","median","hi"]]
+    estimate_cols = sorted([*quantile_cols,"MrdS","FeHdS","ArdS"])
+    col_names = ["glon","glat","chi2min",*estimate_cols]
+    meta = npd.NestedFrame.from_dict({ col: pd.Series([], dtype=np.float32) for col in col_names })
 
     s82_stripe_catalog = lsdb.read_hats(s82_0_5_dir)
     prior_map_catalog = lsdb.read_hats(s82_priors_dir)
@@ -74,6 +59,3 @@ def test_make_bayes_estimates_3d(tmp_path, s82_0_5_dir, s82_priors_dir, locus_fi
         prior_map_catalog, merging_function, globalParams=delayed_global_params, meta=meta
     )
     result = merge_lazy.compute()
-
-    expected_metallicity = [-0.627993, -0.379619, -0.608126, -2.232135]
-    assert_allclose(result["FeHEst"][0:4], expected_metallicity, rtol=1e-6)

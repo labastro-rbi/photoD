@@ -24,6 +24,11 @@ class GlobalParams:
         locusColors3d = self.locus3DList["ArLarge"]  # Currently fixed to the large resolution
         # Stack all locus data by colors
         self.locusColors = np.stack([locusColors3d[color] for color in self.fitColors], axis=-1)
+        # Create the Qr grid (Qr = Mr + Ar)
+        Mr, Ar = jnp.meshgrid(self.Mr1d, self.Ar1d)
+        Qr = jnp.round(Mr+Ar, 3)       
+        self.QrGrid, self.QrIndices = jnp.unique(Qr, return_inverse=True)
+
 
     def _extractMrAndFeH(self):
         # Mr and FeH 1-D grid properties extracted from locus data (same for all stars)
@@ -40,7 +45,7 @@ class GlobalParams:
 
     def getArgs(self):
         """Arguments to run the calculations for each star"""
-        return (self.locusColors, self.Ar1d, self.FeH1d, self.Mr1d, self.dFeH, self.dMr)
+        return (self.locusColors, self.Ar1d, self.FeH1d, self.Mr1d, self.dFeH, self.dMr, self.QrGrid, self.QrIndices)
 
     def getPlottingArgs(self):
         """Arguments to perform plotting for each star"""

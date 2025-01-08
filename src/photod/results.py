@@ -17,14 +17,3 @@ class BayesResults:
     margpostMr: dict | None = None
     margpostFeH: dict | None = None
     margpostAr: dict | None = None
-
-    def getPlottingArgs(self):
-        """Arguments to perform plotting for each star"""
-        return (
-            self.margpostAr,
-            self.margpostMr,
-            self.margpostFeH,
-            self.likeCube,
-            self.priorCube,
-            self.postCube,
-        )
