@@ -1,0 +1,71 @@
+# Glossary of terms for this project
+# Adapted from https://docs.google.com/document/d/1lDzfDBg_4vd-ces1BhCojwKOlx0oTEmODPClzQbT-zQ/edit?usp=sharing
+
+- id: MrBright
+  description: >-
+    (context of priors) brightness allowed absolute magnitude in r
+    band. Brightest is having lowest magnitude.
+- id: MrFaint
+  description: >-
+    Opposite of MrBright.
+- prefix: M
+  description: >-
+    as in capital “M” usually denotes an absolute magnitude. Apparent
+    magnitude <https://en.wikipedia.org/wiki/Apparent_magnitude> that
+    the object would have if it were viewed from a distance of exactly
+    10 parsecs <https://en.wikipedia.org/wiki/Parsec> (32.6
+    light-years), without extinction
+    <https://en.wikipedia.org/wiki/Extinction_(astronomy)> (or
+    dimming) of its light due to absorption by interstellar matter
+    <https://en.wikipedia.org/wiki/Interstellar_medium> and cosmic
+    dust <https://en.wikipedia.org/wiki/Cosmic_dust>.
+- prefix: m
+  description: >-
+    usually denotes an apparent/observed magnitude.
+- id: FeH
+  description: metallicity
+- suffix: Min
+  description: minimum
+- suffix: Max
+  description: maximum
+- id: MrNpts
+  description: >-
+    Number of stars with a unique value of Mr in locusData. Defines
+    the grid step for Mr.
+- id: rmagBinWidth
+  # TODO: apparent or absolute  magnitude?
+  description: bin width of the magnitude in the r band
+- id: rmagNsteps
+  description: number of steps in r mag
+- prefix: rmag
+  # TODO: apparent or absolute magnitude?
+  description: magnitude in the r band
+- id: SGB
+  description: sub-giant branch
+- id: RGB
+  description: red giant branch
+- id: CHeB
+  description: core helium burning phase
+- id: AGB
+  description: asymptotic giant branch
+- id: EAGB
+  description: early asymptotic giant branch
+- id: TP-AGB
+  description: thermally pulsing AGB
+- id: PAGB
+  # TODO: Is it certain?
+  description: post-AGB?
+- id: WD
+  description: white dwarfs
+- id: Ar
+  description: extinction in r-band
+- id: Av
+  description: extinction in v-band
+- id: Qr
+  # TODO: Lovro to verify this
+  description: absolute magnitude plus extinction
+- suffix: dS
+  description: drop in entropy
+- suffix: EstUnc
+  description: >-
+    estimated uncertainty as a +/- delta for the quantity it modifies (confidence interval)
