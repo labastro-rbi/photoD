@@ -1,0 +1,83 @@
+# Glossary of terms for this project
+# Adapted from https://docs.google.com/document/d/1lDzfDBg_4vd-ces1BhCojwKOlx0oTEmODPClzQbT-zQ/edit#heading=h.olnm3g4r6wj6
+
+# Capturing the IDs, prefixes, and suffixes as given.
+
+- id: MrBright
+  description: >-
+    (context of priors) brightness allowed absolute magnitude in r
+    band. Brightest is having lowest magnitude.
+- id: MrFaint
+  description: >-
+    Opposite of MrBright.
+- prefix: M
+  description: >-
+    as in capital “M” usually denotes an absolute magnitude. Apparent
+    magnitude <https://en.wikipedia.org/wiki/Apparent_magnitude> that
+    the object would have if it were viewed from a distance of exactly
+    10 parsecs <https://en.wikipedia.org/wiki/Parsec> (32.6
+    light-years), without extinction
+    <https://en.wikipedia.org/wiki/Extinction_(astronomy)> (or
+    dimming) of its light due to absorption by interstellar matter
+    <https://en.wikipedia.org/wiki/Interstellar_medium> and cosmic
+    dust <https://en.wikipedia.org/wiki/Cosmic_dust>.
+- prefix: m
+  description: >-
+    usually denotes an apparent/observed magnitude.
+- id: rmag
+  description: observed magnitude in r band
+- id: FeH
+  description: metallicity
+- suffix: Min
+  description: minimum
+- suffix: Max
+  description: maximum
+- id: MrNpts
+  description: >-
+    Number of stars with a unique value of Mr in locusData. Defines
+    the grid step for Mr.
+- id: rmagBinWidth
+  description: bin width of the observed magnitude in the r band
+- id: rmagNsteps
+  description: number of steps in r mag
+- prefix: rmag
+  description: observed magnitude in the r band
+- id: SGB
+  description: sub-giant branch
+- id: RGB
+  description: red giant branch
+- id: CHeB
+  description: core helium burning phase
+- id: AGB
+  description: asymptotic giant branch
+- id: EAGB
+  description: early asymptotic giant branch
+- id: TP-AGB
+  description: thermally pulsing AGB
+- id: PAGB
+  description: >-
+    the phase between the Asymptotic Giant Branch phase and the White
+    Dwarf phases, when outer layers (shells) of a 0.8-8 solar-mass
+    star are shed, a planetary nebula is formed and hot, compact
+    remnant of the original star is revealed.
+- id: WD
+  description: white dwarfs
+- id: Ar
+  description: extinction in r-band
+- id: Av
+  description: extinction in v-band
+- id: Qr
+  description: absolute magnitude plus extinction
+- suffix: dS
+  description: drop in entropy
+- suffix: EstUnc
+  description: >-
+    estimated uncertainty as a +/- delta for the quantity it modifies (confidence interval)
+- id: glat
+  description: galactic latitude
+- id: glon
+  description: galactic longitude
+- id: chi2min
+  description: minimum of chi-squared
+- id: gr
+  description: g band minus r band

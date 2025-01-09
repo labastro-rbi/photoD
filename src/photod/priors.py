@@ -4,7 +4,7 @@ from scipy.stats import gaussian_kde
 
 import jax.numpy as jnp
 import photod.plotting as pt
-
+from photod.column_map.locus_data import map as ldc
 
 def initializePriorGrid(mapPartition, globalParams):
     priorGrid = {}
@@ -33,7 +33,7 @@ def make3Dprior(prior, N3rd):
     return jnp.repeat(prior[:, :, jnp.newaxis], N3rd, axis=2)
 
 
-def readPriors(rootname, locusData, MrColumn="Mr"):
+def readPriors(rootname, locusData):
     # TRILEGAL-based maps were pre-computed for this range...
     bc = getBayesConstants()
     rmagMin = bc["rmagMin"]
@@ -56,7 +56,7 @@ def readPriors(rootname, locusData, MrColumn="Mr"):
         values = Zval.flatten()
         # actual (linear) interpolation
         priorGrid[rind] = griddata(
-            points, values, (locusData["FeH"], locusData[MrColumn]), method="linear", fill_value=0
+            points, values, (locusData[ldc.FeH], locusData[ldc.Mr]), method="linear", fill_value=0
         )
 
     return priorGrid

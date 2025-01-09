@@ -15,6 +15,7 @@ from photod.priors import getPriorMapIndex, initializePriorGrid, make3Dprior
 from photod.results import BayesResults
 from photod.stats import Entropy, getMargDistr3D, getPosteriorQuantiles, getQrQuantiles
 
+from photod.column_map.catalog import map as cc
 
 def makeBayesEstimates3d(
     starsData: npd.NestedFrame,
