@@ -5,6 +5,7 @@ from photod.plotting import show3Flat2Dmaps, showCornerPlot3, showMargPosteriors
 from photod.priors import getBayesConstants, getPriorMapIndex, make3Dprior, readPriors
 from photod.stats import Entropy, getMargDistr3D, getStats
 
+from photod.column_map.catalog import map as cc
 
 def makeBayesEstimates3D(
     catalog,
@@ -18,7 +19,6 @@ def makeBayesEstimates3D(
     iEnd=-1,
     myStars=[],
     verbose=False,
-    MrColumn="Mr",
 ):
 
     if iEnd < iStart:
@@ -26,9 +26,9 @@ def makeBayesEstimates3D(
         iEnd = np.size(catalog)
 
     # read maps with priors (and interpolate on the Mr-FeH grid given by locusData, which is same for all stars)
-    priorGrid = readPriors(rootname=priorsRootName, locusData=locusData, MrColumn=MrColumn)
+    priorGrid = readPriors(rootname=priorsRootName, locusData=locusData)
     # get prior map indices using observed r band mags
-    priorind = getPriorMapIndex(catalog["rmag"])
+    priorind = getPriorMapIndex(catalog[cc.rmag])
 
     # properties of Ar grid for prior and likelihood
     bc = getBayesConstants()
@@ -72,18 +72,18 @@ def makeBayesEstimates3D(
     print("MrBright, MrFaint=", MrBright, MrFaint)
 
     # setup arrays for holding results
-    catalog["MrEst"] = 0.0 * catalog["Mr"] - 99
-    catalog["MrEstUnc"] = 0.0 * catalog["Mr"] - 1
-    catalog["FeHEst"] = 0.0 * catalog["Mr"] - 99
-    catalog["FeHEstUnc"] = 0.0 * catalog["Mr"] - 1
-    catalog["ArEst"] = 0.0 * catalog["Mr"] - 99
-    catalog["ArEstUnc"] = 0.0 * catalog["Mr"] - 1
-    catalog["QrEst"] = 0.0 * catalog["Mr"] - 99
-    catalog["QrEstUnc"] = 0.0 * catalog["Mr"] - 1
-    catalog["chi2min"] = 0.0 * catalog["Mr"] - 99
-    catalog["MrdS"] = 0.0 * catalog["Mr"] - 1
-    catalog["FeHdS"] = 0.0 * catalog["Mr"] - 1
-    catalog["ArdS"] = 0.0 * catalog["Mr"] - 1
+    catalog[cc.MrEst] = 0.0 * catalog[cc.Mr] - 99
+    catalog[cc.MrEstUnc] = 0.0 * catalog[cc.Mr] - 1
+    catalog[cc.FeHEst] = 0.0 * catalog[cc.Mr] - 99
+    catalog[cc.FeHEstUnc] = 0.0 * catalog[cc.Mr] - 1
+    catalog[cc.ArEst] = 0.0 * catalog[cc.Mr] - 99
+    catalog[cc.ArEstUnc] = 0.0 * catalog[cc.Mr] - 1
+    catalog[cc.QrEst] = 0.0 * catalog[cc.Mr] - 99
+    catalog[cc.QrEstUnc] = 0.0 * catalog[cc.Mr] - 1
+    catalog[cc.chi2min] = 0.0 * catalog[cc.Mr] - 99
+    catalog[cc.MrdS] = 0.0 * catalog[cc.Mr] - 1
+    catalog[cc.FeHdS] = 0.0 * catalog[cc.Mr] - 1
+    catalog[cc.ArdS] = 0.0 * catalog[cc.Mr] - 1
 
     ### maximum grid values for Ar from master locus
     ArGridSmallMax = np.max(ArGridList["ArSmall"])
@@ -107,8 +107,8 @@ def makeBayesEstimates3D(
         # ArMax = ArCoeff[0]*catalog['Ar'][i] + ArCoeff[1]
         # ArMin = ArCoeff[3]*catalog['Ar'][i] + ArCoeff[4]
 
-        ArMax = ArCoeff[0] * catalog["Ar"].iloc[i] + ArCoeff[1]
-        ArMin = ArCoeff[3] * catalog["Ar"].iloc[i] + ArCoeff[4]
+        ArMax = ArCoeff[0] * catalog[cc.Ar].iloc[i] + ArCoeff[1]
+        ArMin = ArCoeff[3] * catalog[cc.Ar].iloc[i] + ArCoeff[4]
 
         # depending on ArMax, pick the adequate Ar resolution of locus3D
         if ArMax < ArGridSmallMax:
@@ -149,7 +149,7 @@ def makeBayesEstimates3D(
             dAr = Ar1d[1] - Ar1d[0]
         else:
             dAr = 0.01
-        catalog["chi2min"][i] = np.min(chi2map)
+        catalog[cc.chi2min][i] = np.min(chi2map)
 
         ## generate 3D (Mr, FeH, Ar) prior from 2D (Mr, FeH) prior using uniform prior for Ar
         prior2d = priorGrid[priorind[i]].reshape(np.size(FeH1d), np.size(Mr1d))
@@ -167,19 +167,19 @@ def makeBayesEstimates3D(
         margpostMr[2], margpostFeH[2], margpostAr[2] = getMargDistr3D(postCube, dMr, dFeH, dAr)
 
         # stats
-        catalog["MrEst"][i], catalog["MrEstUnc"][i] = getStats(Mr1d, margpostMr[2])
-        catalog["FeHEst"][i], catalog["FeHEstUnc"][i] = getStats(FeH1d, margpostFeH[2])
-        catalog["ArEst"][i], catalog["ArEstUnc"][i] = getStats(Ar1d, margpostAr[2])
-        catalog["MrdS"][i] = Entropy(margpostMr[2]) - Entropy(margpostMr[0])
-        catalog["FeHdS"][i] = Entropy(margpostFeH[2]) - Entropy(margpostFeH[0])
-        catalog["ArdS"][i] = Entropy(margpostAr[2]) - Entropy(margpostAr[0])
+        catalog[cc.MrEst][i], catalog[cc.MrEstUnc][i] = getStats(Mr1d, margpostMr[2])
+        catalog[cc.FeHEst][i], catalog[cc.FeHEstUnc][i] = getStats(FeH1d, margpostFeH[2])
+        catalog[cc.ArEst][i], catalog[cc.ArEstUnc][i] = getStats(Ar1d, margpostAr[2])
+        catalog[cc.MrdS][i] = Entropy(margpostMr[2]) - Entropy(margpostMr[0])
+        catalog[cc.FeHdS][i] = Entropy(margpostFeH[2]) - Entropy(margpostFeH[0])
+        catalog[cc.ArdS][i] = Entropy(margpostAr[2]) - Entropy(margpostAr[0])
 
         # for testing and illustration
         if i in myStars:
             # plot
-            FeHStar = catalog["FeH"][i]
-            MrStar = catalog["Mr"][i]
-            ArStar = catalog["Ar"][i]
+            FeHStar = catalog[cc.FeH][i]
+            MrStar = catalog[cc.Mr][i]
+            ArStar = catalog[cc.Ar][i]
             indA = np.argmax(margpostAr[2])
             show3Flat2Dmaps(
                 priorCube[:, :, indA],
@@ -227,19 +227,19 @@ def makeBayesEstimates3D(
             Qr1d, margpostQr = showQrCornerPlot(
                 postCube, Mr1d, FeH1d, Ar1d, x0=FeHStar, y0=MrStar, z0=ArStar, logScale=True
             )
-            catalog["QrEst"][i], catalog["QrEstUnc"][i] = getStats(Qr1d, margpostQr)
+            catalog[cc.QrEst][i], catalog[cc.QrEstUnc][i] = getStats(Qr1d, margpostQr)
             # basic info
             print(" *** 3D Bayes results for star i=", i)
-            print("r mag:", catalog["rmag"][i], "g-r:", catalog["gr"][i], "chi2min:", catalog["chi2min"][i])
-            print("Mr: true=", MrStar, "estimate=", catalog["MrEst"][i], " +- ", catalog["MrEstUnc"][i])
-            print("FeH: true=", FeHStar, "estimate=", catalog["FeHEst"][i], " +- ", catalog["FeHEstUnc"][i])
-            print("Ar: true=", ArStar, "estimate=", catalog["ArEst"][i], " +- ", catalog["ArEstUnc"][i])
+            print("r mag:", catalog[cc.rmag][i], "g-r:", catalog[cc.gr][i], "chi2min:", catalog[cc.chi2min][i])
+            print("Mr: true=", MrStar, "estimate=", catalog[cc.MrEst][i], " +- ", catalog[cc.MrEstUnc][i])
+            print("FeH: true=", FeHStar, "estimate=", catalog[cc.FeHEst][i], " +- ", catalog[cc.FeHEstUnc][i])
+            print("Ar: true=", ArStar, "estimate=", catalog[cc.ArEst][i], " +- ", catalog[cc.ArEstUnc][i])
             print(
-                "Qr: true=", MrStar + ArStar, "estimate=", catalog["QrEst"][i], " +- ", catalog["QrEstUnc"][i]
+                "Qr: true=", MrStar + ArStar, "estimate=", catalog[cc.QrEst][i], " +- ", catalog[cc.QrEstUnc][i]
             )
-            print("Mr drop in entropy:", catalog["MrdS"][i])
-            print("FeH drop in entropy:", catalog["FeHdS"][i])
-            print("Ar drop in entropy:", catalog["ArdS"][i])
+            print("Mr drop in entropy:", catalog[cc.MrdS][i])
+            print("FeH drop in entropy:", catalog[cc.FeHdS][i])
+            print("Ar drop in entropy:", catalog[cc.ArdS][i])
 
     # store results
     writeBayesEstimates(catalog, outfile, iStart, iEnd, do3D=True)
@@ -254,21 +254,21 @@ def writeBayesEstimates(catalog, outfile, iStart, iEnd, do3D=False):
     else:
         fout.write("      glon       glat        FeHEst FeHUnc  MrEst  MrUnc  chi2min    MrdS     FeHdS \n")
     for i in range(iStart, iEnd):
-        r1 = catalog["glon"].iloc[i]
-        r2 = catalog["glat"].iloc[i]
-        r3 = catalog["FeHEst"].iloc[i]
-        r4 = catalog["FeHEstUnc"].iloc[i]
-        r5 = catalog["MrEst"].iloc[i]
-        r6 = catalog["MrEstUnc"].iloc[i]
-        r7 = catalog["chi2min"].iloc[i]
-        r8 = catalog["MrdS"].iloc[i]
-        r9 = catalog["FeHdS"].iloc[i]
+        r1 = catalog[cc.glon].iloc[i]
+        r2 = catalog[cc.glat].iloc[i]
+        r3 = catalog[cc.FeHEst].iloc[i]
+        r4 = catalog[cc.FeHEstUnc].iloc[i]
+        r5 = catalog[cc.MrEst].iloc[i]
+        r6 = catalog[cc.MrEstUnc].iloc[i]
+        r7 = catalog[cc.chi2min].iloc[i]
+        r8 = catalog[cc.MrdS].iloc[i]
+        r9 = catalog[cc.FeHdS].iloc[i]
         s = str("%12.8f " % r1) + str("%12.8f  " % r2) + str("%6.2f  " % r3) + str("%5.2f  " % r4)
         s = s + str("%6.2f  " % r5) + str("%5.2f  " % r6)
         if do3D:
-            r15 = catalog["ArEst"].iloc[i]
-            r16 = catalog["ArEstUnc"].iloc[i]
-            r19 = catalog["ArdS"].iloc[i]
+            r15 = catalog[cc.ArEst].iloc[i]
+            r16 = catalog[cc.ArEstUnc].iloc[i]
+            r19 = catalog[cc.ArdS].iloc[i]
             s = s + str("%6.2f  " % r15) + str("%5.2f  " % r16) + str("%5.2f  " % r7) + str("%8.1f  " % r8)
             s = s + str("%8.1f  " % r9) + str("%8.1f  " % r19) + str("%8.0f" % i) + "\n"
         else:
