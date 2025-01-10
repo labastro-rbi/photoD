@@ -2,13 +2,35 @@ import numpy as np
 from scipy.interpolate import griddata
 from scipy.stats import gaussian_kde
 
+import jax.numpy as jnp
 import photod.plotting as pt
+
+
+def initializePriorGrid(mapPartition, globalParams):
+    priorGrid = {}
+    for rind, r in enumerate(np.sort(mapPartition["rmag"].to_numpy())):
+        # interpolate prior map onto locus Mr-FeH grid
+        Z = mapPartition[mapPartition["rmag"] == r]
+        Zval = np.frombuffer(Z.iloc[0]["kde"], dtype=np.float64).reshape((96, 36))
+        X = np.frombuffer(Z.iloc[0]["xGrid"], dtype=np.float64).reshape((96, 36))
+        Y = np.frombuffer(Z.iloc[0]["yGrid"], dtype=np.float64).reshape((96, 36))
+        points = np.array((X.flatten(), Y.flatten())).T
+        values = Zval.flatten()
+        # actual (linear) interpolation
+        priorGrid[rind] = griddata(
+            points,
+            values,
+            (globalParams.locusData["FeH"], globalParams.locusData[globalParams.MrColumn]),
+            method="linear",
+            fill_value=0,
+        )
+    return priorGrid
 
 
 ## given 2D numpy array, make a 3D numpy array by replicating it N3rd times
 ## e.g. for prior.shape = (51, 1502) and N3rd=20, returns (51, 1502, 20)
 def make3Dprior(prior, N3rd):
-    return np.repeat(prior[:, :, np.newaxis], N3rd, axis=2)
+    return jnp.repeat(prior[:, :, jnp.newaxis], N3rd, axis=2)
 
 
 def readPriors(rootname, locusData, MrColumn="Mr"):
