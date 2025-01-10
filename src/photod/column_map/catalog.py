@@ -46,18 +46,30 @@ class ColumnMap(base.ColumnMap):
     FeHdS: str = "FeHdS"
     metallicity_entropy_drop: str = FeHdS
 
-    # ##### Magnitude
+    # ##### Absolute magnitude, r band
 
     Mr: str = "Mr"
+    abs_mag_r: str = Mr
+
     MrEst: str = "MrEst"
+    abs_mag_r_est: str = MrEst
+
     MrEstUnc: str = "MrEstUnc"
+    abs_mag_r_est_unc: str = MrEstUnc
+
     MrdS: str = "MrdS"
+    abs_mag_r_entropy_drop: str = MrdS
 
     # ##### Absolute magnitude plus extinction, r band
 
-    # Qr: absolute magnitude plus extinction in r band
+    Qr: str = "Qr"
+    abs_mag_ext_r: str = Qr
+
     QrEst: str = "QrEst"
+    abs_mag_ext_r_est: str = QrEst
+
     QrEstUnc: str = "QrEstUnc"
+    abs_mag_ext_r_est_unc: str = QrEstUnc
 
     # TODO: I don't see these in the glossary
     chi2min: str = "chi2min"
