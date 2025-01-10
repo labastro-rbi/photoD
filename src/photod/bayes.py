@@ -74,16 +74,16 @@ def makeBayesEstimates3D(
     # setup arrays for holding results
     catalog[cc.MrEst] = 0.0 * catalog[cc.Mr] - 99
     catalog[cc.MrEstUnc] = 0.0 * catalog[cc.Mr] - 1
-    catalog[cc.FeHEst] = 0.0 * catalog[cc.Mr] - 99
-    catalog[cc.FeHEstUnc] = 0.0 * catalog[cc.Mr] - 1
-    catalog[cc.ArEst] = 0.0 * catalog[cc.Mr] - 99
-    catalog[cc.ArEstUnc] = 0.0 * catalog[cc.Mr] - 1
+    catalog[cc.metallicity_est] = 0.0 * catalog[cc.Mr] - 99
+    catalog[cc.metallicity_est_unc] = 0.0 * catalog[cc.Mr] - 1
+    catalog[cc.extinction_r_est] = 0.0 * catalog[cc.Mr] - 99
+    catalog[cc.extinction_r_est_unc] = 0.0 * catalog[cc.Mr] - 1
     catalog[cc.QrEst] = 0.0 * catalog[cc.Mr] - 99
     catalog[cc.QrEstUnc] = 0.0 * catalog[cc.Mr] - 1
     catalog[cc.chi2min] = 0.0 * catalog[cc.Mr] - 99
     catalog[cc.MrdS] = 0.0 * catalog[cc.Mr] - 1
-    catalog[cc.FeHdS] = 0.0 * catalog[cc.Mr] - 1
-    catalog[cc.ArdS] = 0.0 * catalog[cc.Mr] - 1
+    catalog[cc.metallicity_entropy_drop] = 0.0 * catalog[cc.Mr] - 1
+    catalog[cc.extinction_r_entropy_drop] = 0.0 * catalog[cc.Mr] - 1
 
     ### maximum grid values for Ar from master locus
     ArGridSmallMax = np.max(ArGridList["ArSmall"])
@@ -168,18 +168,18 @@ def makeBayesEstimates3D(
 
         # stats
         catalog[cc.MrEst][i], catalog[cc.MrEstUnc][i] = getStats(Mr1d, margpostMr[2])
-        catalog[cc.FeHEst][i], catalog[cc.FeHEstUnc][i] = getStats(FeH1d, margpostFeH[2])
-        catalog[cc.ArEst][i], catalog[cc.ArEstUnc][i] = getStats(Ar1d, margpostAr[2])
+        catalog[cc.metallicity_est][i], catalog[cc.metallicity_est_unc][i] = getStats(FeH1d, margpostFeH[2])
+        catalog[cc.extinction_r_est][i], catalog[cc.extinction_r_est_unc][i] = getStats(Ar1d, margpostAr[2])
         catalog[cc.MrdS][i] = Entropy(margpostMr[2]) - Entropy(margpostMr[0])
-        catalog[cc.FeHdS][i] = Entropy(margpostFeH[2]) - Entropy(margpostFeH[0])
-        catalog[cc.ArdS][i] = Entropy(margpostAr[2]) - Entropy(margpostAr[0])
+        catalog[cc.metallicity_entropy_drop][i] = Entropy(margpostFeH[2]) - Entropy(margpostFeH[0])
+        catalog[cc.extinction_r_entropy_drop][i] = Entropy(margpostAr[2]) - Entropy(margpostAr[0])
 
         # for testing and illustration
         if i in myStars:
             # plot
-            FeHStar = catalog[cc.FeH][i]
+            FeHStar = catalog[cc.metallicity][i]
             MrStar = catalog[cc.Mr][i]
-            ArStar = catalog[cc.Ar][i]
+            ArStar = catalog[cc.extinction_r][i]
             indA = np.argmax(margpostAr[2])
             show3Flat2Dmaps(
                 priorCube[:, :, indA],
@@ -232,14 +232,14 @@ def makeBayesEstimates3D(
             print(" *** 3D Bayes results for star i=", i)
             print("r mag:", catalog[cc.rmag][i], "g-r:", catalog[cc.gr][i], "chi2min:", catalog[cc.chi2min][i])
             print("Mr: true=", MrStar, "estimate=", catalog[cc.MrEst][i], " +- ", catalog[cc.MrEstUnc][i])
-            print("FeH: true=", FeHStar, "estimate=", catalog[cc.FeHEst][i], " +- ", catalog[cc.FeHEstUnc][i])
-            print("Ar: true=", ArStar, "estimate=", catalog[cc.ArEst][i], " +- ", catalog[cc.ArEstUnc][i])
+            print("FeH: true=", FeHStar, "estimate=", catalog[cc.metallicity_est][i], " +- ", catalog[cc.metallicity_est_unc][i])
+            print("Ar: true=", ArStar, "estimate=", catalog[cc.extinction_r_est][i], " +- ", catalog[cc.extinction_r_est_unc][i])
             print(
                 "Qr: true=", MrStar + ArStar, "estimate=", catalog[cc.QrEst][i], " +- ", catalog[cc.QrEstUnc][i]
             )
             print("Mr drop in entropy:", catalog[cc.MrdS][i])
-            print("FeH drop in entropy:", catalog[cc.FeHdS][i])
-            print("Ar drop in entropy:", catalog[cc.ArdS][i])
+            print("FeH drop in entropy:", catalog[cc.metallicity_entropy_drop][i])
+            print("Ar drop in entropy:", catalog[cc.extinction_r_entropy_drop][i])
 
     # store results
     writeBayesEstimates(catalog, outfile, iStart, iEnd, do3D=True)
@@ -256,19 +256,19 @@ def writeBayesEstimates(catalog, outfile, iStart, iEnd, do3D=False):
     for i in range(iStart, iEnd):
         r1 = catalog[cc.glon].iloc[i]
         r2 = catalog[cc.glat].iloc[i]
-        r3 = catalog[cc.FeHEst].iloc[i]
-        r4 = catalog[cc.FeHEstUnc].iloc[i]
+        r3 = catalog[cc.metallicity_est].iloc[i]
+        r4 = catalog[cc.metallicity_est_unc].iloc[i]
         r5 = catalog[cc.MrEst].iloc[i]
         r6 = catalog[cc.MrEstUnc].iloc[i]
         r7 = catalog[cc.chi2min].iloc[i]
         r8 = catalog[cc.MrdS].iloc[i]
-        r9 = catalog[cc.FeHdS].iloc[i]
+        r9 = catalog[cc.metallicity_entropy_drop].iloc[i]
         s = str("%12.8f " % r1) + str("%12.8f  " % r2) + str("%6.2f  " % r3) + str("%5.2f  " % r4)
         s = s + str("%6.2f  " % r5) + str("%5.2f  " % r6)
         if do3D:
-            r15 = catalog[cc.ArEst].iloc[i]
-            r16 = catalog[cc.ArEstUnc].iloc[i]
-            r19 = catalog[cc.ArdS].iloc[i]
+            r15 = catalog[cc.extinction_r_est].iloc[i]
+            r16 = catalog[cc.extinction_r_est_unc].iloc[i]
+            r19 = catalog[cc.extinction_r_entropy_drop].iloc[i]
             s = s + str("%6.2f  " % r15) + str("%5.2f  " % r16) + str("%5.2f  " % r7) + str("%8.1f  " % r8)
             s = s + str("%8.1f  " % r9) + str("%8.1f  " % r19) + str("%8.0f" % i) + "\n"
         else:
