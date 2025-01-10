@@ -5,6 +5,7 @@ Column map for catalog data.
 from dataclasses import dataclass
 from photod.column_map import base
 
+
 @dataclass
 class ColumnMap(base.ColumnMap):
 
@@ -24,14 +25,14 @@ class ColumnMap(base.ColumnMap):
 
     Ar: str = "Ar"
     extinction_r: str = Ar
-    
+
     ArEst: str = "ArEst"
     ArEstUnc: str = "ArEstUnc"
     ArdS: str = "ArdS"
 
     metallicity: str = "FeH"
     FeH: str = "FeH"
-    
+
     FeHEst: str = "FeHEst"
     FeHEstUnc: str = "FeHEstUnc"
     FeHdS: str = "FeHdS"
@@ -52,5 +53,5 @@ class ColumnMap(base.ColumnMap):
     gr: str = "gr"
     rmag: str = "rmag"
 
-    
+
 map = ColumnMap()

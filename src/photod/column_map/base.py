@@ -4,6 +4,7 @@ Base class of any column map.
 
 from dataclasses import dataclass
 
+
 @dataclass
 class ColumnMap:
 
@@ -13,4 +14,3 @@ class ColumnMap:
     def __init__(self, name: str, purpose: str):
         self.name = name
         self.purpose = purpose
-
