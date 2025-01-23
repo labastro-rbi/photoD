@@ -21,13 +21,33 @@
     dimming) of its light due to absorption by interstellar matter
     <https://en.wikipedia.org/wiki/Interstellar_medium> and cosmic
     dust <https://en.wikipedia.org/wiki/Cosmic_dust>.
+- id: Mr
+  description: absolute magnitude in r band
+  variable: abs_mag_r
+- id: MrEst
+  description: estimate of absolute magnitude in r band
+  variable: abs_mag_r_est
+- id: MrEstUnc
+  description: uncertainty of estimate of absolute magnitude in r band
+  variable: abs_mag_r_est_unc
+- id: MrdS
+  description: drop in entropy of absolute magnitude in r band
+  variable: abs_mag_r_entropy_drop
 - prefix: m
   description: >-
     usually denotes an apparent/observed magnitude.
 - id: rmag
   description: observed magnitude in r band
+  variable: observed_mag_r
 - id: FeH
-  description: metallicity
+  variable: metallicity
+  description: metallicity (ratio of iron to hydrogen)
+- id: FeHEst
+  variable: metallicity_est
+  description: estimate of metallicity
+- id: FeHEstUnc
+  variable: metallicity_est_unc
+  description: uncertainty of estimate of metallicity
 - suffix: Min
   description: minimum
 - suffix: Max
@@ -63,11 +83,28 @@
 - id: WD
   description: white dwarfs
 - id: Ar
+  variable: extinction_r
   description: extinction in r-band
+- id: ArEst
+  variable: extinction_r_est
+  description: estimate of extinction in r-band
+- id: ArEstUnc
+  variable: extinction_r_est_unc
+  description: uncertainty of estimate of extinction in r-band
+- id: ArdS
+  variable: extinction_r_entropy_drop
+  description: drop in entropy of extinction in r-band
 - id: Av
   description: extinction in v-band
 - id: Qr
-  description: absolute magnitude plus extinction
+  description: absolute magnitude in r band plus extinction
+  variable: abs_mag_ext_r
+- id: QrEst
+  description: estimate of absolute magnitude in r band plus extinction
+  variable: abs_mag_ext_r_est
+- id: QrEstUnc
+  description: uncertainty of estimate of absolute magnitude in r band plus extinction
+  variable: abs_mag_ext_r_est_unc
 - suffix: dS
   description: drop in entropy
 - suffix: EstUnc
@@ -75,9 +112,13 @@
     estimated uncertainty as a +/- delta for the quantity it modifies (confidence interval)
 - id: glat
   description: galactic latitude
+  variable: galactic_latitude
 - id: glon
   description: galactic longitude
+  variable: galactic_longitude
 - id: chi2min
   description: minimum of chi-squared
 - id: gr
   description: g band minus r band
+  variable: g_minus_r
+
