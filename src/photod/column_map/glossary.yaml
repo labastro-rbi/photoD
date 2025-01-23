@@ -27,7 +27,14 @@
 - id: rmag
   description: observed magnitude in r band
 - id: FeH
-  description: metallicity
+  variable: metallicity
+  description: metallicity (ratio of iron to hydrogen)
+- id: FeHEst
+  variable: metallicity_est
+  description: estimate of metallicity
+- id: FeHEstUnc
+  variable: metallicity_est_unc
+  description: uncertainty of estimate of metallicity
 - suffix: Min
   description: minimum
 - suffix: Max
@@ -63,7 +70,17 @@
 - id: WD
   description: white dwarfs
 - id: Ar
+  variable: extinction_r
   description: extinction in r-band
+- id: ArEst
+  variable: extinction_r_est
+  description: estimate of extinction in r-band
+- id: ArEstUnc
+  variable: extinction_r_est_unc
+  description: uncertainty of estimate of extinction in r-band
+- id: ArdS
+  variable: extinction_r_entropy_drop
+  description: drop in entropy of extinction in r-band
 - id: Av
   description: extinction in v-band
 - id: Qr
