@@ -12,8 +12,6 @@ class ColumnMap(base.ColumnMap):
     def __init__(self):
         super().__init__("Catalog column map", "Reference catalog columns")
 
-    # Source: https://docs.google.com/document/d/1lDzfDBg_4vd-ces1BhCojwKOlx0oTEmODPClzQbT-zQ/edit#heading=h.olnm3g4r6wj6
-
     # Est suffix = estimate
     # Unc suffix = uncertainty
     # EstUnc = estimated uncertainty as a +/- delta for the
@@ -71,12 +69,20 @@ class ColumnMap(base.ColumnMap):
     QrEstUnc: str = "QrEstUnc"
     abs_mag_ext_r_est_unc: str = QrEstUnc
 
-    # TODO: I don't see these in the glossary
-    chi2min: str = "chi2min"
-    glat: str = "glat"
-    glon: str = "glon"
-    gr: str = "gr"
     rmag: str = "rmag"
+    observed_mag_r: str = rmag
+
+    glat: str = "glat"
+    galactic_latitude: str = glat
+
+    glon: str = "glon"
+    galactic_longitude: str = glon
+
+    chi2min: str = "chi2min"
+    chi_sq_min: str = chi2min
+
+    gr: str = "gr"
+    g_minus_r: str = gr
 
 
 map = ColumnMap()

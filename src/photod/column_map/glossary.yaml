@@ -1,5 +1,7 @@
 # Glossary of terms for this project
-# Adapted from https://docs.google.com/document/d/1lDzfDBg_4vd-ces1BhCojwKOlx0oTEmODPClzQbT-zQ/edit?usp=sharing
+# Adapted from https://docs.google.com/document/d/1lDzfDBg_4vd-ces1BhCojwKOlx0oTEmODPClzQbT-zQ/edit#heading=h.olnm3g4r6wj6
+
+# Capturing the IDs, prefixes, and suffixes as given.
 
 - id: MrBright
   description: >-
@@ -22,6 +24,8 @@
 - prefix: m
   description: >-
     usually denotes an apparent/observed magnitude.
+- id: rmag
+  description: observed magnitude in r band
 - id: FeH
   description: metallicity
 - suffix: Min
@@ -33,13 +37,11 @@
     Number of stars with a unique value of Mr in locusData. Defines
     the grid step for Mr.
 - id: rmagBinWidth
-  # TODO: apparent or absolute  magnitude?
-  description: bin width of the magnitude in the r band
+  description: bin width of the observed magnitude in the r band
 - id: rmagNsteps
   description: number of steps in r mag
 - prefix: rmag
-  # TODO: apparent or absolute magnitude?
-  description: magnitude in the r band
+  description: observed magnitude in the r band
 - id: SGB
   description: sub-giant branch
 - id: RGB
@@ -53,8 +55,11 @@
 - id: TP-AGB
   description: thermally pulsing AGB
 - id: PAGB
-  # TODO: Is it certain?
-  description: post-AGB?
+  description: >-
+    the phase between the Asymptotic Giant Branch phase and the White
+    Dwarf phases, when outer layers (shells) of a 0.8-8 solar-mass
+    star are shed, a planetary nebula is formed and hot, compact
+    remnant of the original star is revealed.
 - id: WD
   description: white dwarfs
 - id: Ar
@@ -62,10 +67,17 @@
 - id: Av
   description: extinction in v-band
 - id: Qr
-  # TODO: Lovro to verify this
   description: absolute magnitude plus extinction
 - suffix: dS
   description: drop in entropy
 - suffix: EstUnc
   description: >-
     estimated uncertainty as a +/- delta for the quantity it modifies (confidence interval)
+- id: glat
+  description: galactic latitude
+- id: glon
+  description: galactic longitude
+- id: chi2min
+  description: minimum of chi-squared
+- id: gr
+  description: g band minus r band
