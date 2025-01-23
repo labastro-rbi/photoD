@@ -5,7 +5,7 @@ from photod.plotting import show3Flat2Dmaps, showCornerPlot3, showMargPosteriors
 from photod.priors import getBayesConstants, getPriorMapIndex, make3Dprior, readPriors
 from photod.stats import Entropy, getMargDistr3D, getStats
 
-from photod.column_map.catalog import map as cc
+from photod.column_map.catalog import m as cc
 
 def makeBayesEstimates3D(
     catalog,
@@ -28,7 +28,7 @@ def makeBayesEstimates3D(
     # read maps with priors (and interpolate on the Mr-FeH grid given by locusData, which is same for all stars)
     priorGrid = readPriors(rootname=priorsRootName, locusData=locusData)
     # get prior map indices using observed r band mags
-    priorind = getPriorMapIndex(catalog[cc.rmag])
+    priorind = getPriorMapIndex(catalog[cc.observed_mag_r])
 
     # properties of Ar grid for prior and likelihood
     bc = getBayesConstants()
@@ -80,7 +80,7 @@ def makeBayesEstimates3D(
     catalog[cc.extinction_r_est_unc] = 0.0 * catalog[cc.abs_mag_r] - 1
     catalog[cc.abs_mag_ext_r_est] = 0.0 * catalog[cc.abs_mag_r] - 99
     catalog[cc.abs_mag_ext_r_est_unc] = 0.0 * catalog[cc.abs_mag_r] - 1
-    catalog[cc.chi2min] = 0.0 * catalog[cc.abs_mag_r] - 99
+    catalog[cc.chi_sq_min] = 0.0 * catalog[cc.abs_mag_r] - 99
     catalog[cc.abs_mag_r_entropy_drop] = 0.0 * catalog[cc.abs_mag_r] - 1
     catalog[cc.metallicity_entropy_drop] = 0.0 * catalog[cc.abs_mag_r] - 1
     catalog[cc.extinction_r_entropy_drop] = 0.0 * catalog[cc.abs_mag_r] - 1
@@ -97,7 +97,7 @@ def makeBayesEstimates3D(
                 print("working on star", i)
 
         ######## NEED TO SORT ALL INPUT AND WRITE & CALL makeLikelihoodCube()
-        # chi2min, likeCube = makeLikelihoodCube(...inputs...)
+        # chi_sq_min, likeCube = makeLikelihoodCube(...inputs...)
         # input: i, catalog, ArCoeff,
 
         ### produce likelihood array for this star, using provided locus color model
@@ -107,8 +107,8 @@ def makeBayesEstimates3D(
         # ArMax = ArCoeff[0]*catalog['Ar'][i] + ArCoeff[1]
         # ArMin = ArCoeff[3]*catalog['Ar'][i] + ArCoeff[4]
 
-        ArMax = ArCoeff[0] * catalog[cc.Ar].iloc[i] + ArCoeff[1]
-        ArMin = ArCoeff[3] * catalog[cc.Ar].iloc[i] + ArCoeff[4]
+        ArMax = ArCoeff[0] * catalog[cc.extinction_r].iloc[i] + ArCoeff[1]
+        ArMin = ArCoeff[3] * catalog[cc.extinction_r].iloc[i] + ArCoeff[4]
 
         # depending on ArMax, pick the adequate Ar resolution of locus3D
         if ArMax < ArGridSmallMax:
@@ -149,7 +149,7 @@ def makeBayesEstimates3D(
             dAr = Ar1d[1] - Ar1d[0]
         else:
             dAr = 0.01
-        catalog[cc.chi2min][i] = np.min(chi2map)
+        catalog[cc.chi_sq_min][i] = np.min(chi2map)
 
         ## generate 3D (Mr, FeH, Ar) prior from 2D (Mr, FeH) prior using uniform prior for Ar
         prior2d = priorGrid[priorind[i]].reshape(np.size(FeH1d), np.size(Mr1d))
@@ -230,7 +230,7 @@ def makeBayesEstimates3D(
             catalog[cc.abs_mag_ext_r_est][i], catalog[cc.abs_mag_ext_r_est_unc][i] = getStats(Qr1d, margpostQr)
             # basic info
             print(" *** 3D Bayes results for star i=", i)
-            print("r mag:", catalog[cc.rmag][i], "g-r:", catalog[cc.gr][i], "chi2min:", catalog[cc.chi2min][i])
+            print("r mag:", catalog[cc.observed_mag_r][i], "g-r:", catalog[cc.g_minus_r][i], "chi2min:", catalog[cc.chi_sq_min][i])
             print("Mr: true=", MrStar, "estimate=", catalog[cc.abs_mag_r_est][i], " +- ", catalog[cc.abs_mag_r_est_unc][i])
             print("FeH: true=", FeHStar, "estimate=", catalog[cc.metallicity_est][i], " +- ", catalog[cc.metallicity_est_unc][i])
             print("Ar: true=", ArStar, "estimate=", catalog[cc.extinction_r_est][i], " +- ", catalog[cc.extinction_r_est_unc][i])
@@ -254,13 +254,13 @@ def writeBayesEstimates(catalog, outfile, iStart, iEnd, do3D=False):
     else:
         fout.write("      glon       glat        FeHEst FeHUnc  MrEst  MrUnc  chi2min    MrdS     FeHdS \n")
     for i in range(iStart, iEnd):
-        r1 = catalog[cc.glon].iloc[i]
-        r2 = catalog[cc.glat].iloc[i]
+        r1 = catalog[cc.galactic_longitude].iloc[i]
+        r2 = catalog[cc.galactic_latitude].iloc[i]
         r3 = catalog[cc.metallicity_est].iloc[i]
         r4 = catalog[cc.metallicity_est_unc].iloc[i]
         r5 = catalog[cc.abs_mag_r_est].iloc[i]
         r6 = catalog[cc.abs_mag_r_est_unc].iloc[i]
-        r7 = catalog[cc.chi2min].iloc[i]
+        r7 = catalog[cc.chi_sq_min].iloc[i]
         r8 = catalog[cc.abs_mag_r_entropy_drop].iloc[i]
         r9 = catalog[cc.metallicity_entropy_drop].iloc[i]
         s = str("%12.8f " % r1) + str("%12.8f  " % r2) + str("%6.2f  " % r3) + str("%5.2f  " % r4)

@@ -34,7 +34,7 @@ def readPriors(rootname, locusData):
         values = Zval.flatten()
         # actual (linear) interpolation
         priorGrid[rind] = griddata(
-            points, values, (locusData[ldc.FeH], locusData[ldc.Mr]), method="linear", fill_value=0
+            points, values, (locusData[ldc.metallicity], locusData[ldc.abs_mag_r]), method="linear", fill_value=0
         )
 
     return priorGrid

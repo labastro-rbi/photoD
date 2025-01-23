@@ -19,70 +19,41 @@ class ColumnMap(base.ColumnMap):
     # dS suffix: drop in entropy
 
     # ##### Extinction in r band
-    Ar: str = "Ar"
-    extinction_r: str = Ar
+    extinction_r: str = "Ar"
+    extinction_r_est = "ArEst"
+    extinction_r_est_unc = "ArEstUnc"
 
-    ArEst: str = "ArEst"
-    extinction_r_est = ArEst
-
-    ArEstUnc: str = "ArEstUnc"
-    extinction_r_est_unc = ArEstUnc
-
-    ArdS: str = "ArdS"
-    extinction_r_entropy_drop = ArdS
+    extinction_r_entropy_drop = "ArdS"
 
     # ##### Metallicity
-    FeH: str = "FeH"
-    metallicity: str = FeH
+    metallicity: str = "FeH"
+    metallicity_est: str = "FeHEst"
+    metallicity_est_unc: str = "FeHEstUnc"
 
-    FeHEst: str = "FeHEst"
-    metallicity_est: str = FeHEst
-
-    FeHEstUnc: str = "FeHEstUnc"
-    metallicity_est_unc: str = FeHEstUnc
-
-    FeHdS: str = "FeHdS"
-    metallicity_entropy_drop: str = FeHdS
+    metallicity_entropy_drop: str = "FeHdS"
 
     # ##### Absolute magnitude, r band
 
-    Mr: str = "Mr"
-    abs_mag_r: str = Mr
+    abs_mag_r: str = "Mr"
+    abs_mag_r_est: str = "MrEst"
+    abs_mag_r_est_unc: str = "MrEstUnc"
 
-    MrEst: str = "MrEst"
-    abs_mag_r_est: str = MrEst
-
-    MrEstUnc: str = "MrEstUnc"
-    abs_mag_r_est_unc: str = MrEstUnc
-
-    MrdS: str = "MrdS"
-    abs_mag_r_entropy_drop: str = MrdS
+    abs_mag_r_entropy_drop: str = "MrdS"
 
     # ##### Absolute magnitude plus extinction, r band
 
-    Qr: str = "Qr"
-    abs_mag_ext_r: str = Qr
+    abs_mag_ext_r: str = "Qr"
+    abs_mag_ext_r_est: str = "QrEst"
+    abs_mag_ext_r_est_unc: str = "QrEstUnc"
 
-    QrEst: str = "QrEst"
-    abs_mag_ext_r_est: str = QrEst
+    observed_mag_r: str = "rmag"
 
-    QrEstUnc: str = "QrEstUnc"
-    abs_mag_ext_r_est_unc: str = QrEstUnc
+    galactic_latitude: str = "glat"
+    galactic_longitude: str = "glon"
 
-    rmag: str = "rmag"
-    observed_mag_r: str = rmag
+    chi_sq_min: str = "chi2min"
 
-    glat: str = "glat"
-    galactic_latitude: str = glat
-
-    glon: str = "glon"
-    galactic_longitude: str = glon
-
-    chi2min: str = "chi2min"
-    chi_sq_min: str = chi2min
-
-    gr: str = "gr"
-    g_minus_r: str = gr
+    g_minus_r: str = "gr"
 
 
-map = ColumnMap()
+m = ColumnMap()
