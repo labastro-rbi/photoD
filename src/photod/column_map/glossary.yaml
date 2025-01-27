@@ -3,6 +3,12 @@
 
 # Capturing the IDs, prefixes, and suffixes as given.
 
+- id: ra
+  description: right ascension
+  variable: right_ascension
+- id: dec
+  description: declination
+  variable: declination
 - id: MrBright
   description: >-
     (context of priors) brightness allowed absolute magnitude in r
@@ -48,6 +54,9 @@
 - id: FeHEstUnc
   variable: metallicity_est_unc
   description: uncertainty of estimate of metallicity
+- id: FeHdS
+  variable: metallicity_entropy_drop
+  description: drop in entropy of metallicity
 - suffix: Min
   description: minimum
 - suffix: Max
@@ -118,6 +127,7 @@
   variable: galactic_longitude
 - id: chi2min
   description: minimum of chi-squared
+  variable: chi_sq_min
 - id: gr
   description: g band minus r band
   variable: g_minus_r
