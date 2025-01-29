@@ -227,6 +227,17 @@ def show3Flat2Dmaps(Z1, Z2, Z3, md, xLab, yLab, x0=-99, y0=-99, logScale=False, 
     yMin = md[3]
     yMax = md[4]
     nYbin = md[5]
+
+    ###
+    print(f"md: {md}")
+    print(f"xMin = md[0], {md[0]}")
+    print(f"xMax = md[1], {md[1]}")
+    print(f"xNbin = md[2], {md[2]}")
+    print(f"yMin = md[3], {md[3]}")
+    print(f"yMax = md[4], {md[4]}")
+    print(f"nYbin = md[5], {md[5]}")
+    ###
+    
     # set local variables and
     myExtent = [xMin, xMax, yMin, yMax]
     Xpts = nXbin.astype(int)
