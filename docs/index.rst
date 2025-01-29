@@ -18,7 +18,7 @@ to the search for stellar streams, which are excellent probes of dark matter dis
    Home page <self>
    API Reference <autoapi/index>
    Generate data inputs <data_generation>
-   Compute Bayes estimates <pre_executed/run_with_lsdb.ipynb>
+   Compute Bayes estimates <pre_executed/run_with_lsdb_gpu.ipynb>
    Plot posteriors <pre_executed/plotting/plot_stars.ipynb>
    Validate estimates <validation>
    Dev guide <dev_guide>
