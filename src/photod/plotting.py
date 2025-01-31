@@ -285,22 +285,21 @@ def show3Flat2Dmaps(Z1, Z2, Z3, md, xLab, yLab, x0=-99, y0=-99, logScale=False, 
 
 
 def getQmap(cube, FeH1d, Mr1d, Ar1d):
-    Smax = -1
     # interpolate 3D cube(FeH, Mr, Ar) onto Qr=Mr+Ar vs. FeH 2D grid
-    Qmap = 0 * cube[:, :, 0]
+    Qmap = np.zeros((len(FeH1d), len(Qr1d)))
     # Q grid, same size as Mr1d array
-    Qr1d = np.linspace(np.min(Mr1d), (np.max(Ar1d) + np.max(Mr1d)), np.size(Mr1d))
-    for i in range(0, np.size(FeH1d)):
-        for j in range(0, np.size(Qr1d)):
-            # summation
-            Ssum = 0.0
-            for k in range(0, np.size(Ar1d)):
-                Mr = Qr1d[j] - Ar1d[k]
-                # now need to get the value of index for this Mr
-                jk = int((Mr - Mr1d[0]) / (Mr1d[1] - Mr1d[0]))
-                if (jk >= 0) & (jk < np.size(Mr1d)):
-                    Ssum += cube[i, jk, k]
-            Qmap = Qmap.at[i, j].set(Ssum)
+    Qr1d = np.linspace(np.min(Mr1d), np.max(Ar1d) + np.max(Mr1d), np.size(Mr1d))
+    # Compute possible Mr values for all (j, k) pairs
+    Mr_values = Qr1d[:, None] - Ar1d
+    # Find nearest index for Mr in Mr1d using searchsorted
+    jk_indices = np.searchsorted(Mr1d, Mr_values) - 1
+    # Ensure indices are within bounds
+    valid_mask = (jk_indices >= 0) & (jk_indices < len(Mr1d))
+    jk_indices = np.clip(jk_indices, 0, len(Mr1d) - 1)
+    for i in range(len(FeH1d)):
+        Ssum = np.zeros(len(Qr1d))
+        Ssum += np.where(valid_mask, cube[i, jk_indices, np.arange(len(Ar1d))], 0).sum(axis=1)
+        Qmap[i, :] = Ssum
     return Qmap, Qr1d
 
 
