@@ -15,7 +15,15 @@ from photod.priors import getPriorMapIndex, initializePriorGrid, make3Dprior
 from photod.results import BayesResults
 from photod.stats import Entropy, getMargDistr3D, getPosteriorQuantiles, getQrQuantiles
 
-from photod.column_map.catalog import m as cc
+from photod.column_map.base import mapper_from_glossary
+from pathlib import Path
+
+# Use a different path here for a different catalog
+glossary_path = Path(__file__).parent / "column_map" / "glossary.yaml"
+cc = mapper_from_glossary(
+    "CatalogColumnMap",
+    "Reference catalog columns",
+    glossary_path)
 
 
 def makeBayesEstimates3d(
