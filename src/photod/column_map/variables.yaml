@@ -1,0 +1,71 @@
+# Just the IDs referenced from code as variables.
+
+- column_id: ra
+  description: right ascension
+  variable: right_ascension
+- column_id: dec
+  description: declination
+  variable: declination
+- column_id: Mr
+  description: absolute magnitude in r band
+  variable: abs_mag_r
+- column_id: MrEst
+  description: estimate of absolute magnitude in r band
+  variable: abs_mag_r_est
+- column_id: MrEstUnc
+  description: uncertainty of estimate of absolute magnitude in r band
+  variable: abs_mag_r_est_unc
+- column_id: MrdS
+  description: drop in entropy of absolute magnitude in r band
+  variable: abs_mag_r_entropy_drop
+- column_id: rmag
+  description: observed magnitude in r band
+  variable: observed_mag_r
+- column_id: FeH
+  variable: metallicity
+  description: metallicity (ratio of iron to hydrogen)
+- column_id: FeHEst
+  variable: metallicity_est
+  description: estimate of metallicity
+- column_id: FeHEstUnc
+  variable: metallicity_est_unc
+  description: uncertainty of estimate of metallicity
+- column_id: FeHdS
+  variable: metallicity_entropy_drop
+  description: drop in entropy of metallicity
+- column_id: Ar
+  variable: extinction_r
+  description: extinction in r-band
+- column_id: ArEst
+  variable: extinction_r_est
+  description: estimate of extinction in r-band
+- column_id: ArEstUnc
+  variable: extinction_r_est_unc
+  description: uncertainty of estimate of extinction in r-band
+- column_id: ArdS
+  variable: extinction_r_entropy_drop
+  description: drop in entropy of extinction in r-band
+- column_id: Av
+  variable: extinction_v
+  description: extinction in v-band
+- column_id: Qr
+  description: absolute magnitude in r band plus extinction
+  variable: abs_mag_ext_r
+- column_id: QrEst
+  description: estimate of absolute magnitude in r band plus extinction
+  variable: abs_mag_ext_r_est
+- column_id: QrEstUnc
+  description: uncertainty of estimate of absolute magnitude in r band plus extinction
+  variable: abs_mag_ext_r_est_unc
+- column_id: glat
+  description: galactic latitude
+  variable: galactic_latitude
+- column_id: glon
+  description: galactic longitude
+  variable: galactic_longitude
+- column_id: chi2min
+  description: minimum of chi-squared
+  variable: chi_sq_min
+- column_id: gr
+  description: g band minus r band
+  variable: g_minus_r
