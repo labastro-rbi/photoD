@@ -29,7 +29,7 @@ def mapper_from_glossary(class_name: str, purpose: str, glossary_yaml: Path) -> 
     clazz_attrs = {"__init__": lambda self: ColumnMap.__init__(self, class_name, purpose)}
     clazz_attrs.update(
         {
-            x["variable"]: property(fget=lambda s, value=x["id"]: value, doc=x["description"])
+            x["variable"]: property(fget=lambda s, value=x["column_id"]: value, doc=x["description"])
             for x in glossary
             if "variable" in x
         }
