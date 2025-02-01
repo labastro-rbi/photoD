@@ -19,7 +19,7 @@ from photod.column_map.base import mapper_from_glossary
 from pathlib import Path
 
 # Use a different path here for a different catalog
-glossary_path = Path(__file__).parent / "column_map" / "glossary.yaml"
+glossary_path = Path(__file__).parent / "column_map" / "variables.yaml"
 cc = mapper_from_glossary(
     "CatalogColumnMap",
     "Reference catalog columns",
