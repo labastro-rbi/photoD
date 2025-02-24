@@ -18,12 +18,19 @@ from photod.stats import Entropy, getMargDistr3D, getPosteriorQuantiles, getQrQu
 from photod.column_map.base import mapper_from_glossary
 from pathlib import Path
 
-# Use a different path here for a different catalog
-glossary_path = Path(__file__).parent / "column_map" / "variables.yaml"
-cc = mapper_from_glossary(
-    "CatalogColumnMap",
-    "Reference catalog columns",
-    glossary_path)
+
+cc = None
+
+def set_column_variables(variable_mapping: Path):
+    global cc
+    cc = mapper_from_glossary(
+        "CatalogColumnMap",
+        "Reference catalog columns",
+        variable_mapping)
+
+
+set_column_variables(
+    Path(__file__).parent / "column_map" / "variables.yaml")
 
 
 def makeBayesEstimates3d(
