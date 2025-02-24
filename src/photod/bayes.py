@@ -21,16 +21,17 @@ from pathlib import Path
 
 cc = None
 
-def set_column_variables(variable_mapping: Path):
+
+def set_column_mapping(variable_mapping: Path):
+    """
+    Set the column mapping used for this module.  Updates the module-global 'cc'
+    ColumnMap object.
+    """
     global cc
-    cc = mapper_from_glossary(
-        "CatalogColumnMap",
-        "Reference catalog columns",
-        variable_mapping)
+    cc = mapper_from_glossary("CatalogColumnMap", "Reference catalog columns", variable_mapping)
 
 
-set_column_variables(
-    Path(__file__).parent / "column_map" / "variables.yaml")
+set_column_mapping(Path(__file__).parent / "column_map" / "variables.yaml")
 
 
 def makeBayesEstimates3d(
