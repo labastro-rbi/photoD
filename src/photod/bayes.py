@@ -7,7 +7,7 @@ import nested_pandas as npd
 import numpy as np
 import pandas as pd
 from lsdb.catalog.map_catalog import MapCatalog
-from lsdb.core.search.moc_search import MOCSearch
+from lsdb.core.search.region_search import MOCSearch
 from mocpy import MOC
 
 from photod.parameters import GlobalParams
