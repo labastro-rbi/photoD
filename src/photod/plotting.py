@@ -401,3 +401,46 @@ def plotStars(starsData, bayesResults, *plottingArgs):
             *plottingArgs,
         )
         print(QrEst, QrEstUnc)
+
+
+def show2Dmap(Xgrid, Ygrid, Z, metadata, xLabel, yLabel, logScale=False):
+
+    # evaluate on a regular grid
+    xMin = metadata[0]
+    xMax = metadata[1]
+    nXbin = metadata[2]
+    yMin = metadata[3]
+    yMax = metadata[4]
+    nYbin = metadata[5]
+    # glon = metadata[6]  # <--
+    # glat = metadata[7]  #  <--
+    # pix = metadata[8]   # <--
+    # r = metadata[-1]     # <---
+    
+
+    fig, ax = plt.subplots(1,1,figsize=(6,4.5))
+
+    # plot the result as an image
+    if (logScale):
+        from matplotlib.colors import LogNorm
+        plt.imshow(Z.reshape(Xgrid.shape),
+               origin='lower', aspect='auto',
+               extent=[xMin, xMax, yMin, yMax],
+               cmap='Blues', 
+               norm=LogNorm(0.001, vmax=Z.max()))
+        cb = plt.colorbar()
+        cb.set_label("density on log scale")
+    else: 
+        plt.imshow(Z.reshape(Xgrid.shape),
+               origin='lower', aspect='auto',
+               extent=[xMin, xMax, yMin, yMax],
+               cmap='Blues') 
+        cb = plt.colorbar()
+        cb.set_label("density on lin scale")
+
+    plt.xlabel(xLabel)
+    plt.ylabel(yLabel)
+    #plt.title(str(pix) + " l=" + str(np.round(glon, 2)) + " b=" + str(np.round(glat, 2)) + " r=" + 
+    #          str(r))
+    # plt.savefig('x.png')
+    plt.show()
