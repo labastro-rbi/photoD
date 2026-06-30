@@ -2,10 +2,10 @@ import numpy as np
 from astropy.table import Table
 
 
-def LSSTsimsLocus(fixForStripe82=True, datafile=""):
+def LSSTsimsLocus(fixForStripe82=True, datafile="", colnames = ["Mr", "FeH", "ug", "gr", "ri", "iz", "zy"]):
     ## Mr, as function of [Fe/H], along the SDSS/LSST stellar
     ## for more details see the file header
-    colnames = ["Mr", "FeH", "ug", "gr", "ri", "iz", "zy"]
+
     if datafile == "":
         datafile = "../../data/MSandRGBcolors_v1.3.txt"
     LSSTlocus = Table.read(datafile, format="ascii", names=colnames)
