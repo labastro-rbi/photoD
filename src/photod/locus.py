@@ -31,9 +31,8 @@ def LSSTsimsLocus(fixForStripe82=True, datafile="", colnames = ["Mr", "FeH", "ug
 
 
 ## subsample locusData along Mr and FeH grids by factors kMr and kFeH (if both are 1, no subsampling)
-def subsampleLocusData(locusData, kMr, kFeH, verbose=True):
-    xLabel = "FeH"
-    yLabel = "Mr"
+### ovo je stara funkcija koja assuma kvadrati grid
+def subsampleLocusData(locusData, kMr, kFeH, xLabel = "FeH", yLabel = "Mr", verbose=True):
     FeHGrid = locusData[xLabel]
     MrGrid = locusData[yLabel]
     FeH1d = np.sort(np.unique(FeHGrid))
@@ -46,6 +45,8 @@ def subsampleLocusData(locusData, kMr, kFeH, verbose=True):
     nMrs = int(nMr / kMr)
     if verbose:
         print("subsampled locus 2D grid in FeH and Mr from", nFeH, nMr, "to:", nFeHs, nMrs)
+        print(nFeHs * kMr + nMrs * kFeH * nMr)
+        print(nFeH * nMr, len(locusData))
     subsampled = locusData[:0].copy()
     # now add subsampled rows from the input table
     for j in range(0, nFeHs):
@@ -54,6 +55,33 @@ def subsampleLocusData(locusData, kMr, kFeH, verbose=True):
             subsampled.add_row(locusData[k])
     return subsampled
 
+# ovo je nova funkcija koja može bilo kakav grid, ali je malo sporija (made using LLM)    
+def subsampleLocusData_new(locusData, kMr, kFeH, verbose=True):
+    xLabel = "FeH"
+    yLabel = "Mr"
+    FeHGrid = locusData[xLabel]
+    FeH1d = np.sort(np.unique(FeHGrid))
+    nFeH = FeH1d.size
+    nFeHs = int(nFeH / kFeH)
+
+    subsampled = locusData[:0].copy()
+
+    for j in range(0, nFeHs):
+        feh = FeH1d[j * kFeH]
+        block = locusData[FeHGrid == feh]
+        # sort this block by Mr to make subsampling well-defined
+        block = block[np.argsort(block[yLabel])]
+        nMrBlock = len(block)
+        nMrs = int(nMrBlock / kMr)
+        for i in range(0, nMrs):
+            k = i * kMr
+            subsampled.add_row(block[k])
+
+    if verbose:
+        print("subsampled locus 2D grid in FeH from", nFeH, "to:", nFeHs)
+        print("total subsampled rows:", len(subsampled))
+
+    return subsampled
 
 def get3DmodelList(locusData, fitColors, agressive=False, DSED=False):
 
