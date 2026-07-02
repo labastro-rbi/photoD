@@ -83,7 +83,7 @@ def subsampleLocusData_new(locusData, kMr, kFeH, verbose=True):
 
     return subsampled
 
-def get3DmodelList(locusData, fitColors, agressive=False, DSED=False):
+def get3DmodelList(locusData, fitColors, agressive=False, DSED=False, xLabel = "FeH", yLabel = "Mr"):
 
     if agressive:
         ## AGRESSIVE
@@ -105,7 +105,7 @@ def get3DmodelList(locusData, fitColors, agressive=False, DSED=False):
     AGList.append(ArGridLarge)
 
     ### call the workhorse
-    L3Dlist = make3DlocusList(locusData, fitColors, AGList, DSED=DSED)
+    L3Dlist = make3DlocusList(locusData, fitColors, AGList, DSED=DSED, xLabel = xLabel, yLabel = yLabel)
 
     # repack
     ArGridList = {}
@@ -119,7 +119,7 @@ def get3DmodelList(locusData, fitColors, agressive=False, DSED=False):
     return ArGridList, locus3DList
 
 
-def make3DlocusList(locusData, fitColors, ArGridList, DSED=False):
+def make3DlocusList(locusData, fitColors, ArGridList, DSED=False, xLabel = "FeH", yLabel = "Mr"):
 
     # color corrections due to dust reddening
     # for finding extinction, too
@@ -131,8 +131,6 @@ def make3DlocusList(locusData, fitColors, ArGridList, DSED=False):
     reddCoeffs["iz"] = C["i"] - C["z"]
 
     # intrinsic table sizes
-    xLabel = "FeH"
-    yLabel = "Mr"
     FeHGrid = locusData[xLabel]
     MrGrid = locusData[yLabel]
     FeH1d = np.sort(np.unique(FeHGrid))
