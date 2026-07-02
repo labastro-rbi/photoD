@@ -11,9 +11,10 @@ def initializePriorGrid(mapPartition, globalParams):
     for rind, r in enumerate(np.sort(mapPartition["rmag"].to_numpy())):
         # interpolate prior map onto locus Mr-FeH grid
         Z = mapPartition[mapPartition["rmag"] == r]
-        Zval = np.frombuffer(Z.iloc[0]["kde"], dtype=np.float64).reshape((96, 36))
-        X = np.frombuffer(Z.iloc[0]["xGrid"], dtype=np.float64).reshape((96, 36))
-        Y = np.frombuffer(Z.iloc[0]["yGrid"], dtype=np.float64).reshape((96, 36))
+        #print(type(Z.iloc[0]["kde"]))
+        Zval = np.array(Z.iloc[0]["kde"], dtype=np.float64).reshape((96, 36))
+        X = np.array(Z.iloc[0]["xGrid"], dtype=np.float64).reshape((96, 36))
+        Y = np.array(Z.iloc[0]["yGrid"], dtype=np.float64).reshape((96, 36))
         points = np.array((X.flatten(), Y.flatten())).T
         values = Zval.flatten()
         # actual (linear) interpolation
