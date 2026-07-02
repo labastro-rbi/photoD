@@ -31,7 +31,7 @@ def LSSTsimsLocus(fixForStripe82=True, datafile="", colnames = ["Mr", "FeH", "ug
 
 
 ## subsample locusData along Mr and FeH grids by factors kMr and kFeH (if both are 1, no subsampling)
-### ovo je stara funkcija koja assuma kvadrati grid
+### this is the original function that assumes a rectangular grid
 def subsampleLocusData(locusData, kMr, kFeH, xLabel = "FeH", yLabel = "Mr", verbose=True):
     FeHGrid = locusData[xLabel]
     MrGrid = locusData[yLabel]
@@ -55,7 +55,7 @@ def subsampleLocusData(locusData, kMr, kFeH, xLabel = "FeH", yLabel = "Mr", verb
             subsampled.add_row(locusData[k])
     return subsampled
 
-# ovo je nova funkcija koja može bilo kakav grid, ali je malo sporija (made using LLM)    
+# This is a ew function that can handle any grid shape, but it is a bit slower (made with LLM)
 def subsampleLocusData_new(locusData, kMr, kFeH, verbose=True):
     xLabel = "FeH"
     yLabel = "Mr"
