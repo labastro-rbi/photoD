@@ -18,6 +18,7 @@ from photod.stats import Entropy, getMargDistr3D, getPosteriorQuantiles, getQrQu
 from photod.column_map.base import mapper_from_glossary
 from pathlib import Path
 
+#jax.config.update("jax_debug_nans", True) #raises exceptions where nanas appear
 
 cc = None
 
@@ -46,7 +47,11 @@ def makeBayesEstimates3d(
     Used for fast, large-scale processing. It leverages parallelization with JAX.
     """
     colorsAndIndices = getColorsAndPriorIndices(starsData, globalParams)
-
+    print('len(colorsAndIndices[0][1]), len(colorsAndIndices[0][2]), len(colorsAndIndices[1][0]), len(colorsAndIndices[2][1])')
+    print(colorsAndIndices[0][1], colorsAndIndices[0][2], colorsAndIndices[1][1], colorsAndIndices[2][1])
+    #print(colorsAndIndices[2])
+    
+    
     #jax.config.update("jax_debug_nans", True, JAX_TRACEBACK_FILTERING=off)
     
     # Use `jax.lax.map` to batch computations with scan/vmap and use memory efficiently.
@@ -62,13 +67,22 @@ def makeBayesEstimates3d(
     #print(func)
 
     #### HERE ARE NO NANS YET
-    print(jnp.isnan(colorsAndIndices).any())
-    print(jnp.isnan(priorGrid).any())
-    print(jnp.isnan(globalParams.getArgs()).any())
-    
-    results = BayesResults(*jax.lax.map(func, colorsAndIndices, batch_size=batchSize))
-    print('NOW THE RESULTS')
-    print(type(results))
+    print('Are there nans in the inputs?')
+    print(np.isnan(np.array(colorsAndIndices[0:1])).any())
+    print(np.isnan(np.array(colorsAndIndices[2])).any())
+    print(np.isnan(np.array(priorGrid)).any())
+    #print(jnp.isnan(globalParams.getArgs()).any())
+    print('test loop begin')
+    for i in range(2):
+        print([colorsAndIndices[j][i] for j in range(3)])
+        out = loopOverEachStar_prints([colorsAndIndices[j][i] for j in range(3)], priorGrid=priorGrid,
+                               globalParams=globalParams.getArgs(),
+                               returnPosteriors=returnPosteriors)
+        print(i, jax.tree_util.tree_map(lambda x: jnp.isnan(x).any(), out))
+    print('loop done')    
+    results = BayesResults(*jax.lax.map(func, colorsAndIndices, batch_size=None))#batchSize))
+    print('NOW THE RESULTS, are there nans?')
+    #print(np.isnan(np.array(results)).any())
     
     #### HERE NANS APPEAR
     
@@ -123,7 +137,6 @@ def getColorsAndPriorIndices(catalog, params):
 @partial(jax.jit, static_argnames="returnPosteriors")
 def loopOverEachStar(starData, priorGrid, globalParams, returnPosteriors):
     """Internal method with the logic to be run for each star."""
-    print(starData)
     colors, colorsErr, priorIndices = starData
     locusColors, Ar1d, FeH1d, Mr1d, dFeH, dMr, QrGrid, QrIndices = globalParams
     chi2map = calculateChi2(colors, colorsErr, locusColors)
@@ -134,6 +147,25 @@ def loopOverEachStar(starData, priorGrid, globalParams, returnPosteriors):
     otherInfo = [likeCube, priorCube, postCube, *margPost] if returnPosteriors else []
     return chi2min, statistics, *otherInfo
 
+def loopOverEachStar_prints(starData, priorGrid, globalParams, returnPosteriors):
+    """Internal method with the logic to be run for each star."""
+    colors, colorsErr, priorIndices = starData
+    jax.debug.print('colors, colorsErr, priorIndices')
+    jax.debug.print('{} {} {}'.format(colors, colorsErr, priorIndices))
+    locusColors, Ar1d, FeH1d, Mr1d, dFeH, dMr, QrGrid, QrIndices = globalParams
+    # jax.debug.print('locusColors, Ar1d, FeH1d, Mr1d, dFeH, dMr, QrGrid, QrIndices')
+    # for  i in [locusColors, Ar1d, FeH1d, Mr1d, dFeH, dMr, QrGrid, QrIndices]:
+    #     jax.debug.print(str(i))
+    chi2map = calculateChi2(colors, colorsErr, locusColors)
+    jax.debug.print('locusColors')
+    jax.debug.print(str(locusColors))
+    
+    dAr, likeCube, priorCube, chi2min = likeAndPrior(Ar1d, FeH1d, Mr1d, chi2map, priorGrid, priorIndices)
+    postCube = priorCube * likeCube
+    margPost = getMargPosteriors(priorCube, likeCube, postCube, dMr, dFeH, dAr)
+    statistics = postProcess(Ar1d, FeH1d, Mr1d, postCube, QrGrid, QrIndices, *margPost)
+    otherInfo = [likeCube, priorCube, postCube, *margPost] if returnPosteriors else []
+    return chi2min, statistics, *otherInfo
 
 def calculateChi2(colors, colorsErr, locusColors):
     """Compute chi-squared map using provided 3D model locus."""
