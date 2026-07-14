@@ -168,9 +168,10 @@ def loopOverEachStar_prints(starData, priorGrid, globalParams, returnPosteriors)
     postCube = priorCube * likeCube
     jax.debug.print('postCube: {}'.format(jnp.isnan(postCube).any()))
     ## Here are no nans.
-    margPost = getMargPosteriors(priorCube, likeCube, postCube, dMr, dFeH, dAr)
-    jax.debug.print(str(type(margPost)))
-    jax.debug.print(str(list(margPost)))
+    margpostMr, margpostFeH, margpostAr= getMargPosteriors(priorCube, likeCube, postCube, dMr, dFeH, dAr)
+    margPost = margpostMr, margpostFeH, margpostAr
+    jax.debug.print(str(type(margPost[0])))
+    jax.debug.print('margpostMr: {}, margpostFeH: {}, margpostAr: {}'.format(margpostMr, margpostFeH, margpostAr)) #this is wrong
     statistics = postProcess(Ar1d, FeH1d, Mr1d, postCube, QrGrid, QrIndices, *margPost)
     jax.debug.print(str(type(statistics.keys())))
     jax.debug.print(str(statistics.keys()))
