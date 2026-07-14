@@ -157,13 +157,25 @@ def loopOverEachStar_prints(starData, priorGrid, globalParams, returnPosteriors)
     # for  i in [locusColors, Ar1d, FeH1d, Mr1d, dFeH, dMr, QrGrid, QrIndices]:
     #     jax.debug.print(str(i))
     chi2map = calculateChi2(colors, colorsErr, locusColors)
-    jax.debug.print('locusColors')
-    jax.debug.print(str(locusColors))
-    
+    jax.debug.print('chi2map')
+    jax.debug.print(str(jnp.isnan(chi2map).any()))
     dAr, likeCube, priorCube, chi2min = likeAndPrior(Ar1d, FeH1d, Mr1d, chi2map, priorGrid, priorIndices)
+    #jax.debug.print('dAr:{} likeCube:{}, priorCube:{}, chi2min:{}'.format(dAr, likeCube, priorCube, chi2min))
+    jax.debug.print('dAr:{} likeCube:{}, priorCube:{}, chi2min:{}'.format(jnp.isnan(dAr).any(),
+                                                                          jnp.isnan(likeCube).any(),
+                                                                          jnp.isnan(priorCube).any(),
+                                                                          jnp.isnan(chi2min).any()))
     postCube = priorCube * likeCube
+    jax.debug.print('postCube: {}'.format(jnp.isnan(postCube).any()))
+    ## Here are no nans.
     margPost = getMargPosteriors(priorCube, likeCube, postCube, dMr, dFeH, dAr)
+    jax.debug.print(str(type(margPost)))
+    jax.debug.print(str(list(margPost)))
     statistics = postProcess(Ar1d, FeH1d, Mr1d, postCube, QrGrid, QrIndices, *margPost)
+    jax.debug.print(str(type(statistics.keys())))
+    jax.debug.print(str(statistics.keys()))
+    jax.debug.print(str(statistics.items()))
+    ## Here ARE nans.
     otherInfo = [likeCube, priorCube, postCube, *margPost] if returnPosteriors else []
     return chi2min, statistics, *otherInfo
 
