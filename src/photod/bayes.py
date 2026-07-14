@@ -46,6 +46,9 @@ def makeBayesEstimates3d(
     Used for fast, large-scale processing. It leverages parallelization with JAX.
     """
     colorsAndIndices = getColorsAndPriorIndices(starsData, globalParams)
+
+    #jax.config.update("jax_debug_nans", True, JAX_TRACEBACK_FILTERING=off)
+    
     # Use `jax.lax.map` to batch computations with scan/vmap and use memory efficiently.
     # The BayesResult object is populated with the chi2min and statistics for each star.
     # If `returnAllInfo` is True, the prior and posterior arrays will be included in the results.
@@ -55,7 +58,20 @@ def makeBayesEstimates3d(
         globalParams=globalParams.getArgs(),
         returnPosteriors=returnPosteriors,
     )
+    print(type(func))
+    #print(func)
+
+    #### HERE ARE NO NANS YET
+    print(jnp.isnan(colorsAndIndices).any())
+    print(jnp.isnan(priorGrid).any())
+    print(jnp.isnan(globalParams.getArgs()).any())
+    
     results = BayesResults(*jax.lax.map(func, colorsAndIndices, batch_size=batchSize))
+    print('NOW THE RESULTS')
+    print(type(results))
+    
+    #### HERE NANS APPEAR
+    
     # Create the DataFrame with the expectation values and uncertainties
     estimatesDf = pd.DataFrame(
         {
@@ -107,6 +123,7 @@ def getColorsAndPriorIndices(catalog, params):
 @partial(jax.jit, static_argnames="returnPosteriors")
 def loopOverEachStar(starData, priorGrid, globalParams, returnPosteriors):
     """Internal method with the logic to be run for each star."""
+    print(starData)
     colors, colorsErr, priorIndices = starData
     locusColors, Ar1d, FeH1d, Mr1d, dFeH, dMr, QrGrid, QrIndices = globalParams
     chi2map = calculateChi2(colors, colorsErr, locusColors)

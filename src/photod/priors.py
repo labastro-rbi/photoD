@@ -25,6 +25,7 @@ def initializePriorGrid(mapPartition, globalParams):
             method="linear",
             fill_value=0,
         )
+    print('Prior grid initialised')
     return priorGrid
 
 
