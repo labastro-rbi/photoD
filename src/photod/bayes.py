@@ -171,12 +171,14 @@ def loopOverEachStar_prints(starData, priorGrid, globalParams, returnPosteriors)
     margpostMr, margpostFeH, margpostAr= getMargPosteriors(priorCube, likeCube, postCube, dMr, dFeH, dAr)
     margPost = margpostMr, margpostFeH, margpostAr
     jax.debug.print(str(type(margPost[0])))
-    jax.debug.print('margpostMr: {}, margpostFeH: {}, margpostAr: {}'.format(margpostMr, margpostFeH, margpostAr)) #this is wrong
+    # jax.debug.print('margpostMr: {}, margpostFeH: {}, margpostAr: {}'.format(jnp.isnan(margpostMr.items()).any(),
+    #                        jnp.isnan(margpostFeH.items()).any(),
+    #                        jnp.isnan(margpostAr.items()).any())) 
+    ## Here ARE nans.
     statistics = postProcess(Ar1d, FeH1d, Mr1d, postCube, QrGrid, QrIndices, *margPost)
     jax.debug.print(str(type(statistics.keys())))
     jax.debug.print(str(statistics.keys()))
     jax.debug.print(str(statistics.items()))
-    ## Here ARE nans.
     otherInfo = [likeCube, priorCube, postCube, *margPost] if returnPosteriors else []
     return chi2min, statistics, *otherInfo
 
@@ -200,6 +202,8 @@ def likeAndPrior(Ar1d, FeH1d, Mr1d, chi2map, priorGrid, priorIndices):
 
 def getMargPosteriors(priorCube, likeCube, postCube, dMr, dFeH, dAr):
     """Get posterior information"""
+    #Nans appear somewhere here
+    jax.debug.print('dMr: {}, dFeH: {}, dAr: {}'.format(dMr, dFeH, dAr))
     margpostMr, margpostFeH, margpostAr = {}, {}, {}
     for idx, cube in enumerate([priorCube, likeCube, postCube]):
         distrMr, distrFeH, distrAr = getMargDistr3D(cube, dMr, dFeH, dAr)
