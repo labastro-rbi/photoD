@@ -78,7 +78,7 @@ def makeBayesEstimates3d(
         out = loopOverEachStar_prints([colorsAndIndices[j][i] for j in range(3)], priorGrid=priorGrid,
                                globalParams=globalParams.getArgs(),
                                returnPosteriors=returnPosteriors)
-        print(i, jax.tree_util.tree_map(lambda x: jnp.isnan(x).any(), out))
+        #print(i, jax.tree_util.tree_map(lambda x: jnp.isnan(x).any(), out))
     print('loop done')    
     results = BayesResults(*jax.lax.map(func, colorsAndIndices, batch_size=None))#batchSize))
     print('NOW THE RESULTS, are there nans?')
@@ -171,13 +171,13 @@ def loopOverEachStar_prints(starData, priorGrid, globalParams, returnPosteriors)
     margpostMr, margpostFeH, margpostAr= getMargPosteriors(priorCube, likeCube, postCube, dMr, dFeH, dAr)
     margPost = margpostMr, margpostFeH, margpostAr
     jax.debug.print(str(type(margPost[0])))
-    # jax.debug.print('margpostMr: {}, margpostFeH: {}, margpostAr: {}'.format(jnp.isnan(margpostMr.items()).any(),
-    #                        jnp.isnan(margpostFeH.items()).any(),
-    #                        jnp.isnan(margpostAr.items()).any())) 
+    # jax.debug.print('margpostMr: {}, margpostFeH: {}, margpostAr: {}'.format(margpostMr.items(),
+    #                         margpostFeH.items(),
+    #                         margpostAr.items())) 
     ## Here ARE nans.
     statistics = postProcess(Ar1d, FeH1d, Mr1d, postCube, QrGrid, QrIndices, *margPost)
-    jax.debug.print(str(type(statistics.keys())))
-    jax.debug.print(str(statistics.keys()))
+    jax.debug.print('statistics:')
+    #jax.debug.print(str(statistics.keys()))
     jax.debug.print(str(statistics.items()))
     otherInfo = [likeCube, priorCube, postCube, *margPost] if returnPosteriors else []
     return chi2min, statistics, *otherInfo
@@ -205,8 +205,12 @@ def getMargPosteriors(priorCube, likeCube, postCube, dMr, dFeH, dAr):
     #Nans appear somewhere here
     jax.debug.print('dMr: {}, dFeH: {}, dAr: {}'.format(dMr, dFeH, dAr))
     margpostMr, margpostFeH, margpostAr = {}, {}, {}
+    #jax.debug.print('priorCube: {}, likeCube: {}, postCube: {}'.format(priorCube, likeCube, postCube))
+    ## tu nema nanova
     for idx, cube in enumerate([priorCube, likeCube, postCube]):
         distrMr, distrFeH, distrAr = getMargDistr3D(cube, dMr, dFeH, dAr)
+        #jax.debug.print('distrMr: {}, distrFeH: {}, distrAr: {}'.format(distrMr, distrFeH, distrAr))
+        #tu se pojave nanovi
         margpostMr[idx] = distrMr
         margpostFeH[idx] = distrFeH
         margpostAr[idx] = distrAr

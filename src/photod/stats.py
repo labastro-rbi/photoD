@@ -1,4 +1,5 @@
 import jax.numpy as jnp
+import jax
 
 def pnorm(pdf, dx):
     return pdf / jnp.sum(pdf) / dx
@@ -10,10 +11,17 @@ def getMargDistr(arr2d, dX, dY):
     return pnorm(margX, dX), pnorm(margY, dY)
 
 
+#nans appear in this function
 def getMargDistr3D(arr3d, dX, dY, dZ):
     margX = jnp.sum(arr3d, axis=(0, 2))
     margY = jnp.sum(arr3d, axis=(1, 2))
     margZ = jnp.sum(arr3d, axis=(0, 1))
+    
+    jax.debug.print('margX: {}'.format(margX))
+    jax.debug.print('margY: {}'.format(margY))
+    jax.debug.print('margZ: {}'.format(margZ))
+    #these marg distributions are just zeros so when it is divided by their sums in pnorm, that is dividing by zero producing nans
+    
     return pnorm(margX, dX), pnorm(margY, dY), pnorm(margZ, dZ)
 
 
