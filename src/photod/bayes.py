@@ -160,11 +160,14 @@ def loopOverEachStar_prints(starData, priorGrid, globalParams, returnPosteriors)
     jax.debug.print('chi2map')
     jax.debug.print(str(jnp.isnan(chi2map).any()))
     dAr, likeCube, priorCube, chi2min = likeAndPrior(Ar1d, FeH1d, Mr1d, chi2map, priorGrid, priorIndices)
-    #jax.debug.print('dAr:{} likeCube:{}, priorCube:{}, chi2min:{}'.format(dAr, likeCube, priorCube, chi2min))
+    jax.debug.print('dAr:{} likeCube:{}, priorCube:{}, chi2min:{}'.format(dAr, likeCube, priorCube, chi2min))
     jax.debug.print('dAr:{} likeCube:{}, priorCube:{}, chi2min:{}'.format(jnp.isnan(dAr).any(),
                                                                           jnp.isnan(likeCube).any(),
                                                                           jnp.isnan(priorCube).any(),
                                                                           jnp.isnan(chi2min).any()))
+    #it seems that likeCube is just zeros, check:
+    jax.debug.print(str(likeCube.shape))
+    jax.debug.print(str(jnp.unique(likeCube)))
     postCube = priorCube * likeCube
     jax.debug.print('postCube: {}'.format(jnp.isnan(postCube).any()))
     ## Here are no nans.
@@ -203,7 +206,7 @@ def likeAndPrior(Ar1d, FeH1d, Mr1d, chi2map, priorGrid, priorIndices):
 def getMargPosteriors(priorCube, likeCube, postCube, dMr, dFeH, dAr):
     """Get posterior information"""
     #Nans appear somewhere here
-    jax.debug.print('dMr: {}, dFeH: {}, dAr: {}'.format(dMr, dFeH, dAr))
+    #jax.debug.print('dMr: {}, dFeH: {}, dAr: {}'.format(dMr, dFeH, dAr))
     margpostMr, margpostFeH, margpostAr = {}, {}, {}
     #jax.debug.print('priorCube: {}, likeCube: {}, postCube: {}'.format(priorCube, likeCube, postCube))
     ## tu nema nanova
