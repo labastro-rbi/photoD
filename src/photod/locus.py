@@ -1,5 +1,6 @@
 import numpy as np
 from astropy.table import Table
+from scipy.spatial import KDTree
 
 
 def LSSTsimsLocus(fixForStripe82=True, datafile="", colnames = ["Mr", "FeH", "ug", "gr", "ri", "iz", "zy"]):
@@ -330,3 +331,95 @@ def make3Dlocus(locus, ArGrid, colors, colCorr):
         locus3D = np.vstack([locus3D, locusAr])
 
     return locus3D
+
+
+##Below are old functions used to simulate a catalog from trilegal data
+    
+def with_kdtree(x_model: np.ndarray, x_data, y_model, y_data):
+    tree = KDTree(np.stack([x_model, y_model], axis=-1))
+    return tree.query(np.stack([x_data, y_data], axis=-1))
+
+def getColorsFromMrFeHDSED(L, Lvalues, colors=''):
+    # L is an astropy Table, Lvalues a Pandas DataFrame
+    # Prebaciti sve u numpy pa probati vrtiti kao loop
+    # taj kod zapravo nije ni bitan za LSST jer sada se koristi samo zato da se poprave boje koje nisu dobre u TRILEGALu
+    # Teoretski se to može i ignorirati i uzeti smao TRILEGAL boje
+    SDSScolors = ['ug', 'gr', 'ri', 'iz']
+    if not colors:
+        colors = SDSScolors
+    # Calculate squared distances using vectorized operations
+    ## distSq_Mr = ((L['Mr'][:, np.newaxis] - Lvalues['Mr'].values) ** 2) / 0.01 ** 2
+    ## distSq_FeH = ((L['FeH'][:, np.newaxis] - Lvalues['FeH'].values) ** 2) / 0.1 ** 2
+    ## distSq_total = distSq_Mr + distSq_FeH
+
+    # Find indices of minimum distances for each row
+    ## min_indices = np.argmin(distSq_total, axis=0)
+
+    min_indices = with_kdtree(L['Mr'], Lvalues['Mr'], L['FeH'], Lvalues['FeH'])[1]
+    
+    # Assign values to Lvalues based on minimum distances
+    Lvalues['MrAssigned'] = L['Mr'][min_indices].data
+    for c in colors:
+        Lvalues[c] = L[c][min_indices].data
+
+    return Lvalues
+
+def getLSSTm5(data, depth='coadd', magVersion=False, suffix=''):
+    # temporary: only use SDSS colors
+    bandpasses = ['u', 'g', 'r', 'i', 'z']
+    # from https://iopscience.iop.org/article/10.3847/1538-4365/ac3e72
+    coaddm5 = {}
+    coaddm5['u'] = 25.73
+    coaddm5['g'] = 26.86
+    coaddm5['r'] = 26.88
+    coaddm5['i'] = 26.34
+    coaddm5['z'] = 25.63
+    coaddm5['y'] = 24.87
+    singlem5 = {}
+    singlem5['u'] = 23.50
+    singlem5['g'] = 24.44 
+    singlem5['r'] = 23.98 
+    singlem5['i'] = 23.41
+    singlem5['z'] = 22.77
+    singlem5['y'] = 22.01
+    gg = {}
+    gg['u'] = 0.038 
+    gg['g'] = 0.039 
+    gg['r'] = 0.039 
+    gg['i'] = 0.039 
+    gg['z'] = 0.039 
+    gg['y'] = 0.039   
+    m5 = {}
+    for b in bandpasses:
+        if (depth=='coadd'):
+            m5[b] = coaddm5[b] 
+        else:
+            m5[b] = singlem5[b] 
+    mags = {}
+    for b in bandpasses:
+        if (magVersion):
+            mags[b] = data[b+'mag'+suffix]
+        else:
+            mags[b] = data[b]
+    errors = {}
+    for b in bandpasses:
+        x = 10**(0.4*(mags[b]-m5[b]))
+        errors[b] = np.sqrt(0.005**2 + (0.04-gg[b])*x + gg[b]*x**2)
+    return errors
+
+### this inverts the error(mag) relation from getLSSTm5 and returns errors for provided magnitudes
+### N.B. getLSSTm5 also assumes SDSS bandpasses (that is, no y band) 
+def getLSSTm5err(mags, depth='coadd'):
+    # temporary: only use SDSS colors (no y band)
+    bandpasses = ['u', 'g', 'r', 'i', 'z']
+    # arrays for interpolation
+    magGrid = np.linspace(10, 30, 2001)  # 0.01 mag steps
+    magData = {}
+    for b in bandpasses:
+        magData[b] = magGrid
+    errGrid = getLSSTm5(magData, depth)
+    # now interpolate to get errors 
+    errors = {}
+    for b in bandpasses:
+        errors[b] = np.interp(mags[b], magGrid, errGrid[b]) 
+    return errors
