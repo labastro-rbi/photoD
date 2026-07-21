@@ -430,6 +430,6 @@ def getLSSTm5err(mags, depth='coadd'):
 def getMrFromFeHtLoc(Locus, Catalog):
     Catalog['MrTrueEst'] = 0*Catalog['tLoc'] + 89.99
     for j in range(0,len(Catalog)):
-        distSq = (Locus['tLoc']-Catalog['tLoc'][j])**2/0.01**2 + (Locus['FeH']-Catalog['FeHEst'][j])**2/0.1**2
+        distSq = (Locus['tLoc']-Catalog['tLoc'][j])**2/0.0001 + (Locus['FeH']-Catalog['FeHEst'][j])**2/0.01
         Catalog['MrTrueEst'][j] = Locus['MrTrue'][np.argmin(distSq)] 
     return
