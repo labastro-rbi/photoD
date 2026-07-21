@@ -423,3 +423,13 @@ def getLSSTm5err(mags, depth='coadd'):
     for b in bandpasses:
         errors[b] = np.interp(mags[b], magGrid, errGrid[b]) 
     return errors
+
+## given Bayes estimates FeHEst and MrEst, where MrEst is really tLoc, variable
+## along the locus, use locus info about Mr = func(tLoc, FeH), to get the true
+## meaningful MrEst 
+def getMrFromFeHtLoc(Locus, Catalog):
+    Catalog['MrTrueEst'] = 0*Catalog['tLoc'] + 89.99
+    for j in range(0,len(Catalog)):
+        distSq = (Locus['tLoc']-Catalog['tLoc'][j])**2/0.01**2 + (Locus['FeH']-Catalog['FeHEst'][j])**2/0.1**2
+        Catalog['MrTrueEst'][j] = Locus['MrTrue'][np.argmin(distSq)] 
+    return
