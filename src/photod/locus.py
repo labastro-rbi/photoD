@@ -138,7 +138,7 @@ def make3DlocusList(locusData, fitColors, ArGridList, DSED=False, xLabel = "FeH"
     Mr1d = np.sort(np.unique(MrGrid))
 
     # turn astropy table into numpy array
-    locusData["Ar"] = 0 * locusData["Mr"]
+    locusData["Ar"] = 0 * locusData[yLabel]
     LocusNP = np.array(locusData)
     # the repeating block
     locus3D0 = LocusNP.reshape(np.size(FeH1d), np.size(Mr1d))
