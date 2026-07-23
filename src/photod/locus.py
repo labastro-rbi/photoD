@@ -1,6 +1,7 @@
 import numpy as np
 from astropy.table import Table
 from scipy.spatial import KDTree
+from scipy.interpolate import interpn
 
 
 def LSSTsimsLocus(fixForStripe82=True, datafile="", colnames = ["Mr", "FeH", "ug", "gr", "ri", "iz", "zy"]):
@@ -427,9 +428,22 @@ def getLSSTm5err(mags, depth='coadd'):
 ## given Bayes estimates FeHEst and MrEst, where MrEst is really tLoc, variable
 ## along the locus, use locus info about Mr = func(tLoc, FeH), to get the true
 ## meaningful MrEst 
-def getMrFromFeHtLoc(Locus, Catalog):
+def getMrFromFeHtLoc_old(Locus, Catalog):
     Catalog['MrTrueEst'] = 0*Catalog['tLoc'] + 89.99
     for j in range(0,len(Catalog)):
         distSq = (Locus['tLoc']-Catalog['tLoc'][j])**2/0.0001 + (Locus['FeH']-Catalog['FeHEst'][j])**2/0.01
         Catalog['MrTrueEst'][j] = Locus['MrTrue'][np.argmin(distSq)] 
     return
+
+## given Bayes posterior medians FeH_quantile_median and 'tLoc_quantile_median',
+## where 'tLoc_quantile_median' is the direct output from running photoD with tLoc variable,
+## renamed back to be correct from the 'Mr_quantile_median' in output
+## use locus info about Mr = func(tLoc, FeH), to get the true meaningful 'Mr_quantile_median'
+## might not work if there are nans
+def getMrFromFeHtLoc(df, locus):
+    FeH1D=np.unique(locus['FeH'])
+    tLoc1D=np.unique(locus['tLoc'])
+    df['Mr_quantile_median']=interpn((FeH1D, tLoc1D),
+                                      locus['Mr'].reshape(len(FeH1D),len(tLoc1D)),
+                                      (df['FeH_quantile_median'],df['tLoc_quantile_median']))
+    return df
