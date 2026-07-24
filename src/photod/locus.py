@@ -85,7 +85,7 @@ def subsampleLocusData_new(locusData, kMr, kFeH, verbose=True):
 
     return subsampled
 
-def get3DmodelList(locusData, fitColors, agressive=False, DSED=False, xLabel = "FeH", yLabel = "Mr"):
+def get3DmodelList(locusData, fitColors, agressive=False, DSED=False, xLabel = "FeH", yLabel = "Mr", fixedAr=0.2):
 
     if agressive:
         ## AGRESSIVE
@@ -105,6 +105,7 @@ def get3DmodelList(locusData, fitColors, agressive=False, DSED=False, xLabel = "
     AGList.append(ArGridSmall)
     AGList.append(ArGridMedium)
     AGList.append(ArGridLarge)
+    #AGList.append(np.array([ArFixed]))
 
     ### call the workhorse
     L3Dlist = make3DlocusList(locusData, fitColors, AGList, DSED=DSED, xLabel = xLabel, yLabel = yLabel)

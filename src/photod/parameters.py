@@ -17,11 +17,12 @@ class GlobalParams:
     xLabel: str = "FeH"
     yLabel: str = "Mr"
     MrColumn: str = "Mr"
+    ArGridRange: str = 'Large'
 
     def __post_init__(self):
-        self.Ar1d = self.ArGridList["ArLarge"]
+        self.Ar1d = self.ArGridList["Ar{}".format(self.ArGridRange)]
         self._extractMrAndFeH()
-        locusColors3d = self.locus3DList["ArLarge"]  # Currently fixed to the large resolution
+        locusColors3d = self.locus3DList["Ar{}".format(self.ArGridRange)]  # Default is the large resolution
         # Stack all locus data by colors
         self.locusColors = np.stack([locusColors3d[color] for color in self.fitColors], axis=-1)
         # Create the Qr grid (Qr = Mr + Ar)
