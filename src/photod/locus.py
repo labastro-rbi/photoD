@@ -85,7 +85,7 @@ def subsampleLocusData_new(locusData, kMr, kFeH, verbose=True):
 
     return subsampled
 
-def get3DmodelList(locusData, fitColors, agressive=False, DSED=False, xLabel = "FeH", yLabel = "Mr", fixedAr=0.2):
+def get3DmodelList(locusData, fitColors, agressive=False, DSED=False, xLabel = "FeH", yLabel = "Mr", ArFixed=0.2):
 
     if agressive:
         ## AGRESSIVE
@@ -100,12 +100,14 @@ def get3DmodelList(locusData, fitColors, agressive=False, DSED=False, xLabel = "
         ArGridSmall = np.linspace(0, 0.3, 31)  # step 0.01 mag
         ArGridMedium = np.linspace(0, 0.8, 81)  # step 0.01 mag
         ArGridLarge = np.linspace(0, 2.5, 126)  # step 0.02 mag
-
+    
+    ArGridFixed=np.array([ArFixed])
+    
     AGList = []
     AGList.append(ArGridSmall)
     AGList.append(ArGridMedium)
     AGList.append(ArGridLarge)
-    #AGList.append(np.array([ArFixed]))
+    AGList.append(ArGridFixed)
 
     ### call the workhorse
     L3Dlist = make3DlocusList(locusData, fitColors, AGList, DSED=DSED, xLabel = xLabel, yLabel = yLabel)
@@ -119,6 +121,8 @@ def get3DmodelList(locusData, fitColors, agressive=False, DSED=False, xLabel = "
     ArGridList["ArMedium"] = ArGridMedium
     locus3DList["ArLarge"] = L3Dlist[2]
     ArGridList["ArLarge"] = ArGridLarge
+    locus3DList["ArFixed"] = L3Dlist[3]
+    ArGridList["ArFixed"] = ArGridFixed
     return ArGridList, locus3DList
 
 
