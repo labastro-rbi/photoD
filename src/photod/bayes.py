@@ -13,7 +13,7 @@ from mocpy import MOC
 from photod.parameters import GlobalParams
 from photod.priors import getPriorMapIndex, initializePriorGrid, make3Dprior
 from photod.results import BayesResults
-from photod.stats import Entropy, getMargDistr3D, getPosteriorQuantiles, getQrQuantiles
+from photod.stats import Entropy, getMargDistr3D, getPosteriorQuantiles, getQrQuantiles, getMrTrueQuantiles  # === NEW: getMrTrueQuantiles ===
 
 from photod.column_map.base import mapper_from_glossary
 from pathlib import Path
@@ -54,6 +54,7 @@ def makeBayesEstimates3d(
         priorGrid=priorGrid,
         globalParams=globalParams.getArgs(),
         returnPosteriors=returnPosteriors,
+        computeMrTrue=globalParams.computeMrTrue,  # === NEW: static toggle, taken from the dataclass ===
     )
     results = BayesResults(*jax.lax.map(func, colorsAndIndices, batch_size=batchSize))
     # Create the DataFrame with the expectation values and uncertainties
@@ -193,13 +194,14 @@ def postProcess(
     }
 
 
-def getEstimatesMeta():
-    """Creates an empty pd.DataFrame with the meta for the results"""
+def getEstimatesMeta(computeMrTrue: bool = False):  # === CHANGED: new param ===
     quantileCols = [
         f"{statisticsName}_quantile_{quantile}"
         for statisticsName in [cc.abs_mag_r, cc.metallicity, cc.extinction_r, cc.abs_mag_ext_r]
         for quantile in ["lo", "median", "hi"]
     ]
+    if computeMrTrue:  # === NEW ===
+        quantileCols += [f"Mr_true_quantile_{q}" for q in ["lo", "median", "hi"]]
     estimateCols = sorted(
         [*quantileCols, cc.abs_mag_r_entropy_drop, cc.metallicity_entropy_drop, cc.extinction_r_entropy_drop]
     )
