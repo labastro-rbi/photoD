@@ -13,7 +13,7 @@ from mocpy import MOC
 from photod.parameters import GlobalParams
 from photod.priors import getPriorMapIndex, initializePriorGrid, make3Dprior
 from photod.results import BayesResults
-from photod.stats import Entropy, getMargDistr3D, getPosteriorQuantiles, getQrQuantiles, getMrTrueQuantiles  # === NEW: getMrTrueQuantiles ===
+from photod.stats import Entropy, getMargDistr3D, getPosteriorQuantiles, getQrQuantiles, getMrTrueQuantiles 
 
 from photod.column_map.base import mapper_from_glossary
 from pathlib import Path
@@ -54,7 +54,7 @@ def makeBayesEstimates3d(
         priorGrid=priorGrid,
         globalParams=globalParams.getArgs(),
         returnPosteriors=returnPosteriors,
-        computeMrTrue=globalParams.computeMrTrue,  # === NEW: static toggle, taken from the dataclass ===
+        computeMrTrue=globalParams.computeMrTrue,  # static toggle, taken from the dataclass
     )
     results = BayesResults(*jax.lax.map(func, colorsAndIndices, batch_size=batchSize))
     # Create the DataFrame with the expectation values and uncertainties
@@ -104,12 +104,12 @@ def getColorsAndPriorIndices(catalog, params):
     priorIndices = jnp.array(getPriorMapIndex(catalog[cc.observed_mag_r]))
     return colors, colorsErr, priorIndices
 
-# === CHANGED: added "computeMrTrue" as a new static arg, same treatment as returnPosteriors ===
+# added "computeMrTrue" as a new static arg, same treatment as returnPosteriors 
 @partial(jax.jit, static_argnames=("returnPosteriors", "computeMrTrue"))
 def loopOverEachStar(starData, priorGrid, globalParams, returnPosteriors, computeMrTrue=False):
     """Internal method with the logic to be run for each star."""
     colors, colorsErr, priorIndices = starData
-    # === CHANGED: unpack the two new globalParams entries ===
+    
     (
         locusColors, Ar1d, FeH1d, Mr1d, dFeH, dMr,
         QrGrid, QrIndices, MrTrueGrid, MrTrueIndices,
@@ -155,7 +155,7 @@ def getMargPosteriors(priorCube, likeCube, postCube, dMr, dFeH, dAr):
     return margpostMr, margpostFeH, margpostAr
 
 
-# === CHANGED: added MrTrueGrid, MrTrueIndices, computeMrTrue params ===
+
 def postProcess(
     Ar1d, FeH1d, Mr1d, postCube, QrGrid, QrIndices, margpostMr, margpostFeH, margpostAr,
     MrTrueGrid=None, MrTrueIndices=None, computeMrTrue=False,
@@ -177,14 +177,13 @@ def postProcess(
         for i, quantile in enumerate(quantiles)
     }
 
-    # === NEW: this branch is on a *static* python bool, so it's a compile-time
+    # this branch is on a *static* python bool, so it's a compile-time
     # choice (not a runtime jnp.where) -- no extra cost at trace/run time when
-    # computeMrTrue=False, and no ConcretizationTypeError either way. ===
+    # computeMrTrue=False, and no ConcretizationTypeError either way. 
     if computeMrTrue:
         MrTrueQuantiles = getMrTrueQuantiles(postCube, MrTrueGrid, MrTrueIndices)
         for i, quantile in enumerate(MrTrueQuantiles):
             posteriorsDict[f"Mr_true_quantile_{quantile_names[i]}"] = quantile
-    # === END NEW ===
 
     return {
         **posteriorsDict,
@@ -194,13 +193,13 @@ def postProcess(
     }
 
 
-def getEstimatesMeta(computeMrTrue: bool = False):  # === CHANGED: new param ===
+def getEstimatesMeta(computeMrTrue: bool = False):  
     quantileCols = [
         f"{statisticsName}_quantile_{quantile}"
         for statisticsName in [cc.abs_mag_r, cc.metallicity, cc.extinction_r, cc.abs_mag_ext_r]
         for quantile in ["lo", "median", "hi"]
     ]
-    if computeMrTrue:  # === NEW ===
+    if computeMrTrue: 
         quantileCols += [f"Mr_true_quantile_{q}" for q in ["lo", "median", "hi"]]
     estimateCols = sorted(
         [*quantileCols, cc.abs_mag_r_entropy_drop, cc.metallicity_entropy_drop, cc.extinction_r_entropy_drop]

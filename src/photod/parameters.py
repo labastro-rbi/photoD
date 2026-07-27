@@ -17,7 +17,7 @@ class GlobalParams:
     MrColumn: str = "Mr"
     ArGridRange: str = 'Large'
 
-    # === NEW: toggle for tLoc -> Mr_true recalculation ===
+    # toggle for tLoc -> Mr_true recalculation 
     computeMrTrue: bool = False
     # Column name in locusData holding the TRUE Mr value (as opposed to
     # yLabel, which may be "tLoc"). Only used when computeMrTrue=True.
@@ -26,7 +26,6 @@ class GlobalParams:
     # from locusData[trueMrLabel]. Only set this yourself if you want to
     # supply a table from somewhere other than locusData.
     MrTrueTable: np.ndarray = None
-    # === END NEW ===
 
     def __post_init__(self):
         self.Ar1d = self.ArGridList["Ar{}".format(self.ArGridRange)]
@@ -39,7 +38,7 @@ class GlobalParams:
         Qr = jnp.round(Mr + Ar, 3)
         self.QrGrid, self.QrIndices = jnp.unique(Qr, return_inverse=True)
 
-        # === NEW: precompute the Mr_true value grid + indices, once ===
+        #  precompute the Mr_true value grid + indices, once =
         if self.computeMrTrue:
             if self.MrTrueTable is None:
                 # auto-derive directly from locusData -- no manual table needed
@@ -61,7 +60,6 @@ class GlobalParams:
         else:
             self.MrTrueGrid = jnp.zeros(1)
             self.MrTrueIndices = jnp.zeros((self.FeH1d.size, self.Mr1d.size), dtype=jnp.int32)
-        # === END NEW ===
 
     def _extractMrAndFeH(self):
         FeHGrid = self.locusData[self.xLabel]
@@ -75,7 +73,7 @@ class GlobalParams:
         self.dFeH = dFeH
         self.dMr = dMr
 
-    # === NEW ===
+
     def _extractMrTrueTable(self):
         """Build the (FeH, yLabel) -> true Mr lookup table directly from locusData.
 
@@ -89,7 +87,7 @@ class GlobalParams:
         nY = self.Mr1d.size  # size of the yLabel (tLoc) grid
         trueMrGrid = np.asarray(self.locusData[self.trueMrLabel]).reshape(nFeH, nY)
         return trueMrGrid
-    # === END NEW ===
+
 
     def getArgs(self):
         """Arguments to run the calculations for each star"""
@@ -102,8 +100,8 @@ class GlobalParams:
             self.dMr,
             self.QrGrid,
             self.QrIndices,
-            self.MrTrueGrid,      # === NEW ===
-            self.MrTrueIndices,   # === NEW ===
+            self.MrTrueGrid,      
+            self.MrTrueIndices,   
         )
 
     def getPlottingArgs(self):

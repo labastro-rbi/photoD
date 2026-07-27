@@ -451,5 +451,6 @@ def getMrFromFeHtLoc(df, locus):
     tLoc1D=np.unique(locus['tLoc'])
     df['Mr_quantile_median']=interpn((FeH1D, tLoc1D),
                                       locus['Mr'].reshape(len(FeH1D),len(tLoc1D)),
-                                      (df['FeH_quantile_median'],df['tLoc_quantile_median']))
+                                      (df['FeH_quantile_median'],df['tLoc_quantile_median']),
+                                    bounds_error=False,)
     return df
