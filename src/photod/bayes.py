@@ -103,17 +103,24 @@ def getColorsAndPriorIndices(catalog, params):
     priorIndices = jnp.array(getPriorMapIndex(catalog[cc.observed_mag_r]))
     return colors, colorsErr, priorIndices
 
-
-@partial(jax.jit, static_argnames="returnPosteriors")
-def loopOverEachStar(starData, priorGrid, globalParams, returnPosteriors):
+# === CHANGED: added "computeMrTrue" as a new static arg, same treatment as returnPosteriors ===
+@partial(jax.jit, static_argnames=("returnPosteriors", "computeMrTrue"))
+def loopOverEachStar(starData, priorGrid, globalParams, returnPosteriors, computeMrTrue=False):
     """Internal method with the logic to be run for each star."""
     colors, colorsErr, priorIndices = starData
-    locusColors, Ar1d, FeH1d, Mr1d, dFeH, dMr, QrGrid, QrIndices = globalParams
+    # === CHANGED: unpack the two new globalParams entries ===
+    (
+        locusColors, Ar1d, FeH1d, Mr1d, dFeH, dMr,
+        QrGrid, QrIndices, MrTrueGrid, MrTrueIndices,
+    ) = globalParams
     chi2map = calculateChi2(colors, colorsErr, locusColors)
     dAr, likeCube, priorCube, chi2min = likeAndPrior(Ar1d, FeH1d, Mr1d, chi2map, priorGrid, priorIndices)
     postCube = priorCube * likeCube
     margPost = getMargPosteriors(priorCube, likeCube, postCube, dMr, dFeH, dAr)
-    statistics = postProcess(Ar1d, FeH1d, Mr1d, postCube, QrGrid, QrIndices, *margPost)
+    statistics = postProcess(
+        Ar1d, FeH1d, Mr1d, postCube, QrGrid, QrIndices, *margPost,
+        MrTrueGrid=MrTrueGrid, MrTrueIndices=MrTrueIndices, computeMrTrue=computeMrTrue,  # === NEW ===
+    )
     otherInfo = [likeCube, priorCube, postCube, *margPost] if returnPosteriors else []
     return chi2min, statistics, *otherInfo
 
@@ -147,7 +154,11 @@ def getMargPosteriors(priorCube, likeCube, postCube, dMr, dFeH, dAr):
     return margpostMr, margpostFeH, margpostAr
 
 
-def postProcess(Ar1d, FeH1d, Mr1d, postCube, QrGrid, QrIndices, margpostMr, margpostFeH, margpostAr):
+# === CHANGED: added MrTrueGrid, MrTrueIndices, computeMrTrue params ===
+def postProcess(
+    Ar1d, FeH1d, Mr1d, postCube, QrGrid, QrIndices, margpostMr, margpostFeH, margpostAr,
+    MrTrueGrid=None, MrTrueIndices=None, computeMrTrue=False,
+):
     """Get expectation values and uncertainties marginalize and get statistics."""
 
     MrQuantiles = getPosteriorQuantiles(Mr1d, margpostMr[2])
@@ -155,7 +166,6 @@ def postProcess(Ar1d, FeH1d, Mr1d, postCube, QrGrid, QrIndices, margpostMr, marg
     ArQuantiles = getPosteriorQuantiles(Ar1d, margpostAr[2])
     QrQuantiles = getQrQuantiles(postCube, QrGrid, QrIndices)
 
-    # Calculate the quantiles for Mr, FeH and Ar and add them as columns to the result
     quantile_names = ["lo", "median", "hi"]
     posteriorsDict = {
         f"{statisticsName}_quantile_{quantile_names[i]}": quantile
@@ -165,6 +175,15 @@ def postProcess(Ar1d, FeH1d, Mr1d, postCube, QrGrid, QrIndices, margpostMr, marg
         )
         for i, quantile in enumerate(quantiles)
     }
+
+    # === NEW: this branch is on a *static* python bool, so it's a compile-time
+    # choice (not a runtime jnp.where) -- no extra cost at trace/run time when
+    # computeMrTrue=False, and no ConcretizationTypeError either way. ===
+    if computeMrTrue:
+        MrTrueQuantiles = getMrTrueQuantiles(postCube, MrTrueGrid, MrTrueIndices)
+        for i, quantile in enumerate(MrTrueQuantiles):
+            posteriorsDict[f"Mr_true_quantile_{quantile_names[i]}"] = quantile
+    # === END NEW ===
 
     return {
         **posteriorsDict,

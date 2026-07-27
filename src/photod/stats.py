@@ -44,3 +44,21 @@ def getQrQuantiles(postCube, QrGrid, QrIndices):
     quantiles = jnp.array([0.14, 0.5, 0.86])
     QrQuantiles = jnp.interp(quantiles, cdf, QrGrid)
     return QrQuantiles
+
+# === NEW: exact analogue of getQrQuantiles, for Mr_true ===
+def getMrTrueQuantiles(postCube, MrTrueGrid, MrTrueIndices):
+    """Weighted quantiles of Mr_true = f(tLoc, FeH), reusing the postCube weights.
+
+    postCube is (FeH, Mr, Ar). We marginalize out Ar (axis=2), giving a
+    (FeH, Mr)-shaped weight map that lines up directly with MrTrueIndices
+    (no transpose needed, unlike getQrQuantiles, because MrTrueIndices was
+    built with meshgrid(FeH1d, Mr1d, indexing="ij") -- i.e. already (FeH, Mr)).
+    """
+    margPdfOverAr = jnp.sum(postCube, axis=2)
+    weightsMrTrue = jnp.zeros_like(MrTrueGrid)
+    weightsMrTrue = weightsMrTrue.at[MrTrueIndices].add(margPdfOverAr)
+    cumsum = jnp.cumsum(weightsMrTrue)
+    cdf = (cumsum - 0.5 * weightsMrTrue) / cumsum[-1]
+    quantiles = jnp.array([0.14, 0.5, 0.86])
+    return jnp.interp(quantiles, cdf, MrTrueGrid)
+# === END NEW ===
