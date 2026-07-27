@@ -57,7 +57,8 @@ def subsampleLocusData(locusData, kMr, kFeH, xLabel = "FeH", yLabel = "Mr", verb
             subsampled.add_row(locusData[k])
     return subsampled
 
-# This is a ew function that can handle any grid shape, but it is a bit slower (made with LLM)
+# This is a new function that can handle any grid shape, but it is a bit slower (made with LLM)
+### Not used.
 def subsampleLocusData_new(locusData, kMr, kFeH, verbose=True):
     xLabel = "FeH"
     yLabel = "Mr"
