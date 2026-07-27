@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import jax.numpy as jnp
 import numpy as np
 from photod.priors import readPriors
@@ -17,13 +17,14 @@ class GlobalParams:
     MrColumn: str = "Mr"
     ArGridRange: str = 'Large'
 
-    # === NEW: toggle + table for tLoc -> Mr_true recalculation ===
-    # computeMrTrue is a plain python bool (static, not traced) -- it must be
-    # passed separately to jax.jit functions as a static_argname, never inside
-    # the getArgs() tuple, or tracing will break on the `if` branches.
+    # === NEW: toggle for tLoc -> Mr_true recalculation ===
     computeMrTrue: bool = False
-    # MrTrueTable must be a (FeH1d.size, Mr1d.size) array giving the Mr_true
-    # value to use for tLoc <= 4 (looked up on the same grid as postCube).
+    # Column name in locusData holding the TRUE Mr value (as opposed to
+    # yLabel, which may be "tLoc"). Only used when computeMrTrue=True.
+    trueMrLabel: str = "Mr"
+    # Optional manual override -- normally left None so it's auto-derived
+    # from locusData[trueMrLabel]. Only set this yourself if you want to
+    # supply a table from somewhere other than locusData.
     MrTrueTable: np.ndarray = None
     # === END NEW ===
 
@@ -39,27 +40,25 @@ class GlobalParams:
         self.QrGrid, self.QrIndices = jnp.unique(Qr, return_inverse=True)
 
         # === NEW: precompute the Mr_true value grid + indices, once ===
-        # This mirrors the Qr pattern exactly. It's built once per run (not
-        # per star), so doing this here -- rather than inside the per-star
-        # jitted loop -- is what makes it cheap at millions of calls.
         if self.computeMrTrue:
             if self.MrTrueTable is None:
-                raise ValueError("computeMrTrue=True requires MrTrueTable to be provided.")
+                # auto-derive directly from locusData -- no manual table needed
+                self.MrTrueTable = self._extractMrTrueTable()
+
             expectedShape = (self.FeH1d.size, self.Mr1d.size)
             if self.MrTrueTable.shape != expectedShape:
                 raise ValueError(
                     f"MrTrueTable shape {self.MrTrueTable.shape} does not match "
-                    f"expected (FeH1d.size, Mr1d.size) = {expectedShape}. "
-                    "Transpose your table if it's oriented (Mr, FeH) instead."
+                    f"expected (FeH1d.size, {self.yLabel}1d.size) = {expectedShape}."
                 )
-            FeHGridMesh, MrGridMesh = jnp.meshgrid(self.FeH1d, self.Mr1d, indexing="ij")
-            MrTrueRaw = jnp.where(MrGridMesh > 4, MrGridMesh, jnp.asarray(self.MrTrueTable))
+
+            # grid of the yLabel values (tLoc), same shape as MrTrueTable
+            FeHGridMesh, yLabelGridMesh = jnp.meshgrid(self.FeH1d, self.Mr1d, indexing="ij")
+            # Mr_true = tLoc itself when tLoc > 4, else the true Mr looked up from locusData
+            MrTrueRaw = jnp.where(yLabelGridMesh > 4, yLabelGridMesh, jnp.asarray(self.MrTrueTable))
             MrTrueRaw = jnp.round(MrTrueRaw, 3)
             self.MrTrueGrid, self.MrTrueIndices = jnp.unique(MrTrueRaw, return_inverse=True)
         else:
-            # Harmless placeholders so getArgs() always returns a fixed-shape
-            # tuple regardless of the toggle -- these are never touched when
-            # computeMrTrue=False, since that's also a static jit argument.
             self.MrTrueGrid = jnp.zeros(1)
             self.MrTrueIndices = jnp.zeros((self.FeH1d.size, self.Mr1d.size), dtype=jnp.int32)
         # === END NEW ===
@@ -75,6 +74,22 @@ class GlobalParams:
         self.Mr1d = Mr1d
         self.dFeH = dFeH
         self.dMr = dMr
+
+    # === NEW ===
+    def _extractMrTrueTable(self):
+        """Build the (FeH, yLabel) -> true Mr lookup table directly from locusData.
+
+        locusData already carries both the grid column (self.yLabel, e.g. "tLoc")
+        and the true Mr column (self.trueMrLabel, e.g. "Mr") on the same rows.
+        This mirrors the exact reshape used in make3DlocusList
+        (LocusNP.reshape(FeH1d.size, Mr1d.size)), so it relies on locusData
+        being laid out on that same regular grid.
+        """
+        nFeH = self.FeH1d.size
+        nY = self.Mr1d.size  # size of the yLabel (tLoc) grid
+        trueMrGrid = np.asarray(self.locusData[self.trueMrLabel]).reshape(nFeH, nY)
+        return trueMrGrid
+    # === END NEW ===
 
     def getArgs(self):
         """Arguments to run the calculations for each star"""
