@@ -21,7 +21,8 @@ def initializePriorGrid(mapPartition, globalParams):
         priorGrid[rind] = griddata(
             points,
             values,
-            (globalParams.locusData["FeH"], globalParams.locusData[globalParams.MrColumn]),
+# === CHANGED: query at the true-Mr column, not blindly at MrColumn ===
+            (globalParams.locusData["FeH"], globalParams.locusData[globalParams.priorMrColumn]),
             method="linear",
             fill_value=0,
         )
