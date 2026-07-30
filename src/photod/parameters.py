@@ -26,21 +26,10 @@ class GlobalParams:
     # from locusData[trueMrLabel]. Only set this yourself if you want to
     # supply a table from somewhere other than locusData.
     MrTrueTable: np.ndarray = None
-    # which locusData column should priors be evaluated against 
-    # Defaults to MrColumn (old behavior, backward compatible). Set this to
-    # your true-Mr column name (e.g. "Mr") if your prior maps are defined in
-    # terms of true Mr rather than tLoc.
-    priorMrColumn: str = None
 
     def __post_init__(self):
         self.Ar1d = self.ArGridList["Ar{}".format(self.ArGridRange)]
         self._extractMrAndFeH()
-
-        # === NEW ===
-        if self.priorMrColumn is None:
-            self.priorMrColumn = self.MrColumn
-        # === END NEW ===
-        
         locusColors3d = self.locus3DList["Ar{}".format(self.ArGridRange)]
         self.locusColors = np.stack([locusColors3d[color] for color in self.fitColors], axis=-1)
 
