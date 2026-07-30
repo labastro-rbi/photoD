@@ -18,13 +18,16 @@ def initializePriorGrid(mapPartition, globalParams):
         points = np.array((X.flatten(), Y.flatten())).T
         values = Zval.flatten()
         # actual (linear) interpolation
-        priorGrid[rind] = griddata(
+        #NEW
+        priorVals = griddata(
             points,
             values,
             (globalParams.locusData["FeH"], globalParams.locusData[globalParams.MrColumn]),
             method="linear",
             fill_value=0,
         )
+        # === NEW: apply Jacobian correction, row-order matches locusData ===
+        priorGrid[rind] = priorVals * globalParams.priorJacobian.reshape(-1)
     return priorGrid
 
 

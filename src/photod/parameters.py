@@ -57,6 +57,13 @@ class GlobalParams:
             MrTrueRaw = jnp.where(yLabelGridMesh > 4, yLabelGridMesh, jnp.asarray(self.MrTrueTable))
             MrTrueRaw = jnp.round(MrTrueRaw, 3)
             self.MrTrueGrid, self.MrTrueIndices = jnp.unique(MrTrueRaw, return_inverse=True)
+            # === NEW: in GlobalParams.__post_init__, after MrTrueTable is built ===
+            # Jacobian |d(Mr_true)/d(tLoc)| at each (FeH, tLoc) grid point, needed to
+            # correctly convert a prior density defined in Mr into a density in tLoc.
+            dTLoc = self.Mr1d[1] - self.Mr1d[0]  # tLoc grid spacing (yLabel axis)
+            jacobian2d = np.abs(np.gradient(self.MrTrueTable, dTLoc, axis=1))
+            # guard against exact-zero Jacobian at degenerate/flat points (would zero out prior)
+            self.priorJacobian = np.where(jacobian2d > 1e-6, jacobian2d, 1e-6)
         else:
             self.MrTrueGrid = jnp.zeros(1)
             self.MrTrueIndices = jnp.zeros((self.FeH1d.size, self.Mr1d.size), dtype=jnp.int32)
