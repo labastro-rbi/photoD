@@ -116,6 +116,7 @@ def loopOverEachStar(starData, priorGrid, globalParams, returnPosteriors, comput
     ) = globalParams
     chi2map = calculateChi2(colors, colorsErr, locusColors)
     dAr, likeCube, priorCube, chi2min = likeAndPrior(Ar1d, FeH1d, Mr1d, chi2map, priorGrid, priorIndices)
+    ## here change from Mr to tLoc
     postCube = priorCube * likeCube
     margPost = getMargPosteriors(priorCube, likeCube, postCube, dMr, dFeH, dAr)
     statistics = postProcess(
