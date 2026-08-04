@@ -454,3 +454,185 @@ def getMrFromFeHtLoc(df, locus):
                                       (df['FeH_quantile_median'],df['tLoc_quantile_median']),
                                     bounds_error=False,)
     return df
+
+
+def splitMonotonicSegments(tLocVals, MrTrueVals, minSegmentLen=4):
+    """
+    This is used in assignTLocFromLabel function which transforms Mr to tLoc
+    taking trilegal 'label' into account where it is ambiguous.
+    Split a (tLoc, Mr_true) curve (for one fixed FeH row, tLoc ascending)
+    into monotonic runs. Tiny spurious segments (numerical noise, e.g. from
+    rounding in MrTrueTable) shorter than minSegmentLen points get merged
+    into their neighbor.
+
+    Returns a list of (startIdx, endIdx) index pairs into tLocVals, ordered
+    by tLoc ascending (i.e. NOT yet ordered by evolutionary sequence --
+    that ordering/labeling is done by the caller).
+    """
+    diffs = np.diff(MrTrueVals)
+    signs = np.sign(diffs)
+    signs[signs == 0] = signs[signs != 0][0] if np.any(signs != 0) else 1
+
+    breakpoints = [0]
+    for i in range(1, len(signs)):
+        if signs[i] != signs[i - 1]:
+            breakpoints.append(i)
+    breakpoints.append(len(tLocVals) - 1)
+
+    segments = [(breakpoints[i], breakpoints[i + 1]) for i in range(len(breakpoints) - 1)]
+
+    # merge segments shorter than minSegmentLen into the previous one
+    merged = []
+    for seg in segments:
+        if merged and (seg[1] - seg[0]) < minSegmentLen:
+            merged[-1] = (merged[-1][0], seg[1])
+        else:
+            merged.append(list(seg))
+    return [tuple(s) for s in merged]
+
+
+def assignTLocFromLabel(
+    trilegalCatalog,
+    globalParams,
+    segmentLabelMap={np.float64(-2.5): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-2.4): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-2.3): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-2.2): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-2.1): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-2.0): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-1.9): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-1.8): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-1.7): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-1.6): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-1.5): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-1.4): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-1.3): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-1.2): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-1.1): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-1.0): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-0.9): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-0.8): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-0.7): {2: {0, 1, 2}, 1: {3,4,5,6,7}, 0: {8}},
+         np.float64(-0.6): {2: {0, 1, 2}, 1: {3,4,5,6,7}, 0: {8}},      
+         np.float64(-0.5): {2: {0, 1, 2}, 1: {3,4,5,6,7}, 0: {8}},
+         np.float64(-0.4): {3: {0, 1}, 2: {2}, 1: {3,4,5,6,7}, 0: {8}},
+         np.float64(-0.3): {3: {0, 1}, 2: {2}, 1: {3,4,5,6,7}, 0: {8}},
+         np.float64(-0.2): {4: {0, 1}, 3: {2}, 2: {3,4,5,6,7}, 1: {8}, 0: {}},
+         np.float64(-0.1): {3: {0, 1,2}, 2: {3,4,5,6,7}, 1: {8}, 0: {}},
+         np.float64(0.0): {4: {0, 1}, 3: {2}, 2: {3,4,5,6,7}, 1: {8}, 0: {}},     
+         np.float64(0.1): {4: {0, 1}, 3: {2}, 2: {3,4,5,6,7}, 1: {8}, 0: {}},
+         np.float64(0.2): {3: {0, 1}, 2: {2,3,4,5,6,7}, 1: {8}, 0: {}},
+         np.float64(0.3): {5: {0, 1}, 4: {2}, 3: {3,4,5,6,7}, 2: {8}, 1: {}, 0: {}},
+         np.float64(0.4): {5: {0, 1}, 4: {2}, 3: {3,4,5,6,7}, 2: {8}, 1: {}, 0: {}},
+         np.float64(0.5): {5: {0, 1}, 4: {2}, 3: {3,4,5,6,7}, 2: {8}, 1: {}, 0: {}}},
+    turnoffTLoc=4.0,
+    starFeHCol="FeH",
+    starMrCol="Mr",
+    starLabelCol="label",
+    newCol="tLoc",
+):    
+    """
+    Function which transforms Mr to tLoc taking trilegal 'label' into account
+    where it is ambiguous.
+
+    segmentLabelMap defaults to hardcoded version for LSSTlocus_10Gyr_fix.txt
+    """
+    FeH1d = globalParams.FeH1d
+    tLoc1d = globalParams.Mr1d
+    degenMask = tLoc1d <= turnoffTLoc
+    tLocDegen = tLoc1d[degenMask]
+
+    isPerFeH = any(isinstance(v, dict) for v in segmentLabelMap.values())
+
+    starFeH = trilegalCatalog[starFeHCol].to_numpy()
+    starMr = trilegalCatalog[starMrCol].to_numpy()
+    starLabel = trilegalCatalog[starLabelCol].to_numpy()
+
+    tLocOut = np.full(len(trilegalCatalog), np.nan)
+
+    unambigMask = starMr > turnoffTLoc
+    tLocOut[unambigMask] = starMr[unambigMask]
+
+    idx = np.clip(np.searchsorted(FeH1d, starFeH), 1, len(FeH1d) - 1)
+    left, right = FeH1d[idx - 1], FeH1d[idx]
+    feHIdx = np.where(np.abs(starFeH - left) <= np.abs(starFeH - right), idx - 1, idx)
+
+    remaining = ~unambigMask
+    ambiguousFallbackCount = 0
+    outOfRangeCount = 0
+
+    for i in np.unique(feHIdx[remaining]):
+        rowMask = remaining & (feHIdx == i)
+        if not np.any(rowMask):
+            continue
+
+        MrTrueDegenRow = globalParams.MrTrueTable[i][degenMask]
+        segments = splitMonotonicSegments(tLocDegen, MrTrueDegenRow)
+
+        if isPerFeH:
+            fehVal = FeH1d[i]
+            localMap = segmentLabelMap.get(fehVal, segmentLabelMap.get("default", {}))
+        else:
+            localMap = segmentLabelMap
+
+        # === NEW: precompute each segment's true (non-clamped) Mr range,
+        # and check, per star, which segments it actually falls inside ===
+        segRanges = []
+        segInterpData = []
+        for s, e in segments:
+            segTLoc = tLocDegen[s:e + 1]
+            segMrTrue = MrTrueDegenRow[s:e + 1]
+            order = np.argsort(segMrTrue)
+            segMrTrueSorted = segMrTrue[order]
+            segTLocSorted = segTLoc[order]
+            segRanges.append((segMrTrueSorted[0], segMrTrueSorted[-1]))
+            segInterpData.append((segMrTrueSorted, segTLocSorted))
+
+        starIdxThisFeH = np.where(rowMask)[0]
+        for starIdx in starIdxThisFeH:
+            mrVal = starMr[starIdx]
+            inRangeSegs = [
+                segIdx for segIdx, (lo, hi) in enumerate(segRanges)
+                if lo <= mrVal <= hi
+            ]
+
+            if len(inRangeSegs) == 1:
+                # unique physical match -- use it regardless of label
+                segIdx = inRangeSegs[0]
+            elif len(inRangeSegs) > 1:
+                # genuinely ambiguous -- fall back to label to disambiguate
+                # among only the segments the star could plausibly be on
+                labMatches = [
+                    segIdx for segIdx in inRangeSegs
+                    if starLabel[starIdx] in localMap.get(segIdx, set())
+                ]
+                if len(labMatches) == 1:
+                    segIdx = labMatches[0]
+                elif len(labMatches) > 1:
+                    segIdx = labMatches[0]  # ties: arbitrary, but flagged below
+                    ambiguousFallbackCount += 1
+                else:
+                    outOfRangeCount += 1
+                    continue  # label doesn't match any candidate segment; leave NaN
+            else:
+                # mrVal outside ALL segments' true ranges at this FeH
+                outOfRangeCount += 1
+                continue
+
+            segMrTrueSorted, segTLocSorted = segInterpData[segIdx]
+            tLocOut[starIdx] = np.interp(mrVal, segMrTrueSorted, segTLocSorted)
+
+    if ambiguousFallbackCount:
+        print(f"NOTE: {ambiguousFallbackCount} stars had Mr consistent with multiple "
+              "segments AND label matched more than one -- resolved arbitrarily "
+              "(first match). Consider refining segmentLabelMap for these cases.")
+    if outOfRangeCount:
+        print(f"WARNING: {outOfRangeCount} stars' Mr fell outside all segments' true "
+              "ranges at their FeH, or label didn't match any in-range candidate -- left unassigned.")
+
+    nUnassigned = np.sum(np.isnan(tLocOut))
+    if nUnassigned > 0:
+        print(f"WARNING: {nUnassigned} stars got no tLoc match.")
+
+    trilegalCatalog[newCol] = tLocOut
+    return trilegalCatalog
