@@ -346,7 +346,7 @@ def with_kdtree(x_model: np.ndarray, x_data, y_model, y_data):
     tree = KDTree(np.stack([x_model, y_model], axis=-1))
     return tree.query(np.stack([x_data, y_data], axis=-1))
 
-def getColorsFromMrFeHDSED(L, Lvalues, colors=''):
+def getColorsFromMrFeHDSED(L, Lvalues, colors='', Mr_label='Mr'):
     # L is an astropy Table, Lvalues a Pandas DataFrame
     # Prebaciti sve u numpy pa probati vrtiti kao loop
     # taj kod zapravo nije ni bitan za LSST jer sada se koristi samo zato da se poprave boje koje nisu dobre u TRILEGALu
@@ -362,10 +362,10 @@ def getColorsFromMrFeHDSED(L, Lvalues, colors=''):
     # Find indices of minimum distances for each row
     ## min_indices = np.argmin(distSq_total, axis=0)
 
-    min_indices = with_kdtree(L['Mr'], Lvalues['Mr'], L['FeH'], Lvalues['FeH'])[1]
+    min_indices = with_kdtree(L[Mr_label], Lvalues[Mr_label], L['FeH'], Lvalues['FeH'])[1]
     
     # Assign values to Lvalues based on minimum distances
-    Lvalues['MrAssigned'] = L['Mr'][min_indices].data
+    Lvalues['{}Assigned'.format(Mr_label)] = L[Mr_label][min_indices].data
     for c in colors:
         Lvalues[c] = L[c][min_indices].data
 
