@@ -122,10 +122,10 @@ def showCornerPlot3(
     axs[1, 2].set_axis_off()
 
     # row 3: im2, im3, and marginal Ar
-    myExtent = [xMin, xMax, zMin, zMax]
+    myExtent = [xMin, xMax, zMax, zMin]
     cmap = oneImage(axs[2, 0], im2, myExtent, "", showTrue, x0, z0, origin="lower", logScale=logScale)
     axs[2, 0].set(xlabel="FeH", ylabel="Ar")
-    myExtent = [yMax, yMin, zMin, zMax]
+    myExtent = [yMax, yMin, zMax, zMin]
     cmap = oneImage(axs[2, 1], im3, myExtent, "", showTrue, y0, z0, origin="lower", logScale=logScale)
     axs[2, 1].set(xlabel="Mr", ylabel="Ar")
     axs[2, 2].plot(Ar1d, margAr, "r", lw=3)
@@ -218,7 +218,7 @@ def showQrCornerPlot(postCube, Mr1d, FeH1d, Ar1d, x0=-99, y0=-99, z0=-99, logSca
     return Qr1d, margQr
 
 
-def show3Flat2Dmaps(Z1, Z2, Z3, md, xLab, yLab, x0=-99, y0=-99, logScale=False, minFac=1000, cmap="Blues"):
+def show3Flat2Dmaps(Z1, Z2, Z3, md, xLab, yLab, x0=-99, y0=-99, logScale=False, minFac=1000, cmap="Blues", file_ext=None):
 
     # unpack metadata
     xMin = md[0]
@@ -229,8 +229,8 @@ def show3Flat2Dmaps(Z1, Z2, Z3, md, xLab, yLab, x0=-99, y0=-99, logScale=False, 
     nYbin = md[5]
     # set local variables and
     myExtent = [xMin, xMax, yMin, yMax]
-    Xpts = nXbin.astype(int)
-    Ypts = nYbin.astype(int)
+    Xpts = nXbin#.astype(int)
+    Ypts = nYbin#.astype(int)
     # reshape flattened input arrays to get "images"
     im1 = Z1.reshape((Xpts, Ypts))
     im2 = Z2.reshape((Xpts, Ypts))
@@ -280,7 +280,7 @@ def show3Flat2Dmaps(Z1, Z2, Z3, md, xLab, yLab, x0=-99, y0=-99, logScale=False, 
     for ax in axs.flat:
         ax.set(xlabel=xLab, ylabel=yLab)
 
-    plt.savefig("plots/bayesPanels.png")
+    plt.savefig("plots/bayesPanels{}.png".format(file_ext))
     plt.show()
 
 
