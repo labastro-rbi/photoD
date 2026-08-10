@@ -490,6 +490,93 @@ def splitMonotonicSegments(tLocVals, MrTrueVals, minSegmentLen=4):
             merged.append(list(seg))
     return [tuple(s) for s in merged]
 
+def buildSegmentData(
+    globalParams,
+    segmentLabelMap={np.float64(-2.5): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-2.4): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-2.3): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-2.2): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-2.1): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-2.0): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-1.9): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-1.8): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-1.7): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-1.6): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-1.5): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-1.4): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-1.3): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-1.2): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-1.1): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-1.0): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-0.9): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-0.8): {0: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+         np.float64(-0.7): {2: {0, 1, 2}, 1: {3,4,5,6,7,9}, 0: {8}},
+         np.float64(-0.6): {2: {0, 1, 2}, 1: {3,4,5,6,7,9}, 0: {8}},      
+         np.float64(-0.5): {2: {0, 1, 2}, 1: {3,4,5,6,7,9}, 0: {8}},
+         np.float64(-0.4): {3: {0, 1}, 2: {2}, 1: {3,4,5,6,7,9}, 0: {8}},
+         np.float64(-0.3): {3: {0, 1}, 2: {2}, 1: {3,4,5,6,7,9}, 0: {8}},
+         np.float64(-0.2): {4: {0, 1}, 3: {2}, 2: {3,4,5,6,7,9}, 1: {8}, 0: {}},
+         np.float64(-0.1): {3: {0, 1,2}, 2: {3,4,5,6,7,9}, 1: {8}, 0: {}},
+         np.float64(0.0): {4: {0, 1}, 3: {2}, 2: {3,4,5,6,7,9}, 1: {8}, 0: {}},     
+         np.float64(0.1): {4: {0, 1}, 3: {2}, 2: {3,4,5,6,7,9}, 1: {8}, 0: {}},
+         np.float64(0.2): {3: {0, 1}, 2: {2,3,4,5,6,7,9}, 1: {8}, 0: {}},
+         np.float64(0.3): {5: {0, 1}, 4: {2}, 3: {3,4,5,6,7,9}, 2: {8}, 1: {}, 0: {}},
+         np.float64(0.4): {5: {0, 1}, 4: {2}, 3: {3,4,5,6,7,9}, 2: {8}, 1: {}, 0: {}},
+         np.float64(0.5): {5: {0, 1}, 4: {2}, 3: {3,4,5,6,7,9}, 2: {8}, 1: {}, 0: {}}},
+    turnoffTLoc=4.0):
+    """
+    Precompute, ONCE, everything assignTLocFromLabel needs per FeH:
+    segment Mr-ranges, sorted interpolation arrays, and a (10, nSeg)
+    boolean label->segment membership matrix.
+
+    Call this once, then pass the result (via client.scatter, like
+    globalParams) into the per-partition function -- do NOT recompute
+    this inside map_partitions.
+    
+    segmentLabelMap defaults to hardcoded version for LSSTlocus_10Gyr_fix.txt
+    """
+    FeH1d = globalParams.FeH1d
+    tLoc1d = globalParams.Mr1d
+    degenMask = tLoc1d <= turnoffTLoc
+    tLocDegen = tLoc1d[degenMask]
+    isPerFeH = any(isinstance(v, dict) for v in segmentLabelMap.values())
+
+    segmentData = {}
+    for i, feh in enumerate(FeH1d):
+        MrTrueDegenRow = globalParams.MrTrueTable[i][degenMask]
+        segments = splitMonotonicSegments(tLocDegen, MrTrueDegenRow)
+
+        if isPerFeH:
+            localMap = segmentLabelMap.get(feh, segmentLabelMap.get("default", {}))
+        else:
+            localMap = segmentLabelMap
+
+        nSeg = len(segments)
+        ranges = np.zeros((nSeg, 2))
+        interpMr, interpTLoc = [], []
+        labelToSeg = np.zeros((10, nSeg), dtype=bool)
+
+        for segIdx, (s, e) in enumerate(segments):
+            segTLoc = tLocDegen[s:e + 1]
+            segMrTrue = MrTrueDegenRow[s:e + 1]
+            order = np.argsort(segMrTrue)
+            segMrTrueSorted = segMrTrue[order]
+            segTLocSorted = segTLoc[order]
+            ranges[segIdx] = [segMrTrueSorted[0], segMrTrueSorted[-1]]
+            interpMr.append(segMrTrueSorted)
+            interpTLoc.append(segTLocSorted)
+            for lab in localMap.get(segIdx, set()):
+                labelToSeg[lab, segIdx] = True
+
+        segmentData[i] = {
+            "ranges": ranges,
+            "interpMr": interpMr,
+            "interpTLoc": interpTLoc,
+            "labelToSeg": labelToSeg,
+        }
+
+    return segmentData
+    
 
 def assignTLocFromLabel(
     trilegalCatalog,
@@ -636,3 +723,91 @@ def assignTLocFromLabel(
 
     trilegalCatalog[newCol] = tLocOut
     return trilegalCatalog
+
+def assignTLocPartition(
+    df,
+    segmentData,
+    FeH1d,
+    turnoffTLoc=4.0,
+    starFeHCol="FeH",
+    starMrCol="Mr",
+    starLabelCol="label",
+    newCol="tLoc",
+):
+    """
+    Vectorized version of assignTLocFromLabel's core logic, safe/fast to
+    call once per dask partition via map_partitions. No python-level
+    per-star loop; the only loop is over FeH groups (small, <=len(FeH1d))
+    and, within each group, over that FeH's small number of distinct
+    chosen segments (<=nSeg, typically <10) -- both cheap.
+    """
+    starFeH = df[starFeHCol].to_numpy()
+    starMr = df[starMrCol].to_numpy()
+    starLabel = df[starLabelCol].to_numpy().astype(int)
+
+    tLocOut = np.full(len(df), np.nan)
+
+    unambigMask = starMr > turnoffTLoc
+    tLocOut[unambigMask] = starMr[unambigMask]
+
+    idx = np.clip(np.searchsorted(FeH1d, starFeH), 1, len(FeH1d) - 1)
+    left, right = FeH1d[idx - 1], FeH1d[idx]
+    feHIdx = np.where(np.abs(starFeH - left) <= np.abs(starFeH - right), idx - 1, idx)
+
+    remaining = ~unambigMask
+
+    for i in np.unique(feHIdx[remaining]):
+        groupMask = remaining & (feHIdx == i)
+        if not np.any(groupMask):
+            continue
+
+        data = segmentData[i]
+        ranges = data["ranges"]
+        nSeg = ranges.shape[0]
+        if nSeg == 0:
+            continue  # nothing usable at this FeH; stars stay NaN
+
+        groupIdxArr = np.where(groupMask)[0]
+        mrVals = starMr[groupMask]
+        labs = np.clip(starLabel[groupMask], 0, 9)  # guard against out-of-range label values
+
+        # (nStars, nSeg) boolean matrices -- vectorized, no python loop over stars
+        inRange = (mrVals[:, None] >= ranges[None, :, 0]) & (mrVals[:, None] <= ranges[None, :, 1])
+        labelMatch = data["labelToSeg"][labs]  # fancy indexing -> (nStars, nSeg)
+
+        nInRange = inRange.sum(axis=1)
+        segChoice = np.full(mrVals.shape[0], -1, dtype=int)
+
+        # unique physical match: use it regardless of label
+        uniqueMask = nInRange == 1
+        if np.any(uniqueMask):
+            segChoice[uniqueMask] = np.argmax(inRange[uniqueMask], axis=1)
+
+        # genuinely ambiguous: disambiguate via label among in-range candidates only
+        multiMask = nInRange > 1
+        if np.any(multiMask):
+            candMatch = inRange[multiMask] & labelMatch[multiMask]
+            haveMatch = candMatch.any(axis=1)
+            firstMatch = np.argmax(candMatch, axis=1)  # first True, or 0 if none (masked out next)
+            localChoice = np.where(haveMatch, firstMatch, -1)
+            segChoice[multiMask] = localChoice
+        # nInRange == 0 stays segChoice == -1 (left NaN)
+
+        validMask = segChoice >= 0
+        if not np.any(validMask):
+            continue
+
+        validGroupIdx = groupIdxArr[validMask]
+        validSegChoice = segChoice[validMask]
+        validMr = mrVals[validMask]
+
+        # one np.interp call per DISTINCT chosen segment in this group (not per star)
+        for segIdx in np.unique(validSegChoice):
+            sel = validSegChoice == segIdx
+            tLocOut[validGroupIdx[sel]] = np.interp(
+                validMr[sel], data["interpMr"][segIdx], data["interpTLoc"][segIdx]
+            )
+
+    outDf = df.copy()
+    outDf[newCol] = tLocOut
+    return outDf
