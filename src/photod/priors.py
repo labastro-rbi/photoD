@@ -115,10 +115,9 @@ def getBayesConstants():
     return BayesConst
 
 
-def dumpPriorMaps_testing(sample, fileRootname, pix, show2Dmap=False, verbose=True, NrowMax=200000):
+def dumpPriorMaps_testing(sample, fileRootname, pix, show2Dmap=False, verbose=True, NrowMax=200000, labels = ["FeH", "Mr", "rmag"]):
 
     ## data frame called "sample" here must have the following columns: 'FeH', 'Mr', 'rmag'
-    labels = ["FeH", "Mr", "rmag"]
     print("sample", type(sample))
     ## numerical model specifications and constants for Bayesian PhotoD method
     bc = getBayesConstants()
