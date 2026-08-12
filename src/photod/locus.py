@@ -137,6 +137,7 @@ def make3DlocusList(locusData, fitColors, ArGridList, DSED=False, xLabel = "FeH"
     reddCoeffs["gr"] = C["g"] - C["r"]
     reddCoeffs["ri"] = C["r"] - C["i"]
     reddCoeffs["iz"] = C["i"] - C["z"]
+    reddCoeffs["zy"] = C["z"] - C["y"]
 
     # intrinsic table sizes
     FeHGrid = locusData[xLabel]
@@ -174,6 +175,7 @@ def make3DlocusFastDSED(locus3D0, ArGrid, colors, colorCorrection, FeH1d, Mr1d):
                 locus3D[i, j, k][4] = locus3D[i, j, k][4] + colorCorrection["gr"][k]
                 locus3D[i, j, k][5] = locus3D[i, j, k][5] + colorCorrection["ri"][k]
                 locus3D[i, j, k][6] = locus3D[i, j, k][6] + colorCorrection["iz"][k]
+                locus3D[i, j, k][7] = locus3D[i, j, k][7] + colorCorrection["zy"][k]
                 locus3D[i, j, k][9] = ArGrid[k]
     return locus3D
 
@@ -194,12 +196,14 @@ def make3DlocusFast(locus3D0, ArGrid, colors, colorCorrection, FeH1d, Mr1d):
                 locus3D[i, j, k][3] = locus3D[i, j, k][3] + colorCorrection["gr"][k]
                 locus3D[i, j, k][4] = locus3D[i, j, k][4] + colorCorrection["ri"][k]
                 locus3D[i, j, k][5] = locus3D[i, j, k][5] + colorCorrection["iz"][k]
+                locus3D[i, j, k][6] = locus3D[i, j, k][6] + colorCorrection["zy"][k]
                 locus3D[i, j, k][8] = ArGrid[k]
     return locus3D
 
 
 def extcoeff():
     ## coefficients to correct for ISM dust (for S82 from Berry+2012, Table 1)
+    ## y-band coefficient is from https://ui.adsabs.harvard.edu/abs/1989ApJ...345..245C/abstract
     ## extcoeff(band) = A_band / A_r
     extcoeff = {}
     extcoeff["u"] = 1.810
@@ -207,6 +211,7 @@ def extcoeff():
     extcoeff["r"] = 1.000  # by definition
     extcoeff["i"] = 0.759
     extcoeff["z"] = 0.561
+    extcoeff["y"] = 0.484
     return extcoeff
 
 
@@ -372,8 +377,7 @@ def getColorsFromMrFeHDSED(L, Lvalues, colors='', Mr_label='Mr'):
     return Lvalues
 
 def getLSSTm5(data, depth='coadd', magVersion=False, suffix=''):
-    # temporary: only use SDSS colors
-    bandpasses = ['u', 'g', 'r', 'i', 'z']
+    bandpasses = ['u', 'g', 'r', 'i', 'z', 'y']
     # from https://iopscience.iop.org/article/10.3847/1538-4365/ac3e72
     coaddm5 = {}
     coaddm5['u'] = 25.73
@@ -415,10 +419,9 @@ def getLSSTm5(data, depth='coadd', magVersion=False, suffix=''):
     return errors
 
 ### this inverts the error(mag) relation from getLSSTm5 and returns errors for provided magnitudes
-### N.B. getLSSTm5 also assumes SDSS bandpasses (that is, no y band) 
 def getLSSTm5err(mags, depth='coadd'):
     # temporary: only use SDSS colors (no y band)
-    bandpasses = ['u', 'g', 'r', 'i', 'z']
+    bandpasses = ['u', 'g', 'r', 'i', 'z', 'y']
     # arrays for interpolation
     magGrid = np.linspace(10, 30, 2001)  # 0.01 mag steps
     magData = {}
