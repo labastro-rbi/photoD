@@ -45,7 +45,7 @@ def showMargPosteriors3D(
 
 
 def showCornerPlot3(
-    postCube, Mr1d, FeH1d, Ar1d, md, xLab, yLab, x0=-99, y0=-99, z0=-99, logScale=False, cmap="Blues"
+    postCube, Mr1d, FeH1d, Ar1d, md, xLab, yLab, x0=-99, y0=-99, z0=-99, logScale=False, cmap="Blues", saveFig=False
 ):
 
     def oneImage(ax, image, extent, title, showTrue, x0, y0, origin, logScale=True, cmap="Blues"):
@@ -108,26 +108,26 @@ def showCornerPlot3(
     myExtent = [xMin, xMax, yMin, yMax]
     axs[0, 0].plot(FeH1d, margFeH, "r", lw=3)
     axs[0, 0].plot([x0, x0], [0, 1.1 * np.max(margFeH)], "--k", lw=1)
-    axs[0, 0].set(xlabel="FeH", ylabel="p(FeH)")
+    axs[0, 0].set(xlabel=xLab, ylabel="p({})".format(xLab))
     axs[0, 1].set_axis_off()
     axs[0, 2].set_axis_off()
 
     # row 2: im1 and marginal Mr
     myExtent = [xMin, xMax, yMin, yMax]
     cmap = oneImage(axs[1, 0], im1, myExtent, "", showTrue, x0, y0, origin="upper", logScale=logScale)
-    axs[1, 0].set(xlabel="FeH", ylabel="Mr")
+    axs[1, 0].set(xlabel=xLab, ylabel=yLab)
     axs[1, 1].plot(Mr1d, margMr, "r", lw=3)
     axs[1, 1].plot([y0, y0], [0, 1.1 * np.max(margMr)], "--k", lw=1)
-    axs[1, 1].set(xlabel="Mr", ylabel="p(Mr)")
+    axs[1, 1].set(xlabel=yLab, ylabel="p({})".format(yLab))
     axs[1, 2].set_axis_off()
 
     # row 3: im2, im3, and marginal Ar
     myExtent = [xMin, xMax, zMax, zMin]
     cmap = oneImage(axs[2, 0], im2, myExtent, "", showTrue, x0, z0, origin="lower", logScale=logScale)
-    axs[2, 0].set(xlabel="FeH", ylabel="Ar")
+    axs[2, 0].set(xlabel=xLab, ylabel="Ar")
     myExtent = [yMax, yMin, zMax, zMin]
     cmap = oneImage(axs[2, 1], im3, myExtent, "", showTrue, y0, z0, origin="lower", logScale=logScale)
-    axs[2, 1].set(xlabel="Mr", ylabel="Ar")
+    axs[2, 1].set(xlabel=yLab, ylabel="Ar")
     axs[2, 2].plot(Ar1d, margAr, "r", lw=3)
     axs[2, 2].plot([z0, z0], [0, 1.1 * np.max(margAr)], "--k", lw=1)
     axs[2, 2].set(xlabel="Ar", ylabel="p(Ar)")
@@ -143,8 +143,8 @@ def showCornerPlot3(
     # for ax in axs.flat:
     # ax.set(xlabel=xLab, ylabel=yLab)
     # print('pero')
-
-    plt.savefig("plots/cornerPlot3.png")
+    if saveFig:
+        plt.savefig("plots/cornerPlot3.png")
     plt.show()
 
 
