@@ -69,3 +69,6 @@
 - column_id: gr
   description: g band minus r band
   variable: g_minus_r
+- column_id: objectId
+  description: object ID
+  variable: object_id

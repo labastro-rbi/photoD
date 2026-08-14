@@ -60,6 +60,7 @@ def makeBayesEstimates3d(
     # Create the DataFrame with the expectation values and uncertainties
     estimatesDf = pd.DataFrame(
         {
+            cc.object_id: starsData[cc.object_id],
             cc.right_ascension: starsData[cc.right_ascension],
             cc.declination: starsData[cc.declination],
             cc.chi_sq_min: results.chi2min,
@@ -204,7 +205,7 @@ def getEstimatesMeta(computeMrTrue: bool = False):
     estimateCols = sorted(
         [*quantileCols, cc.abs_mag_r_entropy_drop, cc.metallicity_entropy_drop, cc.extinction_r_entropy_drop]
     )
-    colNames = [cc.right_ascension, cc.declination, cc.chi_sq_min, *estimateCols]
+    colNames = [cc.object_id, cc.right_ascension, cc.declination, cc.chi_sq_min, *estimateCols]
     meta = npd.NestedFrame.from_dict({col: pd.Series([], dtype=np.float32) for col in colNames})
     meta.index.name = "_healpix_29"
     return meta
