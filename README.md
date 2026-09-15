@@ -21,8 +21,9 @@ The `lovorka` branch (tLoc parametrization of the locus) with these changes:
 - prior maps are matched to the r bins by magnitude, and are made with a binned KDE on a finer grid
 - `fixForStripe82` is off by default (it is only meant for the SDSS locus)
 - locus points that only pad an isochrone to the rectangular grid get no prior weight
-- the per-star fit uses the fact that chi2 is quadratic in A_r and is about 25 times faster per core; the posterior
-  is scaled to its maximum, so bright stars with large chi2 no longer give NaN
+- the per-star fit uses the fact that chi2 is quadratic in A_r; per core it is about 14 times faster than the
+  `lovorka` branch with the dust-map A_r prior (2.5 times with the flat prior). The posterior is scaled to its
+  maximum, so bright stars with large chi2 no longer give NaN
 
 Scripts written for the `lovorka` branch run unchanged. The only new option is the dust-map A_r prior: pass the
 name of the catalog column with A_r from the dust map as `GlobalParams(..., ArMapColumn="...")`.
