@@ -1,0 +1,54 @@
+#!/bin/bash
+
+model_dir="../models/untrained/"
+
+module load Nvidia-CUDA/11.2 && echo "CUDA-11.2 enviroment activated"
+source activate tf2.11 && echo "tf2.11 enviroment activated"
+cd "$(dirname "$0")" || exit
+mkdir -p logs
+
+i=0
+for model in "$model_dir"/*
+do
+  avail_gpus=$(sinfo -p comp_gpu -t idle --format=%D -h)
+  avail_scjobs=$(sinfo -p comp_SCjobs -t idle --format=%D -h)
+  if [ $avail_gpus -ge 5 ]
+  then
+    procesor="comp_gpu"
+    echo "$avail_gpus GPU nodes available."
+  elif [ $avail_scjobs -ge 1000 ]
+  then
+    procesor="comp_SCjobs"
+    echo "$avail_scjobs SCjobs nodes available."
+  else
+    procesor="computes_thin"
+    echo "No GPU or SCjobs nodes available."
+  fi
+    cat << EOF > train_{$i}.sh
+#!/bin/bash
+#SBATCH --job-name=phoznn$i
+#SBATCH --output=logs/TRAINphotozann$i.txt
+#SBATCH --partition=$procesor
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=8G
+#SBATCH --ntasks=1
+#SBATCH --time=336:00:00
+srun hostname
+run date
+TF_CPP_MIN_LOG_LEVEL=3 srun python3 train.py \
+--model_output "../models/trained_chiTest4/" \
+--model_path "../models/$model" \
+--data_path "../data/simCatalog_three_pix_triout_chiTest4.txt" \
+--epochs 8192 \
+--batch_size 16384 \
+--decay_rate 0.92 \
+--decay_epochs 10 \
+--seed 31
+EOF
+  sbatch train_{$i}.sh
+  rm train_{$i}.sh
+  i=$(($i+1))
+done
+
+module unload Nvidia-CUDA/11.2 && echo "CUDA-11.2 enviroment deactivated"
+conda deactivate && echo "tf2.11 enviroment deactivated"

@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.idea/
+*.egg-info/
+build/
+outputs/
+data/*.txt
+model_selection/data/*.txt
+model_selection/train/logs/
+model_selection/tune/logs/
+model_selection/Tuner/

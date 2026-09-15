@@ -1,0 +1,60 @@
+#!/bin/bash
+
+if [ $# -lt 1 ]; then
+        echo "Please specify model versions"
+		exit 1
+fi
+
+module load Nvidia-CUDA/11.2 && echo "CUDA-11.2 enviroment activated"
+source activate tf2.11 && echo "tf2.11 enviroment activated"
+cd "$(dirname "$0")" || exit
+mkdir -p logs
+destination="../"
+
+
+for i in "$@"
+do
+  avail_gpus=$(sinfo -p comp_gpu -t idle --format=%D -h)
+  avail_scjobs=$(sinfo -p comp_SCjobs -t idle --format=%D -h)
+  if [ $avail_gpus -ge 5 ]
+  then
+    procesor="comp_gpu"
+    echo "$avail_gpus GPU nodes available."
+  elif [ $avail_scjobs -ge 0 ]
+  then
+    procesor="comp_SCjobs"
+    echo "$avail_scjobs SCjobs nodes available."
+  else
+    procesor="computes_thin"
+    echo "No GPU or SCjobs nodes available."
+  fi
+cat << EOF > tune_{$i}.sh
+#!/bin/bash
+#SBATCH --job-name=phoznn$i
+#SBATCH --output=logs/TUNEphotozann_$i.txt
+#SBATCH --partition=$procesor
+#SBATCH --cpus-per-task=2
+#SBATCH --mem=4G
+#SBATCH --ntasks=1
+#SBATCH --time=336:00:00
+srun hostname
+date
+echo "version: $i"
+TF_CPP_MIN_LOG_LEVEL=3 srun python3 tune.py \
+--model_destination "${destination}Tuner/${i}/" \
+--epochs 1024 \
+--batch_size 16384 \
+--version $i \
+--factor 8 \
+--hyperband_iterations 45 \
+--decay_rate 0.92 \
+--decay_epochs 10 \
+--seed 31
+EOF
+
+sbatch tune_{$i}.sh
+rm tune_{$i}.sh
+done
+
+module unload Nvidia-CUDA/11.2 && echo "CUDA-11.2 enviroment deactivated"
+conda deactivate && echo "tf2.11 enviroment deactivated"
