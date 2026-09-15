@@ -1,0 +1,3 @@
+outputs/bayes_estimates*.csv
+.ipynb_checkpoints/
+__pycache__/
