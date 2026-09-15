@@ -6,7 +6,7 @@ from numpy.testing import assert_allclose
 from scipy.stats import gaussian_kde
 
 import photod.locus as lt
-from photod.bayes import makeBayesEstimates3d
+from photod.bayes import _starBatch, makeBayesEstimates3d
 from photod.parameters import GlobalParams
 from photod.priors import get2Dmap, getBayesConstants, getPriorMapIndex, initializePriorGrid
 
@@ -165,6 +165,25 @@ def test_empty_partition():
         make_stars(locus).iloc[:0], np.ones((27, len(locus))), make_params(locus)
     )
     assert len(estimates) == 0 and "Mr_quantile_median" in estimates.columns
+
+
+def test_small_partitions():
+    """Partitions smaller than batchSize give the same estimates and do not compile one batch size each."""
+    locus = make_locus()
+    params = make_params(locus, ArMapColumn=None)
+    stars = make_stars(locus, n=20)
+    priorGrid = np.ones((getBayesConstants()["rmagNsteps"], len(locus)))
+    with float64():
+        whole, _ = makeBayesEstimates3d(stars, priorGrid, params, batchSize=64)
+        parts = [
+            makeBayesEstimates3d(stars.iloc[a:b], priorGrid, params, batchSize=64)[0]
+            for a, b in ((0, 5), (5, 11), (11, 18), (18, 20))
+        ]
+        assert_allclose(pd.concat(parts).to_numpy(float), whole.to_numpy(float), rtol=1e-9, atol=1e-9)
+        compiled = _starBatch._cache_size()
+        for n in (6, 7, 8):
+            makeBayesEstimates3d(stars.iloc[:n], priorGrid, params, batchSize=64)
+        assert _starBatch._cache_size() == compiled
 
 
 def test_reddening_follows_color_names():
