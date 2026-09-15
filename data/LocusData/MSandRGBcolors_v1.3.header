@@ -1,0 +1,37 @@
+###### SDSS/LSST colors as functions of Mr and FeH ########
+###### for RGB branch, main sequence stars, and LTY dwarfs ##
+## see Fig. 1 in Green et al. (2014):
+## https://iopscience.iop.org/article/10.1088/0004-637X/783/2/114/pdf
+## Table constructed as follows: 
+# 1) Begin with SDSS stellar locus transformations for 
+#    4.9 < Mr < 12 and assuming z-y = 0.5*(i-z)
+# 2) for -1 < Mr < 4.9 using a linear approximation
+#      color = A + B*FeH + C*Mr + D*FeH*Mr
+#    where coefficients A-D are determined from SDSS
+#    observations of globular clusters, and 
+#    assuming z-y = 0.52*(i-z) + 0.02
+# 3) for MLTY dwarfs using data from Covey et al. 
+#    for 12 < Mr < 28
+# 4) For iz, add a 0.125*(Mr/12) mag offset for Mr < 12 stars to reconcile it
+#    with SDSS (ri, iz) ccd, and an additional 0.05*(1-Mr/4) offset for Mr <
+#    4 to have the giants turn slightly right in the color-mag diagram
+#    (NOTE: this correction for giants has no basis in data, chalk it up to
+#    intuition)
+# 5) For ri, use Covey et al.'s relation for Mr > 12, I08 before, and
+#    interpolate in between
+# 6) For gr color:
+#       Set gr so that it corresponds to majuric's SDSS-derived locus
+#         in 1.2 <= ri <= 2.0 range.
+#       For Mr > 17 (where there are no real constraints on g), have gr
+#         increase linearly as gr(Mr=17) + 0.1*(Mr - 17)
+# 7) For ug color:
+#       Fix ug so that the FeH=0 isochrone overlaps the peak of
+#       SDSS' observed locus for gr > 0.6.  These are nearby M
+#       dwarfs for which we expect roughly Fe/H~0
+# 8) For zy color:
+#       Replace ZI paralax relation. w Covey paralax relation for Mr > 12
+# 9) Linearly interpolate ug, iz, zy between 12<Mr<14 to Covey
+#                                                                                  (Zeljko Ivezic, 2011)
+# 
+#   Mr       FeH        ug          gr          ri            iz           zy
+#      - data here, from MSandRGBcolors_v1.3.txt -
