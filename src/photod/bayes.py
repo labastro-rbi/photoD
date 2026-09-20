@@ -32,6 +32,10 @@ set_column_mapping(Path(__file__).parent / "column_map" / "variables.yaml")
 # compiled once per process; grid values above a star's limit have zero prior and are left out.
 AR_GRID_LENGTHS = (8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512)
 QUANTILE_NAMES = ("lo", "median", "hi")
+# A batch holds a locus by A_r plane for each of its stars, so its memory is the batch size times the length
+# of its A_r grid. Bounding that product lets one batch size serve a field of any extinction: without it the
+# top of the A_r grid silently decides how much memory the run needs, and a dusty field runs out of it.
+AR_BATCH_BUDGET = 100_000
 
 
 def makeBayesEstimates3d(
@@ -86,9 +90,10 @@ def makeBayesEstimates3d(
     batches = []
     for nAr in np.unique(gridLength):
         stars = np.where(gridLength == nAr)[0]
+        size = max(1, min(batchSize, AR_BATCH_BUDGET // int(nAr)))
         args = jax.device_put(globalParams.starArgs(int(nAr)))
-        stars = np.concatenate([stars, np.full(-stars.size % batchSize, stars[0])])
-        for b in np.split(stars, stars.size // batchSize):
+        stars = np.concatenate([stars, np.full(-stars.size % size, stars[0])])
+        for b in np.split(stars, stars.size // size):
             data = (
                 colors[b],
                 colorsErr[b],
