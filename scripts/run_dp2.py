@@ -29,6 +29,7 @@ from pathlib import Path
 os.environ.setdefault("XLA_FLAGS", "--xla_gpu_autotune_level=0")
 os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
 
+import dask  # noqa: E402
 import jax  # noqa: E402
 import lsdb  # noqa: E402
 import nested_pandas as npd  # noqa: E402
@@ -48,6 +49,7 @@ INPUT_COLUMNS = ["objectId", "coord_ra", "coord_dec", "refExtendedness", "ebv"] 
     f"{b}_{c}" for b in BANDS for c in ("psfFlux", "psfFluxErr")
 ]
 PRIORS = {}
+PARAMS = {}
 
 
 def starsMeta():
@@ -157,15 +159,28 @@ def loadPriors(path):
     return PRIORS[path]
 
 
-def fitPartition(partition, priorPath, globalParams, workerDevices, batchSize):
+def loadParams(setup):
+    """The fit setup, built once per worker process rather than sent to it.
+
+    The reddened locus of a wide A_r grid is a couple of gigabytes, and shipping that through the scheduler
+    to every worker costs more memory in flight than building it where it is used.
+    """
+    if setup not in PARAMS:
+        floor, useDustMap, curvePath, arMax = setup
+        PARAMS[setup] = globalParameters(floor, useDustMap, np.load(curvePath) if curvePath else None, arMax)
+    return PARAMS[setup]
+
+
+def fitPartition(partition, priorPath, setup, workerDevices, batchSize):
     """One partition of stars, each group of them fitted with the prior maps of the sky pixel it lies in.
 
     Looking the sightline up beats joining against a catalog of maps: a join is between two pixel trees of
     different depth and quietly keeps only one of the star partitions that share a map.
     """
-    empty = npd.NestedFrame(getEstimatesMeta(globalParams.computeMrTrue).reset_index(drop=True))
+    empty = npd.NestedFrame(getEstimatesMeta(computeMrTrue=True).reset_index(drop=True))
     if not len(partition):
         return empty
+    globalParams = loadParams(setup)
     priors = loadPriors(priorPath)
     index, order = priors["index"], int(priors["order"])
     row = index[priorPixels(partition["ra"].to_numpy(), partition["dec"].to_numpy(), order)]
@@ -234,16 +249,20 @@ def main():
             f"{bounded} of them with a measured total column to bound the extinction"
         )
     stars = objects.map_partitions(prepare, meta=starsMeta())
-    params = globalParameters(args.floor, not args.no_dust_map, curves, args.ar_max)
+    setup = (args.floor, not args.no_dust_map, args.dust_curves, args.ar_max)
 
-    with Client(n_workers=args.workers) as client:
+    # Reading a partition is an order of magnitude faster than fitting one, so a scheduler that is free to
+    # run ahead reads the whole survey into memory while the GPUs work through the first few partitions.
+    # Holding it to one unfinished read per worker keeps the memory flat.
+    dask.config.set({"distributed.scheduler.worker-saturation": 1.0})
+    with Client(n_workers=args.workers, threads_per_worker=1) as client:
         workerIds = sorted(client.run(lambda dask_worker: dask_worker.id).values())
         nDevices = jax.device_count()
         devices = {wid: i % nDevices for i, wid in enumerate(workerIds)}
         result = stars.map_partitions(
             fitPartition,
             priorPath=args.priors,
-            globalParams=client.scatter(params),
+            setup=setup,
             workerDevices=devices,
             batchSize=args.batch_size,
             meta=getEstimatesMeta(computeMrTrue=True),

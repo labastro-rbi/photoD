@@ -106,7 +106,9 @@ def makeBayesEstimates3d(
             out = _starBatch(
                 data, logPriorGrid, priorEntropy, args, globalParams.computeMrTrue, returnPosteriors
             )
-            batches.append((b, out))
+            # off the device as soon as it is done: holding every batch of a partition on the GPU until the
+            # end keeps thousands of buffers alive, which exhausts it on a large partition
+            batches.append((b, _toHost(out)))
 
     chi2min = _collect([(b, out[0]) for b, out in batches], nStars)
     statistics = {
@@ -333,6 +335,18 @@ def _arGridLengths(arMax, Ar1d):
     need = np.minimum(np.searchsorted(Ar1d, arMax, side="right") + 2, Ar1d.size)
     lengths = np.array(sorted({n for n in AR_GRID_LENGTHS if n < Ar1d.size} | {Ar1d.size}))
     return lengths[np.searchsorted(lengths, need)]
+
+
+def _toHost(out):
+    """A batch result as plain arrays, releasing the device buffers it was computed into."""
+    return tuple(
+        (
+            {name: np.asarray(value) for name, value in item.items()}
+            if isinstance(item, dict)
+            else np.asarray(item)
+        )
+        for item in out
+    )
 
 
 def _collect(parts, nStars):
