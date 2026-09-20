@@ -35,6 +35,17 @@ class GlobalParams:
     ArMapColumn : str, optional
         Catalog column with the dust-map A_r. The A_r prior is flat between 0 and
         ArPriorScale * A_r(map) + ArPriorOffset; without a dust map it is flat over the whole A_r grid.
+    ArCurves : ndarray, optional
+        Shapes A_r(mu) / A_r(total) of a 3D dust map, one row per sightline, on the grid ArCurveMu. With them
+        the A_r prior is no longer flat: locus point i puts the star at mu = r - Mr_i - A_r, so the map gives
+        the extinction consistent with that distance and the prior becomes a Gaussian around it. A row of
+        zeros, or a star without a dust map, falls back to the flat prior. See scripts/make_dust_curves.py.
+    ArCurveMu : ndarray, optional
+        Distance moduli of the ArCurves columns.
+    ArCurveIndexColumn : str, optional
+        Catalog column with the row of ArCurves for each star.
+    ArCurveFrac, ArCurveFloor : float
+        Width of the prior, sqrt((ArCurveFrac * A_r)^2 + ArCurveFloor^2), for the uncertainty of the 3D map.
     colorErrFloor : float
         Added in quadrature to every colour error before the fit. The locus is not exact, so with the
         catalog errors alone the posteriors of bright stars are too narrow; 0.03 mag is right for Rubin DP2.
@@ -56,6 +67,11 @@ class GlobalParams:
     ArPriorScale: float = 1.3
     ArPriorOffset: float = 0.1
     colorErrFloor: float = 0.0
+    ArCurves: np.ndarray = None
+    ArCurveMu: np.ndarray = None
+    ArCurveIndexColumn: str = None
+    ArCurveFrac: float = 0.15
+    ArCurveFloor: float = 0.05
 
     def __post_init__(self):
         self.FeH1d = np.unique(np.asarray(self.locusData[self.xLabel], dtype=float))
@@ -96,6 +112,8 @@ class GlobalParams:
 
         # Qr = Mr_true + A_r on the (FeH, Mr, Ar) grid. Columns where the index does not depend on [Fe/H]
         # are summed over [Fe/H] before the Qr histogram is filled.
+        self.MrTrueFlat = np.asarray(MrTrue, dtype=float).reshape(-1)
+
         self.QrGrid, QrIndices = np.unique(np.round(MrTrue[:, :, None] + self.Ar1d, 3), return_inverse=True)
         QrIndices = QrIndices.reshape(nFeH, nMr, nAr)
         independent = np.all(QrIndices == QrIndices[:1], axis=(0, 2))
@@ -124,6 +142,11 @@ class GlobalParams:
             "QrIdxDep": self.QrIdxDep[:, :, :nAr],
             "MrTrueGrid": self.MrTrueGrid,
             "MrTrueIndices": self.MrTrueIndices,
+            "MrTrueFlat": self.MrTrueFlat,
+            "ArCurves": self.ArCurves,
+            "ArCurveMu": self.ArCurveMu,
+            "ArCurveFrac": self.ArCurveFrac,
+            "ArCurveFloor": self.ArCurveFloor,
         }
 
     def getPlottingArgs(self):

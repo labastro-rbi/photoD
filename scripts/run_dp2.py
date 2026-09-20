@@ -5,7 +5,8 @@ one lsdb merge_map over the sky, results written as a HATS catalog.
                             --out /path/to/results --name dp2_photod
 
 Options: --cone RA DEC RADIUS_DEG to run a piece of sky, --workers and --batch-size for the dask/JAX setup,
---floor for the colour-error floor (0.03 mag), --no-dust-map to run the flat A_r prior.
+--floor for the colour-error floor (0.03 mag), --no-dust-map to run the flat A_r prior, and --dust-curves to
+use a 3D dust map as the A_r prior (scripts/make_dust_curves.py), which matters at low Galactic latitude.
 
 Input columns (DP2 object table): coord_ra, coord_dec, objectId, <band>_psfFlux and _psfFluxErr for ugrizy,
 refExtendedness, ebv. Point sources are refExtendedness == 0 with r between 16.5 and 23.5 and S/N > 10 in r,
@@ -15,6 +16,7 @@ A_r prior.
 """
 
 import argparse
+from functools import partial
 from pathlib import Path
 
 import jax
@@ -42,10 +44,11 @@ def starsMeta():
     cols = {"objectId": np.int64, "ra": float, "dec": float, "rmag": float, "Ar": float}
     for c in COLORS:
         cols[c], cols[c + "Err"] = float, float
+    cols["dustIndex"] = np.int32
     return npd.NestedFrame({k: pd.Series([], dtype=v) for k, v in cols.items()})
 
 
-def prepareStars(df):
+def prepareStars(df, dustIndex=None, nside=0):
     """Magnitudes, colours and errors of the point sources in one partition of the object table."""
     flux = {b: df[f"{b}_psfFlux"].to_numpy(dtype=float, na_value=np.nan) for b in BANDS}
     err = {b: df[f"{b}_psfFluxErr"].to_numpy(dtype=float, na_value=np.nan) for b in BANDS}
@@ -74,14 +77,29 @@ def prepareStars(df):
         useful = ((snr[a] > 3) & (snr[b] > 3))[keep]
         out[c] = np.where(useful, (mag[a] - mag[b])[keep], 0.0)
         out[c + "Err"] = np.where(useful, np.hypot(magErr[a], magErr[b])[keep], 9.99)
+    if dustIndex is None:
+        out["dustIndex"] = np.zeros(len(out), dtype=np.int32)
+    else:
+        import cdshealpix
+        from astropy.coordinates import Latitude, Longitude
+
+        pixel = cdshealpix.nested.lonlat_to_healpix(
+            Longitude(out.ra.to_numpy(), unit="deg"),
+            Latitude(out.dec.to_numpy(), unit="deg"),
+            int(np.log2(nside)),
+        )
+        out["dustIndex"] = np.maximum(dustIndex[np.asarray(pixel)], 0).astype(np.int32)
     return npd.NestedFrame(out)
 
 
-def globalParameters(floor, useDustMap):
-    """The fit setup: the DP2 locus on the tLoc grid, the colour-error floor, the dust-map A_r prior."""
+def globalParameters(floor, useDustMap, curves=None):
+    """The fit setup: the DP2 locus on the tLoc grid, the colour-error floor, the A_r prior."""
     locus = LSSTsimsLocus(fixForStripe82=False, datafile=str(LOCUS), colnames=["tLoc", "Mr", "FeH", *COLORS])
     locusData = subsampleLocusData(locus, kMr=1, kFeH=1, yLabel="tLoc")
     ArGridList, locus3DList = get3DmodelList(locusData, COLORS, yLabel="tLoc")
+    dust = {}
+    if curves is not None:
+        dust = dict(ArCurves=curves["shapes"], ArCurveMu=curves["mu"], ArCurveIndexColumn="dustIndex")
     return GlobalParams(
         COLORS,
         locusData,
@@ -92,6 +110,7 @@ def globalParameters(floor, useDustMap):
         computeMrTrue=True,
         ArMapColumn="Ar" if useDustMap else None,
         colorErrFloor=floor,
+        **dust,
     )
 
 
@@ -119,6 +138,11 @@ def main():
     ap.add_argument("--cone", nargs=3, type=float, metavar=("RA", "DEC", "RADIUS_DEG"))
     ap.add_argument("--floor", type=float, default=0.03, help="colour-error floor in magnitudes")
     ap.add_argument("--no-dust-map", action="store_true", help="flat A_r prior instead of the dust-map bound")
+    ap.add_argument(
+        "--dust-curves",
+        default="",
+        help="npz from make_dust_curves.py: a 3D dust map as the A_r prior, worth having at |b| < 10",
+    )
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--batch-size", type=int, default=2000)
     args = ap.parse_args()
@@ -129,9 +153,15 @@ def main():
         else None
     )
     objects = lsdb.open_catalog(args.catalog, columns=INPUT_COLUMNS, search_filter=search)
-    stars = objects.map_partitions(prepareStars, meta=starsMeta())
+    curves = np.load(args.dust_curves) if args.dust_curves else None
+    if curves is None:
+        prepare = prepareStars
+    else:
+        prepare = partial(prepareStars, dustIndex=curves["index"], nside=int(curves["nside"]))
+        print(f"3D dust prior from {args.dust_curves}: {len(curves['shapes'])} sightlines")
+    stars = objects.map_partitions(prepare, meta=starsMeta())
     priors = lsdb.open_catalog(args.priors)
-    params = globalParameters(args.floor, not args.no_dust_map)
+    params = globalParameters(args.floor, not args.no_dust_map, curves)
 
     with Client(n_workers=args.workers) as client:
         workerIds = sorted(client.run(lambda dask_worker: dask_worker.id).values())

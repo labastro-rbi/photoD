@@ -66,7 +66,9 @@ def makeBayesEstimates3d(
         globalParams.computeMrTrue), and the entropy drop from prior to posterior for Mr, [Fe/H] and A_r.
     results : BayesResults
     """
-    colors, colorsErr, priorIndices, arMax = getColorsAndPriorIndices(starsData, globalParams)
+    colors, colorsErr, priorIndices, arMax, rmag, curveIndex, arMap = getColorsAndPriorIndices(
+        starsData, globalParams
+    )
     nStars = colors.shape[0]
     if nStars == 0:
         meta = getEstimatesMeta(globalParams.computeMrTrue).reset_index(drop=True)
@@ -87,7 +89,15 @@ def makeBayesEstimates3d(
         args = jax.device_put(globalParams.starArgs(int(nAr)))
         stars = np.concatenate([stars, np.full(-stars.size % batchSize, stars[0])])
         for b in np.split(stars, stars.size // batchSize):
-            data = (colors[b], colorsErr[b], priorIndices[b], arMax[b])
+            data = (
+                colors[b],
+                colorsErr[b],
+                priorIndices[b],
+                arMax[b],
+                rmag[b],
+                curveIndex[b],
+                arMap[b],
+            )
             out = _starBatch(
                 data, logPriorGrid, priorEntropy, args, globalParams.computeMrTrue, returnPosteriors
             )
@@ -136,20 +146,24 @@ def makeBayesPosteriors3d(starsData: npd.NestedFrame, mapCatalog: MapCatalog, gl
 
 
 def getColorsAndPriorIndices(catalog, params):
-    """Colors, color errors, prior map index and upper limit of the A_r prior for each star."""
+    """Per star: colors and errors, prior map index, the A_r prior limit, r, the dust curve and A_r(map)."""
     colors = catalog[list(params.fitColors)].to_numpy(dtype=np.float64)
     colorsErr = catalog[[color + "Err" for color in params.fitColors]].to_numpy(dtype=np.float64)
     if params.colorErrFloor > 0:
         colorsErr = np.sqrt(colorsErr**2 + params.colorErrFloor**2)
     priorIndices = np.asarray(getPriorMapIndex(catalog[cc.observed_mag_r]), dtype=np.int32)
     if params.ArMapColumn is None:
+        arMap = np.zeros(len(catalog))
         arMax = np.full(len(catalog), np.inf)
     else:
-        arMax = (
-            params.ArPriorScale * catalog[params.ArMapColumn].to_numpy(dtype=np.float64)
-            + params.ArPriorOffset
-        )
-    return colors, colorsErr, priorIndices, arMax
+        arMap = catalog[params.ArMapColumn].to_numpy(dtype=np.float64)
+        arMax = params.ArPriorScale * arMap + params.ArPriorOffset
+    rmag = catalog[cc.observed_mag_r].to_numpy(dtype=np.float64)
+    if params.ArCurveIndexColumn is None:
+        curveIndex = np.zeros(len(catalog), dtype=np.int32)
+    else:
+        curveIndex = catalog[params.ArCurveIndexColumn].to_numpy(dtype=np.int32)
+    return colors, colorsErr, priorIndices, arMax, rmag, curveIndex, arMap
 
 
 def getEstimatesMeta(computeMrTrue: bool = False):
@@ -180,7 +194,7 @@ def starPosterior(star, logPriorGrid, priorEntropy, args, computeMrTrue=False, r
     c_i = chi2(i, A0_i). The posterior is scaled to 1 at its maximum over the allowed cells, which keeps it
     representable however large chi2 is.
     """
-    colors, colorsErr, priorIndex, arMax = star
+    colors, colorsErr, priorIndex, arMax, rmag, curveIndex, arMap = star
     Ar1d, ArFull, FeH1d, Mr1d = args["Ar1d"], args["ArFull"], args["FeH1d"], args["Mr1d"]
     nFeH, nMr, nAr = FeH1d.size, Mr1d.size, Ar1d.size
 
@@ -195,9 +209,25 @@ def starPosterior(star, logPriorGrid, priorEntropy, args, computeMrTrue=False, r
     # flat A_r prior between 0 and arMax (no limit for a single fixed A_r)
     allowed = (Ar1d <= arMax) | (ArFull.size == 1)
     logPrior = logPriorGrid[priorIndex]
-    logPeak = jnp.max(logPrior - 0.5 * _chi2GridMin(c, s, A0, Ar1d, jnp.sum(allowed) - 1))
-    u = logPrior - 0.5 * c - logPeak
-    post = jnp.exp(u[:, None] - 0.5 * s * (Ar1d - A0[:, None]) ** 2) * allowed
+    if args["ArCurves"] is None:
+        Astar, w = jnp.zeros_like(A0), jnp.zeros_like(A0)
+    else:
+        # A 3D dust map adds a second quadratic in A_r: locus point i puts the star at mu = r - MrTrue_i - A,
+        # where the map has A*_i, so ln prior = -w_i (A - A*_i)^2 / 2. The chi2 is quadratic in A_r as well,
+        # so the two combine into one quadratic and the fit stays a single pass over the (locus, A_r) grid.
+        curve = args["ArCurves"][curveIndex] * arMap
+        Astar = jnp.interp(args["MrTrueFlat"], (rmag - args["ArCurveMu"] - curve)[::-1], curve[::-1])
+        w = jnp.where(
+            curve[-1] > 0, 1.0 / ((args["ArCurveFrac"] * Astar) ** 2 + args["ArCurveFloor"] ** 2), 0.0
+        )
+    S = s + w
+    Acomb = (s * A0 + w * Astar) / S
+    extra = s * w / S * (A0 - Astar) ** 2
+    # the peak is taken over the A_r grid, not over the real line: without that, a star whose best A_r falls
+    # outside the grid underflows everywhere and its quantiles come out as NaN
+    logPeak = jnp.max(logPrior - 0.5 * _chi2GridMin(c + extra, S, Acomb, Ar1d, jnp.sum(allowed) - 1))
+    u = logPrior - 0.5 * (c + extra) - logPeak
+    post = jnp.exp(u[:, None] - 0.5 * S[:, None] * (Ar1d - Acomb[:, None]) ** 2) * allowed
 
     # sums over the short trailing axes as products with vectors of ones: several times faster on CPUs
     ones = partial(jnp.ones, dtype=post.dtype)
@@ -237,7 +267,9 @@ def starPosterior(star, logPriorGrid, priorEntropy, args, computeMrTrue=False, r
 
     cubes = {}
     if returnPosteriors:
-        prior = (jnp.exp(logPrior)[:, None] * allowed).reshape(nFeH, nMr, nAr)
+        prior = (
+            jnp.exp(logPrior[:, None] - 0.5 * w[:, None] * (Ar1d - Astar[:, None]) ** 2) * allowed
+        ).reshape(nFeH, nMr, nAr)
         like = jnp.exp(-0.5 * (c[:, None] + s * (Ar1d - A0[:, None]) ** 2 - chi2min)).reshape(nFeH, nMr, nAr)
         cubes = {"prior": prior, "like": like, "post": post}
         for k, cube in enumerate((prior, like, post)):
