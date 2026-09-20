@@ -13,7 +13,8 @@ Input columns (DP2 object table): coord_ra, coord_dec, objectId, <band>_psfFlux 
 refExtendedness, ebv. Point sources are refExtendedness == 0 with r between 16.5 and 23.5 and S/N > 10 in r,
 > 3 in g and i. A colour whose bands are not both at S/N > 3 is set to 0 with error 9.99 and carries no
 weight. The dust-map A_r is 2.37 ebv (SFD with the Schlafly & Finkbeiner 2011 recalibration) and bounds the
-A_r prior.
+A_r prior; where the 3D map has measured the column through the disc, the smaller of the two is the bound,
+which matters towards the bulge, where the 2D map integrates to infinity and reaches tens of magnitudes.
 """
 
 import argparse
@@ -57,7 +58,7 @@ def starsMeta():
     return npd.NestedFrame({k: pd.Series([], dtype=v) for k, v in cols.items()})
 
 
-def prepareStars(df, dustIndex=None, nside=0):
+def prepareStars(df, dustIndex=None, nside=0, arTotal=None):
     """Magnitudes, colours and errors of the point sources in one partition of the object table."""
     flux = {b: df[f"{b}_psfFlux"].to_numpy(dtype=float, na_value=np.nan) for b in BANDS}
     err = {b: df[f"{b}_psfFluxErr"].to_numpy(dtype=float, na_value=np.nan) for b in BANDS}
@@ -97,7 +98,14 @@ def prepareStars(df, dustIndex=None, nside=0):
             Latitude(out.dec.to_numpy(), unit="deg"),
             int(np.log2(nside)),
         )
-        out["dustIndex"] = np.maximum(dustIndex[np.asarray(pixel)], 0).astype(np.int32)
+        row = dustIndex[np.asarray(pixel)]
+        out["dustIndex"] = np.maximum(row, 0).astype(np.int32)
+        if arTotal is not None:
+            # The 2D map integrates the dust to infinity, which towards the bulge is tens of magnitudes and
+            # says nothing about a star in front of it. Where a 3D map has measured the column out past the
+            # far side of the disc, that measurement is the bound, and the larger 2D value is dropped.
+            measured = np.where(row >= 0, arTotal[np.maximum(row, 0)], 0.0)
+            out["Ar"] = np.where(measured > 0, np.minimum(out["Ar"].to_numpy(), measured), out["Ar"])
     return npd.NestedFrame(out)
 
 
@@ -183,8 +191,13 @@ def main():
     if curves is None:
         prepare = prepareStars
     else:
-        prepare = partial(prepareStars, dustIndex=curves["index"], nside=int(curves["nside"]))
-        print(f"3D dust prior from {args.dust_curves}: {len(curves['shapes'])} sightlines")
+        total = curves["total"] if "total" in curves.files else None
+        prepare = partial(prepareStars, dustIndex=curves["index"], nside=int(curves["nside"]), arTotal=total)
+        bounded = 0 if total is None else int((total > 0).sum())
+        print(
+            f"3D dust prior from {args.dust_curves}: {len(curves['shapes'])} sightlines, "
+            f"{bounded} of them with a measured total column to bound the extinction"
+        )
     stars = objects.map_partitions(prepare, meta=starsMeta())
     priors = lsdb.open_catalog(args.priors)
     params = globalParameters(args.floor, not args.no_dust_map, curves, args.ar_max)
