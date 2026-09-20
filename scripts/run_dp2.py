@@ -330,7 +330,17 @@ def main():
     # Reading a partition is an order of magnitude faster than fitting one, so a scheduler that is free to
     # run ahead reads the whole survey into memory while the GPUs work through the first few partitions.
     # Holding it to one unfinished read per worker keeps the memory flat.
-    dask.config.set({"distributed.scheduler.worker-saturation": 1.0})
+    # The memory a worker cannot release is invisible to dask as anything it can spill, so its usual answer
+    # to a large worker, pause it and write its data out, leaves the worker asleep holding memory it will
+    # never give back and the run stops. Let a worker run until it is over its limit and replaced instead.
+    dask.config.set(
+        {
+            "distributed.scheduler.worker-saturation": 1.0,
+            "distributed.worker.memory.target": False,
+            "distributed.worker.memory.spill": False,
+            "distributed.worker.memory.pause": False,
+        }
+    )
     # no dashboard: it profiles every worker continuously, and over a survey-sized graph those buffers grow
     # faster than the fit does
     base = Path(args.out) / args.name
