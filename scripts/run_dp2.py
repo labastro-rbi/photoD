@@ -157,7 +157,12 @@ def main():
         help="npz from make_dust_curves.py: a 3D dust map as the A_r prior, worth having at |b| < 10",
     )
     ap.add_argument("--workers", type=int, default=1)
-    ap.add_argument("--batch-size", type=int, default=2000)
+    ap.add_argument(
+        "--batch-size",
+        type=int,
+        default=400,
+        help="stars per JAX call; a few hundred is the fastest, larger batches spill and slow down",
+    )
     args = ap.parse_args()
 
     search = (
