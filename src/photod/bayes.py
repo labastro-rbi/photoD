@@ -84,9 +84,11 @@ def makeBayesEstimates3d(
     else:
         gridLength = _arGridLengths(arMax, globalParams.Ar1d)
 
-    # fixed-size batches (the last one padded with copies of a star), so that nothing is recompiled
-    # from one partition to the next; a partition smaller than batchSize is padded to a power of two
-    batchSize = int(max(1, min(batchSize, 1 << (nStars - 1).bit_length())))
+    # fixed-size batches, the last one padded with copies of a star, so that nothing is recompiled from one
+    # partition to the next. The size must not depend on how many stars the partition holds: a survey has
+    # partitions of every size, and letting each choose its own compiles a kernel for each of them, which
+    # costs far more than padding a small partition up to a full batch ever saves.
+    batchSize = int(max(1, batchSize))
     batches = []
     for nAr in np.unique(gridLength):
         stars = np.where(gridLength == nAr)[0]
