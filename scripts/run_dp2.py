@@ -1,0 +1,153 @@
+"""Run photoD on Rubin DP2: point sources from the object catalog, the DP2 locus, TRILEGAL priors in HATS,
+one lsdb merge_map over the sky, results written as a HATS catalog.
+
+  python scripts/run_dp2.py --catalog /path/to/rubin_dp2/object_collection --priors /path/to/prior_maps \\
+                            --out /path/to/results --name dp2_photod
+
+Options: --cone RA DEC RADIUS_DEG to run a piece of sky, --workers and --batch-size for the dask/JAX setup,
+--floor for the colour-error floor (0.03 mag), --no-dust-map to run the flat A_r prior.
+
+Input columns (DP2 object table): coord_ra, coord_dec, objectId, <band>_psfFlux and _psfFluxErr for ugrizy,
+refExtendedness, ebv. Point sources are refExtendedness == 0 with r between 16.5 and 23.5 and S/N > 10 in r,
+> 3 in g and i. A colour whose bands are not both at S/N > 3 is set to 0 with error 9.99 and carries no
+weight. The dust-map A_r is 2.37 ebv (SFD with the Schlafly & Finkbeiner 2011 recalibration) and bounds the
+A_r prior.
+"""
+
+import argparse
+from pathlib import Path
+
+import jax
+import lsdb
+import nested_pandas as npd
+import numpy as np
+import pandas as pd
+from dask.distributed import Client, get_worker
+
+from photod.bayes import getEstimatesMeta, makeBayesEstimates3d
+from photod.locus import LSSTsimsLocus, get3DmodelList, subsampleLocusData
+from photod.parameters import GlobalParams
+from photod.priors import initializePriorGrid
+
+LOCUS = Path(__file__).resolve().parents[1] / "data" / "LSSTlocus_10Gyr_DP2.txt"
+BANDS = "ugrizy"
+COLORS = ("ug", "gr", "ri", "iz", "zy")
+INPUT_COLUMNS = ["objectId", "coord_ra", "coord_dec", "refExtendedness", "ebv"] + [
+    f"{b}_{c}" for b in BANDS for c in ("psfFlux", "psfFluxErr")
+]
+
+
+def starsMeta():
+    """Empty frame with the columns and types prepareStars returns (lsdb needs it to build the graph)."""
+    cols = {"objectId": np.int64, "ra": float, "dec": float, "rmag": float, "Ar": float}
+    for c in COLORS:
+        cols[c], cols[c + "Err"] = float, float
+    return npd.NestedFrame({k: pd.Series([], dtype=v) for k, v in cols.items()})
+
+
+def prepareStars(df):
+    """Magnitudes, colours and errors of the point sources in one partition of the object table."""
+    flux = {b: df[f"{b}_psfFlux"].to_numpy(dtype=float, na_value=np.nan) for b in BANDS}
+    err = {b: df[f"{b}_psfFluxErr"].to_numpy(dtype=float, na_value=np.nan) for b in BANDS}
+    snr = {b: flux[b] / err[b] for b in BANDS}
+    mag = {b: -2.5 * np.log10(np.where(flux[b] > 0, flux[b], np.nan)) + 31.4 for b in BANDS}
+    magErr = {b: 1.0857 / snr[b] for b in BANDS}
+    keep = (
+        (df["refExtendedness"].to_numpy(dtype=float, na_value=np.nan) == 0)
+        & (mag["r"] > 16.5)
+        & (mag["r"] < 23.5)
+        & (snr["r"] > 10)
+        & (snr["g"] > 3)
+        & (snr["i"] > 3)
+    )
+    out = pd.DataFrame(
+        {
+            "objectId": df["objectId"].to_numpy()[keep],
+            "ra": df["coord_ra"].to_numpy(dtype=float)[keep],
+            "dec": df["coord_dec"].to_numpy(dtype=float)[keep],
+            "rmag": mag["r"][keep],
+            "Ar": 2.37 * df["ebv"].to_numpy(dtype=float, na_value=np.nan)[keep],
+        }
+    )
+    for c in COLORS:
+        a, b = c
+        useful = ((snr[a] > 3) & (snr[b] > 3))[keep]
+        out[c] = np.where(useful, (mag[a] - mag[b])[keep], 0.0)
+        out[c + "Err"] = np.where(useful, np.hypot(magErr[a], magErr[b])[keep], 9.99)
+    return npd.NestedFrame(out)
+
+
+def globalParameters(floor, useDustMap):
+    """The fit setup: the DP2 locus on the tLoc grid, the colour-error floor, the dust-map A_r prior."""
+    locus = LSSTsimsLocus(fixForStripe82=False, datafile=str(LOCUS), colnames=["tLoc", "Mr", "FeH", *COLORS])
+    locusData = subsampleLocusData(locus, kMr=1, kFeH=1, yLabel="tLoc")
+    ArGridList, locus3DList = get3DmodelList(locusData, COLORS, yLabel="tLoc")
+    return GlobalParams(
+        COLORS,
+        locusData,
+        ArGridList,
+        locus3DList,
+        yLabel="tLoc",
+        MrColumn="tLoc",
+        computeMrTrue=True,
+        ArMapColumn="Ar" if useDustMap else None,
+        colorErrFloor=floor,
+    )
+
+
+def fitPartition(
+    partition, mapPartition, partitionPixel, mapPixel, globalParams, workerDevices, batchSize, **kwargs
+):
+    """merge_map worker: the prior maps of one sky pixel, then the fit of its stars on this worker."""
+    priorGrid = initializePriorGrid(mapPartition, globalParams)
+    device = jax.devices()[workerDevices[get_worker().id]]
+    with jax.default_device(device):
+        priorGrid = jax.numpy.array(list(priorGrid.values()))
+        estimates, _ = makeBayesEstimates3d(partition, priorGrid, globalParams, batchSize=batchSize)
+    return npd.NestedFrame(estimates)
+
+
+def main():
+    """Command line entry point."""
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--catalog", required=True, help="DP2 object collection (HATS)")
+    ap.add_argument(
+        "--priors", required=True, help="TRILEGAL prior maps (HATS, one row per r bin and sky pixel)"
+    )
+    ap.add_argument("--out", required=True, help="directory for the result catalog")
+    ap.add_argument("--name", default="dp2_photod")
+    ap.add_argument("--cone", nargs=3, type=float, metavar=("RA", "DEC", "RADIUS_DEG"))
+    ap.add_argument("--floor", type=float, default=0.03, help="colour-error floor in magnitudes")
+    ap.add_argument("--no-dust-map", action="store_true", help="flat A_r prior instead of the dust-map bound")
+    ap.add_argument("--workers", type=int, default=1)
+    ap.add_argument("--batch-size", type=int, default=2000)
+    args = ap.parse_args()
+
+    search = (
+        lsdb.ConeSearch(ra=args.cone[0], dec=args.cone[1], radius_arcsec=3600 * args.cone[2])
+        if args.cone
+        else None
+    )
+    objects = lsdb.open_catalog(args.catalog, columns=INPUT_COLUMNS, search_filter=search)
+    stars = objects.map_partitions(prepareStars, meta=starsMeta())
+    priors = lsdb.open_catalog(args.priors)
+    params = globalParameters(args.floor, not args.no_dust_map)
+
+    with Client(n_workers=args.workers) as client:
+        workerIds = sorted(client.run(lambda dask_worker: dask_worker.id).values())
+        nDevices = jax.device_count()
+        devices = {wid: i % nDevices for i, wid in enumerate(workerIds)}
+        result = stars.merge_map(
+            priors,
+            fitPartition,
+            globalParams=client.scatter(params),
+            workerDevices=devices,
+            batchSize=args.batch_size,
+            meta=getEstimatesMeta(computeMrTrue=True),
+        )
+        result.write_catalog(base_catalog_path=args.out, catalog_name=args.name, overwrite=True)
+    print(f"written {Path(args.out) / args.name}")
+
+
+if __name__ == "__main__":
+    main()

@@ -139,6 +139,8 @@ def getColorsAndPriorIndices(catalog, params):
     """Colors, color errors, prior map index and upper limit of the A_r prior for each star."""
     colors = catalog[list(params.fitColors)].to_numpy(dtype=np.float64)
     colorsErr = catalog[[color + "Err" for color in params.fitColors]].to_numpy(dtype=np.float64)
+    if params.colorErrFloor > 0:
+        colorsErr = np.sqrt(colorsErr**2 + params.colorErrFloor**2)
     priorIndices = np.asarray(getPriorMapIndex(catalog[cc.observed_mag_r]), dtype=np.int32)
     if params.ArMapColumn is None:
         arMax = np.full(len(catalog), np.inf)

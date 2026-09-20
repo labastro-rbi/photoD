@@ -27,3 +27,38 @@ The `lovorka` branch (tLoc parametrization of the locus) with these changes:
 
 Scripts written for the `lovorka` branch run unchanged. The only new option is the dust-map A_r prior: pass the
 name of the catalog column with A_r from the dust map as `GlobalParams(..., ArMapColumn="...")`.
+
+### Running on Rubin DP2
+
+`scripts/run_dp2.py` runs the whole thing: point sources from the DP2 object catalog, colours and errors from the
+PSF fluxes, the DP2 locus, the TRILEGAL prior maps in HATS, one lsdb `merge_map` over the sky, results written
+as a HATS catalog:
+
+```
+python scripts/run_dp2.py --catalog <rubin_dp2/object_collection> --priors <prior maps> --out <dir> --name dp2_photod
+```
+
+`--cone RA DEC RADIUS` runs a piece of sky, `--workers` sets the dask workers (one JAX device each), `--floor`
+the colour-error floor and `--no-dust-map` the flat A_r prior.
+
+Two things differ from a run with `LSSTlocus_10Gyr_fix.txt` and the catalog errors as they are, and both were
+measured on DP2 stars with Gaia parallaxes and DESI spectra:
+
+- `data/LSSTlocus_10Gyr_DP2.txt` is the locus to use. Its u-g is corrected by the offset between DP2 and the
+  locus at fixed spectroscopic [Fe/H] (+0.03 mag for [Fe/H] < -1.5 to -0.16 mag at solar metallicity, the same
+  in two fields), which removes a -0.35 dex bias of the photometric [Fe/H] and halves its scatter. Its main
+  sequence is corrected in Mr as a function of g-i, from the mean parallax residual of 331,000 Gaia stars in
+  five fields (too faint by 0.05-0.26 mag for G and K dwarfs, too bright by 0.14-0.5 mag at the red end),
+  measured over all stars with a parallax and no signal-to-noise cut. `scripts/make_locus.py` builds the file
+  and re-measures the Mr table for another catalog.
+- `GlobalParams(colorErrFloor=0.03)` adds 0.03 mag in quadrature to every colour error. The locus is not exact,
+  and without the floor the 68 % intervals of bright stars contain the Gaia parallax 46 % of the time.
+
+On 127,000 DP2 stars with Gaia parallaxes at l = 14, b = -14, none of which entered the calibration, the median
+probability integral transform of the observed parallax under the posterior goes from 0.406 to 0.502 (0.500 is
+unbiased), the 68 % intervals contain the parallax 65 % instead of 57 % of the time, the mean parallax residual
+of M dwarfs from +0.11 mas to +0.01 mas, and the fraction of bright stars (parallax S/N > 10) whose distance
+modulus is off by more than a magnitude from 16.5 % to 9.6 %. Four other fields, two of them outside the
+calibration, gain as much or more. Prior maps built from the field's own star counts (the TRILEGAL population
+reweighted to the observed r and g-r distribution) help M dwarfs further in some fields; the results above use
+the standard maps.

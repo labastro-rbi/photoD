@@ -35,6 +35,9 @@ class GlobalParams:
     ArMapColumn : str, optional
         Catalog column with the dust-map A_r. The A_r prior is flat between 0 and
         ArPriorScale * A_r(map) + ArPriorOffset; without a dust map it is flat over the whole A_r grid.
+    colorErrFloor : float
+        Added in quadrature to every colour error before the fit. The locus is not exact, so with the
+        catalog errors alone the posteriors of bright stars are too narrow; 0.03 mag is right for Rubin DP2.
     """
 
     fitColors: tuple
@@ -52,6 +55,7 @@ class GlobalParams:
     ArMapColumn: str = None
     ArPriorScale: float = 1.3
     ArPriorOffset: float = 0.1
+    colorErrFloor: float = 0.0
 
     def __post_init__(self):
         self.FeH1d = np.unique(np.asarray(self.locusData[self.xLabel], dtype=float))
