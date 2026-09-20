@@ -134,3 +134,24 @@ def test_the_prior_does_not_change_the_cost():
     assert list(estimates.columns) == list(reference.columns)
     assert len(estimates) == len(catalog)
     assert np.all(np.isfinite(estimates.Mr_true_quantile_median.to_numpy()))
+
+
+def test_extinction_above_the_grid_is_pinned_to_its_top():
+    """A star redder than the top of the A_r grid has its A_r pinned there, so the grid must reach the field.
+
+    At A_r(map) = 5.5 the standard grid, which stops at 2.5 mag, pins two stars in five and their distances go
+    with them. Size the grid from the extinction of the field (scripts/run_dp2.py --ar-max).
+    """
+    _, priorGrid, params = setup()
+    rng = np.random.default_rng(11)
+    index = int(np.argmin(np.abs(np.asarray(params.MrTrueFlat) - 6.0)))
+    top = float(params.Ar1d[-1])
+    onGrid = pd.DataFrame([modelStar(params, index, 12.0, top - 0.5, rng)])
+    onGrid["Ar"] = top - 0.5
+    beyond = pd.DataFrame([modelStar(params, index, 12.0, top + 1.5, rng)])
+    beyond["Ar"] = top + 1.5
+    good, _ = makeBayesEstimates3d(onGrid, priorGrid, params, batchSize=1)
+    bad, _ = makeBayesEstimates3d(beyond, priorGrid, params, batchSize=1)
+    assert abs(good.Ar_quantile_median.to_numpy()[0] - (top - 0.5)) < 0.6
+    assert bad.Ar_quantile_median.to_numpy()[0] > top - 0.1  # pinned at the edge, 1.5 mag short
+    assert np.isfinite(bad.Mr_true_quantile_median.to_numpy()[0])  # pinned, not NaN

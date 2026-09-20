@@ -83,23 +83,28 @@ python scripts/make_dust_curves.py --map marshall --bmax 12 --out dust_marshall.
 python scripts/run_dp2.py --catalog ... --priors ... --out ... --dust-curves dust_marshall.npz
 ```
 
+The A_r grid has to reach the extinction of the field first. The standard "ArLarge" grid stops at 2.5 mag, so
+in a field with A_r = 5.5 two stars in five have their A_r pinned at the edge and their distances go with
+them; `run_dp2.py --ar-max` sizes the grid instead. The numbers below use a grid sized to the field.
+
 Held-out DP2 stars with Gaia parallaxes, calibrated locus and a 0.03 mag colour-error floor throughout, in the
 two fields at low Galactic latitude, where the extinction is large and most stars sit inside the dust:
 
-| field | A_r | prior | PIT | 68 % coverage | mean parallax residual | K dwarfs PIT | M dwarfs PIT | bright-star scatter |
-|---|---|---|---|---|---|---|---|---|
-| l = 341, b = 2.8 (15,484 stars) | 5.5 | flat | 0.311 | 0.37 | -4.41 mas | 0.006 | 0.000 | 0.58 mag |
-| | | **3D** | **0.555** | **0.44** | **-1.68 mas** | **0.486** | **0.466** | 0.60 mag |
-| l = 345, b = 3.1 (5,469 stars) | 3.1 | flat | 0.476 | 0.57 | -1.75 mas | 0.303 | 0.127 | 2.01 mag |
-| | | **3D** | **0.577** | 0.58 | **-0.15 mas** | **0.648** | **0.543** | **1.05 mag** |
+| field | A_r | prior | PIT | 68 % coverage | mean parallax residual | K dwarfs PIT | M dwarfs PIT / coverage |
+|---|---|---|---|---|---|---|---|
+| l = 341, b = 2.8 (15,484 stars) | 5.5 | flat | 0.153 | 0.40 | -2.78 mas | 0.000 | 0.000 / 0.13 |
+| | | **3D** | **0.539** | **0.60** | **-0.12 mas** | **0.445** | **0.385 / 0.56** |
+| l = 345, b = 3.1 (5,469 stars) | 3.1 | flat | 0.449 | 0.59 | -0.73 mas | 0.305 | 0.037 / 0.31 |
+| | | **3D** | **0.538** | 0.60 | **-0.06 mas** | **0.545** | **0.547 / 0.53** |
 
-At A_r = 5 the flat prior does not merely lose precision: a median PIT of 0.000 for M dwarfs and 0.006 for K
-dwarfs means that nearly every star falls outside its own posterior, and the mean parallax residual is
--4.4 mas. The 3D prior brings both back to about 0.5 and more than halves the residual. At A_r = 3 it improves
-the mean residual from -1.75 mas to -0.15 mas and halves the bright-star scatter. Since most stars are at low
-Galactic latitude, this is the largest improvement available to the fit - but it does not make the plane easy:
-even with the map the coverage is 0.44 against a nominal 0.68, and the fraction of bright stars whose distance
-modulus is off by more than a magnitude does not improve.
+With a flat A_r prior the fit in the plane does not merely lose precision: a median PIT of 0.000 for both K and
+M dwarfs means that every one of them falls outside its own posterior, and the mean parallax residual of the
+M dwarfs is -20 mas. Extinction is free to take any value the colours allow, and it trades against absolute
+magnitude. The 3D prior removes that freedom: PIT returns to about 0.5, the coverage of M dwarfs goes from 0.13
+to 0.56 and their mean residual from -20 mas to -0.09 mas. At A_r = 3 the mean residual improves from -0.73 mas
+to -0.06 mas and the bright-star scatter halves. It does not make the plane easy - the coverage is 0.60 against
+a nominal 0.68, and the fraction of bright stars whose distance modulus is off by more than a magnitude does
+not improve - but it makes it usable.
 
 Above |b| = 10 there is nothing to win, and the flat prior is the better choice: measured in three fields with
 A_r of 1.0, 0.5 and 0.2, the 3D prior takes a quarter off the bright-star scatter at A_r = 1 but is neutral to

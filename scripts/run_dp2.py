@@ -5,8 +5,9 @@ one lsdb merge_map over the sky, results written as a HATS catalog.
                             --out /path/to/results --name dp2_photod
 
 Options: --cone RA DEC RADIUS_DEG to run a piece of sky, --workers and --batch-size for the dask/JAX setup,
---floor for the colour-error floor (0.03 mag), --no-dust-map to run the flat A_r prior, and --dust-curves to
-use a 3D dust map as the A_r prior (scripts/make_dust_curves.py), which matters at low Galactic latitude.
+--floor for the colour-error floor (0.03 mag), --no-dust-map to run the flat A_r prior, --dust-curves to use a
+3D dust map as the A_r prior (scripts/make_dust_curves.py), which matters at low Galactic latitude, and
+--ar-max for the top of the A_r grid, which has to be above the extinction of the field.
 
 Input columns (DP2 object table): coord_ra, coord_dec, objectId, <band>_psfFlux and _psfFluxErr for ugrizy,
 refExtendedness, ebv. Point sources are refExtendedness == 0 with r between 16.5 and 23.5 and S/N > 10 in r,
@@ -27,7 +28,7 @@ import pandas as pd
 from dask.distributed import Client, get_worker
 
 from photod.bayes import getEstimatesMeta, makeBayesEstimates3d
-from photod.locus import LSSTsimsLocus, get3DmodelList, subsampleLocusData
+from photod.locus import LSSTsimsLocus, get3DmodelList, make3DlocusList, subsampleLocusData
 from photod.parameters import GlobalParams
 from photod.priors import initializePriorGrid
 
@@ -92,11 +93,17 @@ def prepareStars(df, dustIndex=None, nside=0):
     return npd.NestedFrame(out)
 
 
-def globalParameters(floor, useDustMap, curves=None):
-    """The fit setup: the DP2 locus on the tLoc grid, the colour-error floor, the A_r prior."""
+def globalParameters(floor, useDustMap, curves=None, arMax=5.0):
+    """The fit setup: the DP2 locus on the tLoc grid, the colour-error floor, the A_r prior.
+
+    The A_r grid has to reach the extinction of the field: the standard "ArLarge" grid stops at 2.5 mag, and a
+    star whose A_r is above the top of the grid has it pinned there, which throws its distance out with it.
+    """
     locus = LSSTsimsLocus(fixForStripe82=False, datafile=str(LOCUS), colnames=["tLoc", "Mr", "FeH", *COLORS])
     locusData = subsampleLocusData(locus, kMr=1, kFeH=1, yLabel="tLoc")
     ArGridList, locus3DList = get3DmodelList(locusData, COLORS, yLabel="tLoc")
+    ArGridList["ArLarge"] = np.arange(0, arMax + 1e-9, 0.02)
+    locus3DList["ArLarge"] = make3DlocusList(locusData, COLORS, [ArGridList["ArLarge"]], yLabel="tLoc")[0]
     dust = {}
     if curves is not None:
         dust = dict(ArCurves=curves["shapes"], ArCurveMu=curves["mu"], ArCurveIndexColumn="dustIndex")
@@ -137,6 +144,12 @@ def main():
     ap.add_argument("--name", default="dp2_photod")
     ap.add_argument("--cone", nargs=3, type=float, metavar=("RA", "DEC", "RADIUS_DEG"))
     ap.add_argument("--floor", type=float, default=0.03, help="colour-error floor in magnitudes")
+    ap.add_argument(
+        "--ar-max",
+        type=float,
+        default=5.0,
+        help="top of the A_r grid; keep it above 1.3 A_r(map) + 0.1 of the dustiest star in the field",
+    )
     ap.add_argument("--no-dust-map", action="store_true", help="flat A_r prior instead of the dust-map bound")
     ap.add_argument(
         "--dust-curves",
@@ -161,7 +174,7 @@ def main():
         print(f"3D dust prior from {args.dust_curves}: {len(curves['shapes'])} sightlines")
     stars = objects.map_partitions(prepare, meta=starsMeta())
     priors = lsdb.open_catalog(args.priors)
-    params = globalParameters(args.floor, not args.no_dust_map, curves)
+    params = globalParameters(args.floor, not args.no_dust_map, curves, args.ar_max)
 
     with Client(n_workers=args.workers) as client:
         workerIds = sorted(client.run(lambda dask_worker: dask_worker.id).values())
