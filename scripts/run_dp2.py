@@ -17,20 +17,28 @@ A_r prior.
 """
 
 import argparse
+import os
 from functools import partial
 from pathlib import Path
 
-import jax
-import lsdb
-import nested_pandas as npd
-import numpy as np
-import pandas as pd
-from dask.distributed import Client, get_worker
+# XLA's autotuner compiles and times dozens of variants of every kernel the first time it meets one, which
+# costs minutes of CPU per worker with the GPU sitting idle and buys this fit nothing, since its cost is in
+# one hand-written kernel rather than in library matrix multiplications. Both variables have to be set before
+# JAX starts; the dask workers inherit them.
+os.environ.setdefault("XLA_FLAGS", "--xla_gpu_autotune_level=0")
+os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
 
-from photod.bayes import getEstimatesMeta, makeBayesEstimates3d
-from photod.locus import LSSTsimsLocus, get3DmodelList, make3DlocusList, subsampleLocusData
-from photod.parameters import GlobalParams
-from photod.priors import initializePriorGrid
+import jax  # noqa: E402
+import lsdb  # noqa: E402
+import nested_pandas as npd  # noqa: E402
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
+from dask.distributed import Client, get_worker  # noqa: E402
+
+from photod.bayes import getEstimatesMeta, makeBayesEstimates3d  # noqa: E402
+from photod.locus import LSSTsimsLocus, get3DmodelList, make3DlocusList, subsampleLocusData  # noqa: E402
+from photod.parameters import GlobalParams  # noqa: E402
+from photod.priors import initializePriorGrid  # noqa: E402
 
 LOCUS = Path(__file__).resolve().parents[1] / "data" / "LSSTlocus_10Gyr_DP2.txt"
 BANDS = "ugrizy"
