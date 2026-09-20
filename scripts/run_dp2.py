@@ -30,6 +30,10 @@ from pathlib import Path
 # JAX starts; the dask workers inherit them.
 os.environ.setdefault("XLA_FLAGS", "--xla_gpu_autotune_level=0")
 os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
+# Partitions of the object catalog are hundreds of megabytes each and are freed as soon as the stars have
+# been taken out of them, but by default the allocator keeps the space rather than returning it, so a worker
+# that has read a few hundred partitions looks far larger than the work it is holding.
+os.environ.setdefault("MALLOC_TRIM_THRESHOLD_", "65536")
 
 import dask  # noqa: E402
 import jax  # noqa: E402
@@ -161,6 +165,17 @@ def loadPriors(path):
     return PRIORS[path]
 
 
+def workerDevice(nDevices):
+    """Which GPU this worker uses: its name, which a replaced worker keeps, so the share stays even."""
+    if nDevices < 2:
+        return 0
+    try:
+        name = get_worker().name
+        return int(name) % nDevices if str(name).lstrip("-").isdigit() else abs(hash(name)) % nDevices
+    except Exception:
+        return os.getpid() % nDevices
+
+
 def loadParams(setup):
     """The fit setup, built once per worker process rather than sent to it.
 
@@ -173,7 +188,7 @@ def loadParams(setup):
     return PARAMS[setup]
 
 
-def fitAndWrite(partition, pixel, base, priorPath, setup, workerDevices, batchSize):
+def fitAndWrite(partition, pixel, base, priorPath, setup, batchSize):
     """Fit one partition and write it where its HEALPix pixel belongs, returning only how many stars it held.
 
     The fit writes its own output rather than handing it back: results are far larger than the stars they
@@ -183,7 +198,7 @@ def fitAndWrite(partition, pixel, base, priorPath, setup, workerDevices, batchSi
     from hats.io.paths import pixel_catalog_file
     from hats.pixel_math import HealpixPixel
 
-    estimates = fitPartition(partition, priorPath, setup, workerDevices, batchSize)
+    estimates = fitPartition(partition, priorPath, setup, batchSize)
     if not len(estimates):
         return 0
     path = pixel_catalog_file(base, HealpixPixel(pixel.order, pixel.pixel))
@@ -192,7 +207,7 @@ def fitAndWrite(partition, pixel, base, priorPath, setup, workerDevices, batchSi
     return len(estimates)
 
 
-def fitPartition(partition, priorPath, setup, workerDevices, batchSize):
+def fitPartition(partition, priorPath, setup, batchSize):
     """One partition of stars, each group of them fitted with the prior maps of the sky pixel it lies in.
 
     Looking the sightline up beats joining against a catalog of maps: a join is between two pixel trees of
@@ -205,7 +220,7 @@ def fitPartition(partition, priorPath, setup, workerDevices, batchSize):
     priors = loadPriors(priorPath)
     index, order = priors["index"], int(priors["order"])
     row = index[priorPixels(partition["ra"].to_numpy(), partition["dec"].to_numpy(), order)]
-    device = jax.devices()[workerDevices[get_worker().id]]
+    device = jax.devices()[workerDevice(len(jax.devices()))]
     pieces = []
     for value in np.unique(row[row >= 0]):
         stars = partition[row == value]
@@ -275,8 +290,13 @@ def main():
     ap.add_argument(
         "--chunk",
         type=int,
-        default=200,
-        help="partitions submitted at a time, which is what bounds the memory of a survey-wide run",
+        default=400,
+        help="partitions a set of workers handles before it is replaced, which bounds the memory of a run",
+    )
+    ap.add_argument(
+        "--worker-memory",
+        default="16GB",
+        help="memory a worker may hold before it is replaced, which is the machine's guarantee, not ours",
     )
     ap.add_argument("--overwrite", action="store_true", help="replace an existing result of the same name")
     ap.add_argument(
@@ -313,38 +333,38 @@ def main():
     dask.config.set({"distributed.scheduler.worker-saturation": 1.0})
     # no dashboard: it profiles every worker continuously, and over a survey-sized graph those buffers grow
     # faster than the fit does
-    with Client(
-        n_workers=args.workers,
-        threads_per_worker=1,
-        dashboard_address=None,
-        local_directory=tempfile.mkdtemp(prefix="dask-"),
-    ) as client:
-        workerIds = sorted(client.run(lambda dask_worker: dask_worker.id).values())
-        # count the GPUs on a worker: opening them here would leave the parent holding a CUDA context that
-        # every worker then inherits, and the run carries a copy of it for each of them
-        nDevices = max(client.run(jax.device_count).values())
-        devices = {wid: i % nDevices for i, wid in enumerate(workerIds)}
-        base = Path(args.out) / args.name
-        if base.exists() and args.overwrite:
-            shutil.rmtree(base)
-        base.mkdir(parents=True, exist_ok=True)
-        pixels = stars.hc_structure.get_healpix_pixels()
-        parts = stars.to_delayed()
-        print(f"{len(parts)} partitions to fit", flush=True)
-        total, done = 0, 0
-        for start in range(0, len(parts), args.chunk):
-            group = range(start, min(start + args.chunk, len(parts)))
+    base = Path(args.out) / args.name
+    if base.exists() and args.overwrite:
+        shutil.rmtree(base)
+    base.mkdir(parents=True, exist_ok=True)
+    pixels = stars.hc_structure.get_healpix_pixels()
+    parts = stars.to_delayed()
+    print(f"{len(parts)} partitions to fit", flush=True)
+
+    total, done = 0, 0
+    for start in range(0, len(parts), args.chunk):
+        group = range(start, min(start + args.chunk, len(parts)))
+        # a fresh set of workers for each chunk: reading a partition of the object catalog leaves memory
+        # behind that no amount of releasing on our side recovers, so a worker that reads a few hundred of
+        # them grows past any limit worth setting. Replacing them costs the seconds it takes to rebuild the
+        # fit setup, and is what keeps a survey-wide run flat.
+        with Client(
+            n_workers=args.workers,
+            threads_per_worker=1,
+            memory_limit=args.worker_memory,
+            dashboard_address=None,
+            local_directory=tempfile.mkdtemp(prefix="dask-"),
+        ):
             counts = dask.compute(
                 *[
-                    dask.delayed(fitAndWrite)(
-                        parts[i], pixels[i], base, args.priors, setup, devices, args.batch_size
-                    )
+                    dask.delayed(fitAndWrite)(parts[i], pixels[i], base, args.priors, setup, args.batch_size)
                     for i in group
                 ]
             )
-            total += int(sum(counts))
-            done += len(counts)
-            print(f"  {done}/{len(parts)} partitions, {total} stars", flush=True)
+        total += int(sum(counts))
+        done += len(counts)
+        print(f"  {done}/{len(parts)} partitions, {total} stars", flush=True)
+
     writeCatalogMetadata(base, args.name, pixels, total)
     print(f"written {base}: {total} stars")
 
