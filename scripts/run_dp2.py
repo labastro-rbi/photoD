@@ -1,7 +1,7 @@
 """Run photoD on Rubin DP2: point sources from the object catalog, the DP2 locus, TRILEGAL priors in HATS,
 one lsdb merge_map over the sky, results written as a HATS catalog.
 
-  python scripts/run_dp2.py --catalog /path/to/rubin_dp2/object_collection --priors /path/to/prior_maps \\
+  python scripts/run_dp2.py --catalog /path/to/rubin_dp2/object_collection --priors /path/to/priors.npz \\
                             --out /path/to/results --name dp2_photod
 
 Options: --cone RA DEC RADIUS_DEG to run a piece of sky, --workers and --batch-size for the dask/JAX setup,
@@ -39,7 +39,7 @@ from dask.distributed import Client, get_worker  # noqa: E402
 from photod.bayes import getEstimatesMeta, makeBayesEstimates3d  # noqa: E402
 from photod.locus import LSSTsimsLocus, get3DmodelList, make3DlocusList, subsampleLocusData  # noqa: E402
 from photod.parameters import GlobalParams  # noqa: E402
-from photod.priors import initializePriorGrid  # noqa: E402
+from photod.priors import priorGridFromMaps  # noqa: E402
 
 LOCUS = Path(__file__).resolve().parents[1] / "data" / "LSSTlocus_10Gyr_DP2.txt"
 BANDS = "ugrizy"
@@ -47,6 +47,7 @@ COLORS = ("ug", "gr", "ri", "iz", "zy")
 INPUT_COLUMNS = ["objectId", "coord_ra", "coord_dec", "refExtendedness", "ebv"] + [
     f"{b}_{c}" for b in BANDS for c in ("psfFlux", "psfFluxErr")
 ]
+PRIORS = {}
 
 
 def starsMeta():
@@ -137,25 +138,59 @@ def globalParameters(floor, useDustMap, curves=None, arMax=5.0):
     )
 
 
-def fitPartition(
-    partition, mapPartition, partitionPixel, mapPixel, globalParams, workerDevices, batchSize, **kwargs
-):
-    """merge_map worker: the prior maps of one sky pixel, then the fit of its stars on this worker."""
-    priorGrid = initializePriorGrid(mapPartition, globalParams)
+def priorPixels(ra, dec, order):
+    """The HEALPix pixel of the prior maps that each star falls in."""
+    import cdshealpix
+    from astropy.coordinates import Latitude, Longitude
+
+    return np.asarray(
+        cdshealpix.nested.lonlat_to_healpix(
+            Longitude(np.asarray(ra), unit="deg"), Latitude(np.asarray(dec), unit="deg"), order
+        )
+    )
+
+
+def loadPriors(path):
+    """The prior maps, read once per worker process and kept for the partitions that follow."""
+    if path not in PRIORS:
+        PRIORS[path] = dict(np.load(path))
+    return PRIORS[path]
+
+
+def fitPartition(partition, priorPath, globalParams, workerDevices, batchSize):
+    """One partition of stars, each group of them fitted with the prior maps of the sky pixel it lies in.
+
+    Looking the sightline up beats joining against a catalog of maps: a join is between two pixel trees of
+    different depth and quietly keeps only one of the star partitions that share a map.
+    """
+    empty = npd.NestedFrame(getEstimatesMeta(globalParams.computeMrTrue).reset_index(drop=True))
+    if not len(partition):
+        return empty
+    priors = loadPriors(priorPath)
+    index, order = priors["index"], int(priors["order"])
+    row = index[priorPixels(partition["ra"].to_numpy(), partition["dec"].to_numpy(), order)]
     device = jax.devices()[workerDevices[get_worker().id]]
-    with jax.default_device(device):
-        priorGrid = jax.numpy.array(list(priorGrid.values()))
-        estimates, _ = makeBayesEstimates3d(partition, priorGrid, globalParams, batchSize=batchSize)
-    return npd.NestedFrame(estimates)
+    pieces = []
+    for value in np.unique(row[row >= 0]):
+        stars = partition[row == value]
+        grid = priorGridFromMaps(
+            priors["kde"][value], priors["rmag"], priors["xGrid"], priors["yGrid"], globalParams
+        )
+        with jax.default_device(device):
+            estimates, _ = makeBayesEstimates3d(
+                stars, jax.numpy.array(list(grid.values())), globalParams, batchSize=batchSize
+            )
+        pieces.append(estimates)
+    if not pieces:
+        return empty
+    return npd.NestedFrame(pd.concat(pieces, ignore_index=True))
 
 
 def main():
     """Command line entry point."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--catalog", required=True, help="DP2 object collection (HATS)")
-    ap.add_argument(
-        "--priors", required=True, help="TRILEGAL prior maps (HATS, one row per r bin and sky pixel)"
-    )
+    ap.add_argument("--priors", required=True, help="TRILEGAL prior maps (scripts/make_priors.py)")
     ap.add_argument("--out", required=True, help="directory for the result catalog")
     ap.add_argument("--name", default="dp2_photod")
     ap.add_argument("--cone", nargs=3, type=float, metavar=("RA", "DEC", "RADIUS_DEG"))
@@ -199,16 +234,15 @@ def main():
             f"{bounded} of them with a measured total column to bound the extinction"
         )
     stars = objects.map_partitions(prepare, meta=starsMeta())
-    priors = lsdb.open_catalog(args.priors)
     params = globalParameters(args.floor, not args.no_dust_map, curves, args.ar_max)
 
     with Client(n_workers=args.workers) as client:
         workerIds = sorted(client.run(lambda dask_worker: dask_worker.id).values())
         nDevices = jax.device_count()
         devices = {wid: i % nDevices for i, wid in enumerate(workerIds)}
-        result = stars.merge_map(
-            priors,
+        result = stars.map_partitions(
             fitPartition,
+            priorPath=args.priors,
             globalParams=client.scatter(params),
             workerDevices=devices,
             batchSize=args.batch_size,

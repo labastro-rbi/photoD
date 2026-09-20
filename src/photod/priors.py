@@ -48,6 +48,27 @@ def initializePriorGrid(mapPartition, globalParams):
     return priorGrid
 
 
+def priorGridFromMaps(maps, rmag, xGrid, yGrid, globalParams):
+    """The same, from the maps of one sky pixel held as an array rather than as a table of rows.
+
+    maps is one density per entry of rmag on the grid xGrid by yGrid, and each r bin of getBayesConstants()
+    takes the map whose rmag is nearest to it.
+    """
+    bc = getBayesConstants()
+    rGrid = np.linspace(bc["rmagMin"], bc["rmagMax"], bc["rmagNsteps"])
+    rmag = np.asarray(rmag, dtype=float)
+    points = (
+        np.asarray(globalParams.locusData["FeH"]),
+        np.asarray(globalParams.locusData[globalParams.MrColumn]),
+    )
+    return {
+        rind: interpolateMap(
+            xGrid, yGrid, np.asarray(maps[int(np.argmin(np.abs(rmag - r)))], dtype=float), *points
+        )
+        for rind, r in enumerate(rGrid)
+    }
+
+
 def interpolateMap(xgrid, ygrid, Z, x, y):
     """Bilinear interpolation of a map Z[y, x] on a regular grid, zero outside of it."""
     if ygrid[0] > ygrid[-1]:

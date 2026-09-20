@@ -1,12 +1,12 @@
-"""TRILEGAL prior maps for a photoD run, written as a HATS catalog: p([Fe/H], tLoc | r) per sky pixel.
+"""TRILEGAL prior maps for a photoD run: p([Fe/H], tLoc | r) on a HEALPix grid, in one file.
 
-  python scripts/make_priors.py --trilegal /path/to/TRILEGAL_cluster_v08 --out /path/to/prior_maps \\
+  python scripts/make_priors.py --trilegal /path/to/TRILEGAL_cluster_v08 --out priors_dp2.npz \\
                                 --footprint /path/to/rubin_dp2/object_collection/object_lc/skymap.6.fits
 
-One row per r bin of getBayesConstants() and per HEALPix pixel of the given order, with the columns the fit
-reads (rmag, kde, xGrid, yGrid) and the centre of the pixel as ra and dec, so that every row of a pixel lands
-in the same partition. The model stars of a pixel are read from a cone of the same area at its centre and
-placed on the tLoc axis of the locus the fit will use, which is what makes the maps and the fit comparable.
+One map per r bin of getBayesConstants() and per HEALPix pixel of the given order, stored as an array with an
+index from pixel to row, so that the run looks a sightline up rather than joining two catalogs. The model
+stars of a pixel are read from a cone of the same area at its centre and placed on the tLoc axis of the locus
+the fit will use, which is what makes the maps and the fit comparable.
 
 Only pixels of the footprint are built. The footprint comes from the sky map of the object catalog, either a
 sparse table of PIXEL and VALUE or a full HEALPix array; without one the whole sky is built.
@@ -84,7 +84,7 @@ def pixelMaps(pixel, order, catalog, radius, maxStars, feH, segments, mrMin, mrM
         if len(stars) >= MIN_STARS:
             break
     if len(stars) < 3:
-        return []
+        return None
     stars = pd.DataFrame(
         {c: stars[c].to_numpy(dtype=np.int32 if c == "label" else float) for c in MODEL_COLUMNS}
     )
@@ -93,11 +93,11 @@ def pixelMaps(pixel, order, catalog, radius, maxStars, feH, segments, mrMin, mrM
     ].copy()
     del stars
     if len(model) < 3:
-        return []
+        return None
     model = lt.assignTLocPartition(model, segments, feH)
     model = model[model["tLoc"].notna()]
     if len(model) < 3:
-        return []
+        return None
 
     bc = getBayesConstants()
     metadata = np.array(
@@ -114,26 +114,26 @@ def pixelMaps(pixel, order, catalog, radius, maxStars, feH, segments, mrMin, mrM
             pixel,
         ]
     )
-    rows = []
-    for r in np.linspace(bc["rmagMin"], bc["rmagMax"], bc["rmagNsteps"]):
+    rGrid = np.linspace(bc["rmagMin"], bc["rmagMax"], bc["rmagNsteps"])
+    maps, made = None, np.zeros(rGrid.size, dtype=bool)
+    for index, r in enumerate(rGrid):
         inBin = model[model["rmag"].between(r - bc["rmagBinWidth"], r + bc["rmagBinWidth"])]
         if len(inBin) < 3:
             continue
         if maxStars and len(inBin) > maxStars:
             inBin = inBin.sample(n=maxStars, random_state=int(pixel))
         xGrid, yGrid, kde = get2Dmap(inBin, ["FeH", "tLoc", "rmag"], metadata)
-        rows.append(
-            {
-                "ra": ra,
-                "dec": dec,
-                "pixel": int(pixel),
-                "rmag": float(r),
-                "kde": kde.astype(np.float64).tobytes(),
-                "xGrid": xGrid.astype(np.float64).tobytes(),
-                "yGrid": yGrid.astype(np.float64).tobytes(),
-            }
-        )
-    return rows
+        nX = np.unique(xGrid).size
+        if maps is None:
+            maps = np.zeros((rGrid.size, kde.size // nX, nX), dtype=np.float32)
+        maps[index] = kde.reshape(maps.shape[1], nX)
+        made[index] = True
+    if maps is None:
+        return None
+    # an r bin with no model stars borrows the nearest one that has them, so that every bin has a map
+    order = np.argsort(np.abs(np.arange(rGrid.size)[:, None] - np.where(made)[0][None, :]), axis=1)[:, 0]
+    maps = maps[np.where(made)[0][order]]
+    return int(pixel), maps, xGrid[0], yGrid[:, 0] if yGrid.ndim > 1 else yGrid
 
 
 def startWorker(order, catalog, radius, maxStars):
@@ -149,7 +149,7 @@ def startWorker(order, catalog, radius, maxStars):
 
 
 def buildPixel(pixel):
-    """Pool entry point: the rows of one pixel, or an empty list if it has no model stars."""
+    """Pool entry point: the maps of one pixel, or None if the model catalog cannot serve it."""
     try:
         return pixelMaps(
             int(pixel),
@@ -160,15 +160,14 @@ def buildPixel(pixel):
             *WORKER["axes"],
         )
     except Exception:  # a pixel the model catalog cannot serve must not take the whole build down
-        return []
+        return None
 
 
 def main():
     """Command line entry point."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--trilegal", required=True, help="TRILEGAL model catalog (HATS)")
-    ap.add_argument("--out", required=True, help="directory for the prior map catalog")
-    ap.add_argument("--name", default="prior_maps")
+    ap.add_argument("--out", required=True, help="file to write the prior maps to (npz)")
     ap.add_argument("--footprint", default="", help="sky map of the object catalog (skymap.N.fits)")
     ap.add_argument("--order", type=int, default=5, help="HEALPix order of the maps (5 is 1.8 degrees)")
     ap.add_argument(
@@ -197,38 +196,42 @@ def main():
     radius = args.radius or float(np.sqrt(area / np.pi))
     print(f"{pixels.size} pixels of order {args.order} ({area:.2f} deg2), cone radius {radius:.2f} deg")
 
+    built, maps, axes = [], [], None
     with mp.Pool(
         args.processes,
         initializer=startWorker,
         initargs=(args.order, args.trilegal, radius, args.max_stars),
         maxtasksperchild=args.max_tasks,
     ) as pool:
-        rows, done = [], 0
-        for result in pool.imap_unordered(buildPixel, pixels, chunksize=1):
-            rows.extend(result)
-            done += 1
+        for done, result in enumerate(pool.imap_unordered(buildPixel, pixels, chunksize=1), start=1):
+            if result is not None:
+                pixel, cube, xGrid, yGrid = result
+                built.append(pixel)
+                maps.append(cube)
+                axes = (xGrid, yGrid)
             if done % 100 == 0 or done == pixels.size:
-                print(f"  {done}/{pixels.size} pixels, {len(rows)} maps", flush=True)
-    if not rows:
+                print(f"  {done}/{pixels.size} pixels, {len(built)} built", flush=True)
+    if not built:
         raise SystemExit("no prior maps were built: check the footprint and the model catalog")
 
-    frame = pd.DataFrame(rows)
-    built = frame["pixel"].nunique()
-    print(f"{len(frame)} maps over {built} pixels, {frame.memory_usage(deep=True).sum() / 2**30:.1f} GiB")
-    # one partition per pixel: the fit takes the map of a partition whose r is nearest to the star's, so a
-    # partition holding more than one pixel would hand some stars the prior of the wrong piece of sky
-    catalog = lsdb.from_dataframe(
-        frame,
-        ra_column="ra",
-        dec_column="dec",
-        lowest_order=args.order,
-        highest_order=args.order,
-        drop_empty_siblings=False,
-        partition_rows=None,
-        margin_threshold=None,
+    order = np.argsort(built)
+    cube = np.stack([maps[i] for i in order]).astype(np.float32)
+    index = np.full(12 * 4**args.order, -1, dtype=np.int32)
+    index[np.asarray(built)[order]] = np.arange(len(built), dtype=np.int32)
+    bc = getBayesConstants()
+    np.savez(
+        args.out,
+        kde=cube,
+        rmag=np.linspace(bc["rmagMin"], bc["rmagMax"], bc["rmagNsteps"]),
+        xGrid=axes[0].astype(np.float64),
+        yGrid=axes[1].astype(np.float64),
+        index=index,
+        order=args.order,
     )
-    catalog.write_catalog(base_catalog_path=args.out, catalog_name=args.name, overwrite=True)
-    print(f"written {Path(args.out)} with {catalog.npartitions} partitions")
+    print(
+        f"{args.out}: {len(built)} of {pixels.size} pixels, maps {cube.shape}, "
+        f"{cube.nbytes / 2**30:.2f} GiB"
+    )
 
 
 if __name__ == "__main__":
