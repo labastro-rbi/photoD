@@ -19,6 +19,8 @@ which matters towards the bulge, where the 2D map integrates to infinity and rea
 
 import argparse
 import os
+import shutil
+import tempfile
 from functools import partial
 from pathlib import Path
 
@@ -171,6 +173,25 @@ def loadParams(setup):
     return PARAMS[setup]
 
 
+def fitAndWrite(partition, pixel, base, priorPath, setup, workerDevices, batchSize):
+    """Fit one partition and write it where its HEALPix pixel belongs, returning only how many stars it held.
+
+    The fit writes its own output rather than handing it back: results are far larger than the stars they
+    came from, and a scheduler that collects them all before a separate writing step runs holds the survey
+    in memory.
+    """
+    from hats.io.paths import pixel_catalog_file
+    from hats.pixel_math import HealpixPixel
+
+    estimates = fitPartition(partition, priorPath, setup, workerDevices, batchSize)
+    if not len(estimates):
+        return 0
+    path = pixel_catalog_file(base, HealpixPixel(pixel.order, pixel.pixel))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(estimates).to_parquet(path, index=False)
+    return len(estimates)
+
+
 def fitPartition(partition, priorPath, setup, workerDevices, batchSize):
     """One partition of stars, each group of them fitted with the prior maps of the sky pixel it lies in.
 
@@ -201,6 +222,34 @@ def fitPartition(partition, priorPath, setup, workerDevices, batchSize):
     return npd.NestedFrame(pd.concat(pieces, ignore_index=True))
 
 
+def writeCatalogMetadata(base, name, pixels, total):
+    """The HATS metadata beside the parquet files, so that the result reads back as a catalog."""
+    try:
+        from hats.catalog import PartitionInfo, TableProperties
+        from hats.io import write_parquet_metadata
+
+        written = [p for p in pixels if (Path(str(pixelFile(base, p)))).exists()]
+        PartitionInfo.from_healpix(written).write_to_file(catalog_path=base)
+        TableProperties(
+            catalog_name=name,
+            catalog_type="object",
+            total_rows=total,
+            ra_column="ra",
+            dec_column="dec",
+        ).to_properties_file(base)
+        write_parquet_metadata(base)
+    except Exception as error:  # the parquet files are the result; the index can be rebuilt from them
+        print(f"the parquet files are written but the catalog index is not: {type(error).__name__}: {error}")
+
+
+def pixelFile(base, pixel):
+    """Where one HEALPix pixel's parquet file goes."""
+    from hats.io.paths import pixel_catalog_file
+    from hats.pixel_math import HealpixPixel
+
+    return pixel_catalog_file(base, HealpixPixel(pixel.order, pixel.pixel))
+
+
 def main():
     """Command line entry point."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -223,6 +272,13 @@ def main():
         help="npz from make_dust_curves.py: a 3D dust map as the A_r prior, worth having at |b| < 10",
     )
     ap.add_argument("--workers", type=int, default=1)
+    ap.add_argument(
+        "--chunk",
+        type=int,
+        default=200,
+        help="partitions submitted at a time, which is what bounds the memory of a survey-wide run",
+    )
+    ap.add_argument("--overwrite", action="store_true", help="replace an existing result of the same name")
     ap.add_argument(
         "--batch-size",
         type=int,
@@ -255,20 +311,42 @@ def main():
     # run ahead reads the whole survey into memory while the GPUs work through the first few partitions.
     # Holding it to one unfinished read per worker keeps the memory flat.
     dask.config.set({"distributed.scheduler.worker-saturation": 1.0})
-    with Client(n_workers=args.workers, threads_per_worker=1) as client:
+    # no dashboard: it profiles every worker continuously, and over a survey-sized graph those buffers grow
+    # faster than the fit does
+    with Client(
+        n_workers=args.workers,
+        threads_per_worker=1,
+        dashboard_address=None,
+        local_directory=tempfile.mkdtemp(prefix="dask-"),
+    ) as client:
         workerIds = sorted(client.run(lambda dask_worker: dask_worker.id).values())
-        nDevices = jax.device_count()
+        # count the GPUs on a worker: opening them here would leave the parent holding a CUDA context that
+        # every worker then inherits, and the run carries a copy of it for each of them
+        nDevices = max(client.run(jax.device_count).values())
         devices = {wid: i % nDevices for i, wid in enumerate(workerIds)}
-        result = stars.map_partitions(
-            fitPartition,
-            priorPath=args.priors,
-            setup=setup,
-            workerDevices=devices,
-            batchSize=args.batch_size,
-            meta=getEstimatesMeta(computeMrTrue=True),
-        )
-        result.write_catalog(base_catalog_path=args.out, catalog_name=args.name, overwrite=True)
-    print(f"written {Path(args.out) / args.name}")
+        base = Path(args.out) / args.name
+        if base.exists() and args.overwrite:
+            shutil.rmtree(base)
+        base.mkdir(parents=True, exist_ok=True)
+        pixels = stars.hc_structure.get_healpix_pixels()
+        parts = stars.to_delayed()
+        print(f"{len(parts)} partitions to fit", flush=True)
+        total, done = 0, 0
+        for start in range(0, len(parts), args.chunk):
+            group = range(start, min(start + args.chunk, len(parts)))
+            counts = dask.compute(
+                *[
+                    dask.delayed(fitAndWrite)(
+                        parts[i], pixels[i], base, args.priors, setup, devices, args.batch_size
+                    )
+                    for i in group
+                ]
+            )
+            total += int(sum(counts))
+            done += len(counts)
+            print(f"  {done}/{len(parts)} partitions, {total} stars", flush=True)
+    writeCatalogMetadata(base, args.name, pixels, total)
+    print(f"written {base}: {total} stars")
 
 
 if __name__ == "__main__":
