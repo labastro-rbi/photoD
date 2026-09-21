@@ -31,15 +31,23 @@ name of the catalog column with A_r from the dust map as `GlobalParams(..., ArMa
 ### Running on Rubin DP2
 
 `scripts/run_dp2.py` runs the whole thing: point sources from the DP2 object catalog, colours and errors from the
-PSF fluxes, the DP2 locus, the TRILEGAL prior maps in HATS, one lsdb `merge_map` over the sky, results written
-as a HATS catalog:
+PSF fluxes, the DP2 locus, the TRILEGAL prior maps, a pool of processes over the partition files of the
+catalog, results written as a HATS catalog:
 
 ```
-python scripts/run_dp2.py --catalog <rubin_dp2/object_collection> --priors <prior maps> --out <dir> --name dp2_photod
+python scripts/make_priors.py --trilegal <TRILEGAL_cluster_v08> --footprint <object_lc/skymap.6.fits> --out priors.npz
+python scripts/run_dp2.py --catalog <rubin_dp2/object_collection> --priors priors.npz --out <dir> \
+    --dust-curves dust_dp2.npz --ar-max 8 --workers 6
 ```
 
-`--cone RA DEC RADIUS` runs a piece of sky, `--workers` sets the dask workers (one JAX device each), `--floor`
-the colour-error floor and `--no-dust-map` the flat A_r prior.
+`--cone RA DEC RADIUS` runs a piece of sky, `--workers` sets the processes, which share whatever GPUs are
+there, `--chunk` how many partitions a process handles before it is replaced, `--floor` the colour-error floor,
+`--ar-max` the top of the A_r grid and `--no-dust-map` the flat A_r prior. A partition is a file and fitting
+one has nothing to say to the next, so there is nothing to schedule: the pool reads, fits and writes one file
+per task, which is what keeps the memory of a survey-wide run flat.
+
+The prior maps are built once for a footprint by `scripts/make_priors.py`, one map per r bin and HEALPix
+pixel, on the tLoc axis of the locus the fit uses.
 
 Two things differ from a run with `LSSTlocus_10Gyr_fix.txt` and the catalog errors as they are, and both were
 measured on DP2 stars with Gaia parallaxes and DESI spectra:
@@ -65,6 +73,33 @@ calibration, gain as much or more. Prior maps built from the field's own star co
 reweighted to the observed r and g-r distribution) help M dwarfs further in some fields; the results above use
 the standard maps.
 
+### What the fit writes
+
+Per star, beside `objectId`, `ra`, `dec` and `rmag`: the 14th, 50th and 86th percentiles of the absolute
+magnitude `Mr`, the metallicity `FeH`, the extinction `Ar`, the reddened absolute magnitude `Qr = Mr + Ar` and
+the distance modulus `DM`, the entropy the data took out of the prior for the first three, `chi2min`, and
+`flags`.
+
+`DM = rmag - Qr`, so its percentiles come straight from the posterior rather than from combining two
+marginals, and the distance is `10 ** (DM / 5 + 1)` parsecs.
+
+`flags` is one bit per thing worth knowing about the answer. Nothing is dropped for being flagged; the row
+stays and says so.
+
+| bit | meaning | on DP2 |
+|---|---|---|
+| 1 | chi2 above 100: the locus does not pass through this star's colours | 3.0 % |
+| 2 | the Mr posterior is lopsided, which is how a giant and a dwarf solution both survive | 2.9 % |
+| 4 | [Fe/H] is against the end of the model grid, so it is a limit rather than a measurement | 0.4 % |
+| 8 | A_r is against the top of its grid, and the distance goes wrong with it | 0.002 % |
+| 16 | a colour had no measurement and carried no weight | 49 % |
+
+The first two are the ones that mean the answer is suspect rather than merely uncertain: against Gaia
+parallaxes the stars with bit 1 scatter five to twenty five times their quoted uncertainty, where the rest
+scatter 1.09 times it. Bit 4 marks a limit rather than a failure. Bit 16 is about the input and is normal:
+it is nearly all the u band, which is the shallowest, and half of DP2 has no usable u-g. So the cut to reach
+for is `flags & 3 == 0`, not `flags == 0`.
+
 ### A 3D dust map as the A_r prior
 
 The A_r prior is flat between 0 and 1.3 A_r(map) + 0.1, which says nothing about where along the line of sight
@@ -78,9 +113,16 @@ this prior are quadratic in A_r, so they combine into one quadratic and the fit 
 each star scales it by its own A_r from the 2D map, so the band and the calibration of the 3D map cancel and
 any of them can be used. Sightlines the 3D map does not reach keep the flat prior.
 
+No single 3D map covers the sky, so `make_dust_curves.py` takes several and lets the first with data win each
+sightline, deepest first: Marshall in the inner plane, Chen, Bayestar above declination -30, and Edenhofer for
+what is left, which is used only above |b| = 10 because it stops at 2 kpc. That covers all of DP2. It also
+writes the column each deep map measured through the disc, which the run takes as the bound on a star's A_r
+wherever it is smaller than the 2D one. That matters towards the bulge, where the 2D map integrates the dust
+to infinity and reports tens of magnitudes about stars that sit in front of it.
+
 ```
-python scripts/make_dust_curves.py --map marshall --bmax 12 --out dust_marshall.npz
-python scripts/run_dp2.py --catalog ... --priors ... --out ... --dust-curves dust_marshall.npz
+python scripts/make_dust_curves.py --footprint <object_lc/skymap.6.fits> --out dust_dp2.npz
+python scripts/run_dp2.py --catalog ... --priors ... --out ... --dust-curves dust_dp2.npz
 ```
 
 The A_r grid has to reach the extinction of the field first. The standard "ArLarge" grid stops at 2.5 mag, so

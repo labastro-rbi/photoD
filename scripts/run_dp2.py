@@ -1,13 +1,15 @@
-"""Run photoD on Rubin DP2: point sources from the object catalog, the DP2 locus, TRILEGAL priors in HATS,
-one lsdb merge_map over the sky, results written as a HATS catalog.
+"""Run photoD on Rubin DP2: point sources from the object catalog, the DP2 locus, TRILEGAL prior maps, a
+pool of processes over the partition files, results written as a HATS catalog.
 
   python scripts/run_dp2.py --catalog /path/to/rubin_dp2/object_collection --priors /path/to/priors.npz \\
                             --out /path/to/results --name dp2_photod
 
-Options: --cone RA DEC RADIUS_DEG to run a piece of sky, --workers and --batch-size for the JAX setup,
---floor for the colour-error floor (0.03 mag), --no-dust-map to run the flat A_r prior, --dust-curves to use a
-3D dust map as the A_r prior (scripts/make_dust_curves.py), which matters at low Galactic latitude, and
---ar-max for the top of the A_r grid, which has to be above the extinction of the field.
+Options: --cone RA DEC RADIUS_DEG to run a piece of sky, --workers for the processes (they share the GPUs
+between them) and --batch-size for the JAX setup, --chunk for how many partitions a process handles before it
+is replaced, --floor for the colour-error floor (0.03 mag), --no-dust-map to run the flat A_r prior,
+--dust-curves to use a 3D dust map as the A_r prior (scripts/make_dust_curves.py), which matters at low
+Galactic latitude, and --ar-max for the top of the A_r grid, which has to be above the extinction of the
+field.
 
 Input columns (DP2 object table): coord_ra, coord_dec, objectId, <band>_psfFlux and _psfFluxErr for ugrizy,
 refExtendedness, ebv. Point sources are refExtendedness == 0 with r between 16.5 and 23.5 and S/N > 10 in r,
@@ -29,10 +31,6 @@ from pathlib import Path
 # JAX starts; the worker processes inherit them.
 os.environ.setdefault("XLA_FLAGS", "--xla_gpu_autotune_level=0")
 os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
-# Partitions of the object catalog are hundreds of megabytes each and are freed as soon as the stars have
-# been taken out of them, but by default the allocator keeps the space rather than returning it, so a worker
-# that has read a few hundred partitions looks far larger than the work it is holding.
-os.environ.setdefault("MALLOC_TRIM_THRESHOLD_", "65536")
 
 import jax  # noqa: E402
 import lsdb  # noqa: E402
@@ -55,15 +53,6 @@ PRIORS = {}
 PARAMS = {}
 CURVES = {}
 WORK = {}
-
-
-def starsMeta():
-    """Empty frame with the columns and types prepareStars returns (lsdb needs it to build the graph)."""
-    cols = {"objectId": np.int64, "ra": float, "dec": float, "rmag": float, "Ar": float}
-    for c in COLORS:
-        cols[c], cols[c + "Err"] = float, float
-    cols["dustIndex"] = np.int32
-    return npd.NestedFrame({k: pd.Series([], dtype=v) for k, v in cols.items()})
 
 
 def prepareStars(df, dustIndex=None, nside=0, arTotal=None):
@@ -191,6 +180,13 @@ def loadParams(setup):
     return PARAMS[setup]
 
 
+def separation(ra, dec, ra0, dec0):
+    """Angle in degrees between each position and one centre."""
+    a, d, a0, d0 = (np.radians(x) for x in (ra, dec, ra0, dec0))
+    cosine = np.sin(d0) * np.sin(d) + np.cos(d0) * np.cos(d) * np.cos(a - a0)
+    return np.degrees(np.arccos(np.clip(cosine, -1.0, 1.0)))
+
+
 def fitAndWrite(source, pixel, base, priorPath, curvePath, setup, batchSize, cone=None):
     """Read one partition file, fit its stars and write them where the partition's HEALPix pixel belongs.
 
@@ -214,19 +210,7 @@ def fitAndWrite(source, pixel, base, priorPath, curvePath, setup, batchSize, con
     del frame
     if cone is not None and len(stars):
         ra, dec, radius = cone
-        separation = np.degrees(
-            np.arccos(
-                np.clip(
-                    np.sin(np.radians(dec)) * np.sin(np.radians(stars["dec"].to_numpy()))
-                    + np.cos(np.radians(dec))
-                    * np.cos(np.radians(stars["dec"].to_numpy()))
-                    * np.cos(np.radians(stars["ra"].to_numpy() - ra)),
-                    -1,
-                    1,
-                )
-            )
-        )
-        stars = stars[separation <= radius]
+        stars = stars[separation(stars["ra"].to_numpy(), stars["dec"].to_numpy(), ra, dec) <= radius]
     estimates = fitPartition(stars, priorPath, setup, batchSize)
     if not len(estimates):
         return 0
@@ -345,7 +329,7 @@ def main():
         default="",
         help="npz from make_dust_curves.py: a 3D dust map as the A_r prior, worth having at |b| < 10",
     )
-    ap.add_argument("--workers", type=int, default=1)
+    ap.add_argument("--workers", type=int, default=1, help="processes, which share the GPUs between them")
     ap.add_argument(
         "--chunk",
         type=int,

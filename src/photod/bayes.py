@@ -36,6 +36,16 @@ QUANTILE_NAMES = ("lo", "median", "hi")
 # of its A_r grid. Bounding that product lets one batch size serve a field of any extinction: without it the
 # top of the A_r grid silently decides how much memory the run needs, and a dusty field runs out of it.
 AR_BATCH_BUDGET = 100_000
+# Bits of the flags column. A star with none of them set is one the model describes, on a single branch, with
+# every colour measured and nothing of it against the edge of the grid.
+FLAG_POOR_FIT = 1  # chi2 above CHI2_POOR: the locus does not pass through this star's colours
+FLAG_TWO_BRANCHES = 2  # the Mr posterior is lopsided, which is how a giant and a dwarf solution both survive
+FLAG_FEH_EDGE = 4  # [Fe/H] is against the end of the model grid, so it is a limit rather than a measurement
+FLAG_AR_EDGE = 8  # A_r is against the top of its grid, and the distance goes wrong with it
+FLAG_COLOR_MISSING = 16  # at least one colour had no measurement and carried no weight in the fit
+CHI2_POOR = 100.0
+ASYMMETRY_POOR = 3.0
+MISSING_COLOR_ERR = 1.0  # a colour whose error is above this carried no weight, however it was marked
 
 
 def makeBayesEstimates3d(
@@ -116,6 +126,14 @@ def makeBayesEstimates3d(
     statistics = {
         name: _collect([(b, out[1][name]) for b, out in batches], nStars) for name in batches[0][1][1]
     }
+    # the distance modulus is r - (Mr + A_r), and Qr is the posterior of Mr + A_r, so its quantiles carry
+    # over directly, the low end of one being the high end of the other
+    for name, source in (("lo", "hi"), ("median", "median"), ("hi", "lo")):
+        statistics[f"{cc.distance_modulus}_quantile_{name}"] = (
+            rmag - statistics[f"{cc.abs_mag_ext_r}_quantile_{source}"]
+        )
+    statistics[cc.quality_flags] = _qualityFlags(chi2min, statistics, colorsErr, globalParams)
+
     results = BayesResults(chi2min, statistics)
     if returnPosteriors:
         extra = {
@@ -131,11 +149,13 @@ def makeBayesEstimates3d(
             cc.object_id: starsData[cc.object_id],
             cc.right_ascension: starsData[cc.right_ascension],
             cc.declination: starsData[cc.declination],
+            cc.observed_mag_r: rmag,
             cc.chi_sq_min: chi2min,
             **statistics,
         }
     )
-    return estimatesDf, results
+    # in the order the meta declares, so that every partition of a run has the same schema
+    return estimatesDf[list(getEstimatesMeta(globalParams.computeMrTrue).columns)], results
 
 
 def makeBayesPosteriors3d(starsData: npd.NestedFrame, mapCatalog: MapCatalog, globalParams: GlobalParams):
@@ -177,7 +197,7 @@ def getColorsAndPriorIndices(catalog, params):
 
 def getEstimatesMeta(computeMrTrue: bool = False):
     """Empty frame with the columns and types of the estimates, as lsdb meta."""
-    names = [cc.abs_mag_r, cc.metallicity, cc.extinction_r, cc.abs_mag_ext_r] + (
+    names = [cc.abs_mag_r, cc.metallicity, cc.extinction_r, cc.abs_mag_ext_r, cc.distance_modulus] + (
         ["Mr_true"] if computeMrTrue else []
     )
     quantileCols = [f"{name}_quantile_{q}" for name in names for q in QUANTILE_NAMES]
@@ -186,10 +206,15 @@ def getEstimatesMeta(computeMrTrue: bool = False):
         cc.object_id,
         cc.right_ascension,
         cc.declination,
+        cc.observed_mag_r,
         cc.chi_sq_min,
+        cc.quality_flags,
         *sorted(quantileCols + entropyCols),
     ]
-    meta = npd.NestedFrame.from_dict({col: pd.Series([], dtype=np.float32) for col in colNames})
+    dtypes = {cc.object_id: np.int64, cc.quality_flags: np.int32}
+    meta = npd.NestedFrame.from_dict(
+        {col: pd.Series([], dtype=dtypes.get(col, np.float32)) for col in colNames}
+    )
     meta.index.name = "_healpix_29"
     return meta
 
@@ -337,6 +362,35 @@ def _arGridLengths(arMax, Ar1d):
     need = np.minimum(np.searchsorted(Ar1d, arMax, side="right") + 2, Ar1d.size)
     lengths = np.array(sorted({n for n in AR_GRID_LENGTHS if n < Ar1d.size} | {Ar1d.size}))
     return lengths[np.searchsorted(lengths, need)]
+
+
+def _qualityFlags(chi2min, statistics, colorsErr, globalParams):
+    """One bit per thing worth knowing about a star's fit, as described by the FLAG_ constants.
+
+    Everything here is a property of the answer rather than of the star, and none of it removes a row: a
+    catalog that quietly drops what it cannot fit is harder to use than one that says so.
+    """
+    flags = np.zeros(chi2min.size, dtype=np.int32)
+    flags |= np.where(chi2min > CHI2_POOR, FLAG_POOR_FIT, 0)
+
+    low, median, high = (statistics[f"{cc.abs_mag_r}_quantile_{q}"] for q in QUANTILE_NAMES)
+    upper, lower = high - median, median - low
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ratio = np.where(lower > 0, upper / lower, np.inf)
+    lopsided = (ratio > ASYMMETRY_POOR) | (ratio < 1 / ASYMMETRY_POOR)
+    flags |= np.where(lopsided & np.isfinite(median), FLAG_TWO_BRANCHES, 0)
+
+    feH = statistics[f"{cc.metallicity}_quantile_median"]
+    step = np.diff(globalParams.FeH1d)[0] if globalParams.FeH1d.size > 1 else 0.0
+    flags |= np.where(
+        (feH <= globalParams.FeH1d[0] + step) | (feH >= globalParams.FeH1d[-1] - step), FLAG_FEH_EDGE, 0
+    )
+
+    ar = statistics[f"{cc.extinction_r}_quantile_median"]
+    flags |= np.where(ar >= globalParams.Ar1d[-1] - globalParams.dAr, FLAG_AR_EDGE, 0)
+
+    flags |= np.where((colorsErr > MISSING_COLOR_ERR).any(axis=1), FLAG_COLOR_MISSING, 0)
+    return flags
 
 
 def _toHost(out):

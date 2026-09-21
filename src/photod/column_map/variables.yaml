@@ -66,6 +66,12 @@
 - column_id: chi2min
   description: minimum of chi-squared
   variable: chi_sq_min
+- column_id: DM
+  description: distance modulus
+  variable: distance_modulus
+- column_id: flags
+  description: what the fit has to say about itself, one bit per warning
+  variable: quality_flags
 - column_id: gr
   description: g band minus r band
   variable: g_minus_r
