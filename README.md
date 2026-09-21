@@ -38,6 +38,9 @@ catalog, results written as a HATS catalog:
 python scripts/run_dp2.py --catalog <rubin_dp2/object_collection> --out <dir> --name dp2_photod --workers 6
 ```
 
+`notebooks/run_dp2.ipynb` walks through the same thing: one field first, the checks worth doing on the
+answer, then the survey.
+
 The prior maps and the dust curves for the DP2 footprint come with the repository, in `data/`, so a clone has
 everything the fit needs and nothing has to be built or fetched first. `--priors` and `--dust-curves` point at
 them by default; `--dust-curves ""` turns the 3D dust prior off.
