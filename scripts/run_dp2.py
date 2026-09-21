@@ -4,7 +4,7 @@ one lsdb merge_map over the sky, results written as a HATS catalog.
   python scripts/run_dp2.py --catalog /path/to/rubin_dp2/object_collection --priors /path/to/priors.npz \\
                             --out /path/to/results --name dp2_photod
 
-Options: --cone RA DEC RADIUS_DEG to run a piece of sky, --workers and --batch-size for the dask/JAX setup,
+Options: --cone RA DEC RADIUS_DEG to run a piece of sky, --workers and --batch-size for the JAX setup,
 --floor for the colour-error floor (0.03 mag), --no-dust-map to run the flat A_r prior, --dust-curves to use a
 3D dust map as the A_r prior (scripts/make_dust_curves.py), which matters at low Galactic latitude, and
 --ar-max for the top of the A_r grid, which has to be above the extinction of the field.
@@ -18,16 +18,15 @@ which matters towards the bulge, where the 2D map integrates to infinity and rea
 """
 
 import argparse
+import multiprocessing as mp
 import os
 import shutil
-import tempfile
-from functools import partial
 from pathlib import Path
 
 # XLA's autotuner compiles and times dozens of variants of every kernel the first time it meets one, which
 # costs minutes of CPU per worker with the GPU sitting idle and buys this fit nothing, since its cost is in
 # one hand-written kernel rather than in library matrix multiplications. Both variables have to be set before
-# JAX starts; the dask workers inherit them.
+# JAX starts; the worker processes inherit them.
 os.environ.setdefault("XLA_FLAGS", "--xla_gpu_autotune_level=0")
 os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
 # Partitions of the object catalog are hundreds of megabytes each and are freed as soon as the stars have
@@ -35,13 +34,11 @@ os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
 # that has read a few hundred partitions looks far larger than the work it is holding.
 os.environ.setdefault("MALLOC_TRIM_THRESHOLD_", "65536")
 
-import dask  # noqa: E402
 import jax  # noqa: E402
 import lsdb  # noqa: E402
 import nested_pandas as npd  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
-from dask.distributed import Client, get_worker  # noqa: E402
 
 from photod.bayes import getEstimatesMeta, makeBayesEstimates3d  # noqa: E402
 from photod.locus import LSSTsimsLocus, get3DmodelList, make3DlocusList, subsampleLocusData  # noqa: E402
@@ -56,6 +53,8 @@ INPUT_COLUMNS = ["objectId", "coord_ra", "coord_dec", "refExtendedness", "ebv"] 
 ]
 PRIORS = {}
 PARAMS = {}
+CURVES = {}
+WORK = {}
 
 
 def starsMeta():
@@ -158,6 +157,13 @@ def priorPixels(ra, dec, order):
     )
 
 
+def loadCurves(path):
+    """The dust curves, read once per worker process."""
+    if path not in CURVES:
+        CURVES[path] = dict(np.load(path)) if path else {}
+    return CURVES[path]
+
+
 def loadPriors(path):
     """The prior maps, read once per worker process and kept for the partitions that follow."""
     if path not in PRIORS:
@@ -166,14 +172,11 @@ def loadPriors(path):
 
 
 def workerDevice(nDevices):
-    """Which GPU this worker uses: its name, which a replaced worker keeps, so the share stays even."""
+    """Which GPU this worker uses, by its place in the pool, so that the devices are shared evenly."""
     if nDevices < 2:
         return 0
-    try:
-        name = get_worker().name
-        return int(name) % nDevices if str(name).lstrip("-").isdigit() else abs(hash(name)) % nDevices
-    except Exception:
-        return os.getpid() % nDevices
+    identity = getattr(mp.current_process(), "_identity", None)
+    return ((identity[0] - 1) if identity else os.getpid()) % nDevices
 
 
 def loadParams(setup):
@@ -188,17 +191,43 @@ def loadParams(setup):
     return PARAMS[setup]
 
 
-def fitAndWrite(partition, pixel, base, priorPath, setup, batchSize):
-    """Fit one partition and write it where its HEALPix pixel belongs, returning only how many stars it held.
+def fitAndWrite(source, pixel, base, priorPath, curvePath, setup, batchSize, cone=None):
+    """Read one partition file, fit its stars and write them where the partition's HEALPix pixel belongs.
 
-    The fit writes its own output rather than handing it back: results are far larger than the stars they
-    came from, and a scheduler that collects them all before a separate writing step runs holds the survey
-    in memory.
+    The task carries a path rather than a piece of a catalog. Handing the workers pieces of a catalog sends
+    each of them the structure of the whole survey along with it, which on DP2 is gigabytes per worker before
+    a single star is read, and the results are far larger than the stars they came from, so collecting them
+    for a separate writing step holds the survey in memory as well.
     """
+    import pyarrow.parquet as pq
     from hats.io.paths import pixel_catalog_file
     from hats.pixel_math import HealpixPixel
 
-    estimates = fitPartition(partition, priorPath, setup, batchSize)
+    frame = pq.read_table(source, columns=INPUT_COLUMNS).to_pandas()
+    curves = loadCurves(curvePath)
+    stars = prepareStars(
+        frame,
+        dustIndex=curves.get("index"),
+        nside=int(curves["nside"]) if curves else 0,
+        arTotal=curves.get("total"),
+    )
+    del frame
+    if cone is not None and len(stars):
+        ra, dec, radius = cone
+        separation = np.degrees(
+            np.arccos(
+                np.clip(
+                    np.sin(np.radians(dec)) * np.sin(np.radians(stars["dec"].to_numpy()))
+                    + np.cos(np.radians(dec))
+                    * np.cos(np.radians(stars["dec"].to_numpy()))
+                    * np.cos(np.radians(stars["ra"].to_numpy() - ra)),
+                    -1,
+                    1,
+                )
+            )
+        )
+        stars = stars[separation <= radius]
+    estimates = fitPartition(stars, priorPath, setup, batchSize)
     if not len(estimates):
         return 0
     path = pixel_catalog_file(base, HealpixPixel(pixel.order, pixel.pixel))
@@ -235,6 +264,36 @@ def fitPartition(partition, priorPath, setup, batchSize):
     if not pieces:
         return empty
     return npd.NestedFrame(pd.concat(pieces, ignore_index=True))
+
+
+def startWorker(base, priorPath, curvePath, setup, batchSize, cone):
+    """What every partition of this run needs, held once per worker process."""
+    WORK.update(
+        base=base, priorPath=priorPath, curvePath=curvePath, setup=setup, batchSize=batchSize, cone=cone
+    )
+
+
+def runPartition(source):
+    """Pool entry point: one partition, or nothing if it holds no stars the fit can use."""
+    pixel, path = source
+    return fitAndWrite(
+        path,
+        pixel,
+        WORK["base"],
+        WORK["priorPath"],
+        WORK["curvePath"],
+        WORK["setup"],
+        WORK["batchSize"],
+        WORK["cone"],
+    )
+
+
+def partitionFiles(catalog):
+    """Every partition the run covers, as its HEALPix pixel and the parquet file holding it."""
+    from hats.io.paths import pixel_catalog_file
+
+    root = catalog.hc_structure.catalog_base_dir
+    return [(pixel, pixel_catalog_file(root, pixel)) for pixel in catalog.hc_structure.get_healpix_pixels()]
 
 
 def writeCatalogMetadata(base, name, pixels, total):
@@ -291,12 +350,7 @@ def main():
         "--chunk",
         type=int,
         default=400,
-        help="partitions a set of workers handles before it is replaced, which bounds the memory of a run",
-    )
-    ap.add_argument(
-        "--worker-memory",
-        default="16GB",
-        help="memory a worker may hold before it is replaced, which is the machine's guarantee, not ours",
+        help="partitions a worker fits before it is replaced, which bounds the memory of a survey-wide run",
     )
     ap.add_argument("--overwrite", action="store_true", help="replace an existing result of the same name")
     ap.add_argument(
@@ -313,69 +367,37 @@ def main():
         else None
     )
     objects = lsdb.open_catalog(args.catalog, columns=INPUT_COLUMNS, search_filter=search)
-    curves = np.load(args.dust_curves) if args.dust_curves else None
-    if curves is None:
-        prepare = prepareStars
-    else:
-        total = curves["total"] if "total" in curves.files else None
-        prepare = partial(prepareStars, dustIndex=curves["index"], nside=int(curves["nside"]), arTotal=total)
-        bounded = 0 if total is None else int((total > 0).sum())
+    sources = [(pixel, str(path)) for pixel, path in partitionFiles(objects)]
+    cone = tuple(args.cone) if args.cone else None
+    setup = (args.floor, not args.no_dust_map, args.dust_curves, args.ar_max)
+    if args.dust_curves:
+        curves = np.load(args.dust_curves)
+        bounded = int((curves["total"] > 0).sum()) if "total" in curves.files else 0
         print(
             f"3D dust prior from {args.dust_curves}: {len(curves['shapes'])} sightlines, "
             f"{bounded} of them with a measured total column to bound the extinction"
         )
-    stars = objects.map_partitions(prepare, meta=starsMeta())
-    setup = (args.floor, not args.no_dust_map, args.dust_curves, args.ar_max)
 
-    # Reading a partition is an order of magnitude faster than fitting one, so a scheduler that is free to
-    # run ahead reads the whole survey into memory while the GPUs work through the first few partitions.
-    # Holding it to one unfinished read per worker keeps the memory flat.
-    # The memory a worker cannot release is invisible to dask as anything it can spill, so its usual answer
-    # to a large worker, pause it and write its data out, leaves the worker asleep holding memory it will
-    # never give back and the run stops. Let a worker run until it is over its limit and replaced instead.
-    dask.config.set(
-        {
-            "distributed.scheduler.worker-saturation": 1.0,
-            "distributed.worker.memory.target": False,
-            "distributed.worker.memory.spill": False,
-            "distributed.worker.memory.pause": False,
-        }
-    )
-    # no dashboard: it profiles every worker continuously, and over a survey-sized graph those buffers grow
-    # faster than the fit does
     base = Path(args.out) / args.name
     if base.exists() and args.overwrite:
         shutil.rmtree(base)
     base.mkdir(parents=True, exist_ok=True)
-    pixels = stars.hc_structure.get_healpix_pixels()
-    parts = stars.to_delayed()
-    print(f"{len(parts)} partitions to fit", flush=True)
+    print(f"{len(sources)} partitions to fit", flush=True)
 
     total, done = 0, 0
-    for start in range(0, len(parts), args.chunk):
-        group = range(start, min(start + args.chunk, len(parts)))
-        # a fresh set of workers for each chunk: reading a partition of the object catalog leaves memory
-        # behind that no amount of releasing on our side recovers, so a worker that reads a few hundred of
-        # them grows past any limit worth setting. Replacing them costs the seconds it takes to rebuild the
-        # fit setup, and is what keeps a survey-wide run flat.
-        with Client(
-            n_workers=args.workers,
-            threads_per_worker=1,
-            memory_limit=args.worker_memory,
-            dashboard_address=None,
-            local_directory=tempfile.mkdtemp(prefix="dask-"),
-        ):
-            counts = dask.compute(
-                *[
-                    dask.delayed(fitAndWrite)(parts[i], pixels[i], base, args.priors, setup, args.batch_size)
-                    for i in group
-                ]
-            )
-        total += int(sum(counts))
-        done += len(counts)
-        print(f"  {done}/{len(parts)} partitions, {total} stars", flush=True)
+    with mp.Pool(
+        args.workers,
+        initializer=startWorker,
+        initargs=(base, args.priors, args.dust_curves, setup, args.batch_size, cone),
+        maxtasksperchild=args.chunk,
+    ) as pool:
+        for count in pool.imap_unordered(runPartition, sources, chunksize=1):
+            total += count
+            done += 1
+            if done % 200 == 0 or done == len(sources):
+                print(f"  {done}/{len(sources)} partitions, {total} stars", flush=True)
 
-    writeCatalogMetadata(base, args.name, pixels, total)
+    writeCatalogMetadata(base, args.name, [p for p, _ in sources], total)
     print(f"written {base}: {total} stars")
 
 
