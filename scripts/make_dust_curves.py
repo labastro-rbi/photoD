@@ -190,7 +190,7 @@ def main():
     covered = source >= 0
     index = np.full(12 * args.nside**2, -1, dtype=np.int32)
     index[pixels[covered]] = np.arange(int(covered.sum()), dtype=np.int32)
-    np.savez(
+    np.savez_compressed(
         args.out,
         shapes=shapes[covered],
         total=total[covered],
