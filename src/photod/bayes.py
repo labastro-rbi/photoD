@@ -38,7 +38,7 @@ QUANTILE_NAMES = ("lo", "median", "hi")
 AR_BATCH_BUDGET = 100_000
 # Bits of the flags column. A star with none of them set is one the model describes, on a single branch, with
 # every colour measured and nothing of it against the edge of the grid.
-FLAG_POOR_FIT = 1  # chi2 above CHI2_POOR: the locus does not pass through this star's colours
+FLAG_POOR_FIT = 1  # chi2 above CHI2_POOR, or no answer at all: the locus does not describe this star
 FLAG_TWO_BRANCHES = 2  # the Mr posterior is lopsided, which is how a giant and a dwarf solution both survive
 FLAG_FEH_EDGE = 4  # [Fe/H] is against the end of the model grid, so it is a limit rather than a measurement
 FLAG_AR_EDGE = 8  # A_r is against the top of its grid, and the distance goes wrong with it
@@ -371,9 +371,10 @@ def _qualityFlags(chi2min, statistics, colorsErr, globalParams):
     catalog that quietly drops what it cannot fit is harder to use than one that says so.
     """
     flags = np.zeros(chi2min.size, dtype=np.int32)
-    flags |= np.where(chi2min > CHI2_POOR, FLAG_POOR_FIT, 0)
-
     low, median, high = (statistics[f"{cc.abs_mag_r}_quantile_{q}"] for q in QUANTILE_NAMES)
+    # a star the fit could not place at all must not come out looking like one it placed well
+    flags |= np.where((chi2min > CHI2_POOR) | ~np.isfinite(median), FLAG_POOR_FIT, 0)
+
     upper, lower = high - median, median - low
     with np.errstate(divide="ignore", invalid="ignore"):
         ratio = np.where(lower > 0, upper / lower, np.inf)

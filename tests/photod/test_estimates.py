@@ -98,6 +98,15 @@ def test_a_star_the_locus_cannot_fit_is_flagged_and_still_answered():
     assert len(estimates) == len(catalog)
 
 
+def test_a_star_with_no_answer_is_not_mistaken_for_a_good_one():
+    """A row whose fit produced nothing has to say so rather than come back with an empty flag."""
+    catalog, priorGrid, params = setup()
+    estimates, _ = makeBayesEstimates3d(catalog, priorGrid, params, batchSize=8)
+    median = estimates[f"{bayes.cc.abs_mag_r}_quantile_median"].to_numpy()
+    flags = estimates[bayes.cc.quality_flags].to_numpy()
+    assert np.all(flags[~np.isfinite(median)] & FLAG_POOR_FIT)
+
+
 def test_a_colour_with_no_measurement_is_flagged():
     """The fit gives an unmeasured colour no weight, and the star records that it had one."""
     catalog, priorGrid, params = setup()
