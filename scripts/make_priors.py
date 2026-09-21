@@ -33,7 +33,46 @@ MIN_STARS = 2000
 WORKER = {}
 
 
-def fromCatalog(url, out):
+PRIOR_DECADES = 8.0  # how far below its own peak a compact map is kept
+
+
+def compact(cube):
+    """The maps small enough to keep beside the code: every other grid point, and a byte of log each.
+
+    They are smoothed densities on a grid finer than the smoothing, and the fit interpolates them onto the
+    locus anyway, so half the points carry them. Storing the log relative to each map's own peak costs about
+    0.008 dex where the prior has weight and takes the file from gigabytes to tens of megabytes.
+    """
+    cube = cube[:, :, ::2, ::2]
+    flat = cube.reshape(cube.shape[0] * cube.shape[1], -1)
+    top = flat.max(axis=1, keepdims=True)
+    rel = np.log10(np.maximum(flat / np.where(top > 0, top, 1.0), 10**-PRIOR_DECADES))
+    levels = float(np.iinfo(np.uint8).max)
+    q = np.rint((rel + PRIOR_DECADES) / PRIOR_DECADES * levels).astype(np.uint8)
+    return q.reshape(cube.shape), top.reshape(cube.shape[0], cube.shape[1]).astype(np.float32)
+
+
+def writePriors(out, cube, rGrid, xGrid, yGrid, index, order, small):
+    """The maps in one file, compact enough to keep beside the code when asked for."""
+    if small:
+        q, scale = compact(cube)
+        np.savez_compressed(
+            out,
+            kde=q,
+            kdeScale=scale,
+            rmag=rGrid,
+            xGrid=xGrid[::2],
+            yGrid=yGrid[::2],
+            index=index,
+            order=order,
+        )
+    else:
+        np.savez_compressed(out, kde=cube, rmag=rGrid, xGrid=xGrid, yGrid=yGrid, index=index, order=order)
+    size = Path(out).stat().st_size / 2**20
+    print(f"{out}: {len(cube)} pixels of order {order}, maps {cube.shape}, {size:.1f} MB on disk")
+
+
+def fromCatalog(url, out, small):
     """The same file, out of prior maps that already exist as a HATS catalog rather than from the model.
 
     The maps are the same either way; what changes is that a catalog of them has to be joined against the
@@ -73,9 +112,7 @@ def fromCatalog(url, out):
         cube.append(maps)
     if not cube:
         raise SystemExit(f"no prior maps in {url}")
-    cube = np.stack(cube)
-    np.savez_compressed(out, kde=cube, rmag=rGrid, xGrid=xGrid, yGrid=yGrid, index=index, order=order)
-    print(f"{out}: {len(cube)} pixels of order {order}, maps {cube.shape}, {cube.nbytes / 2**30:.2f} GiB")
+    writePriors(out, np.stack(cube), rGrid, xGrid, yGrid, index, order, small)
 
 
 def footprintPixels(path, order):
@@ -226,6 +263,12 @@ def main():
         default=0.0,
         help="radius of the cone of model stars per pixel; a circle of the pixel's area by default",
     )
+    ap.add_argument(
+        "--compact",
+        action="store_true",
+        help="store the maps on every other grid point as a byte of log each, which is tens of megabytes "
+        "instead of gigabytes and moves the median star by under two millimagnitudes",
+    )
     ap.add_argument("--processes", type=int, default=8)
     ap.add_argument(
         "--max-stars",
@@ -242,7 +285,7 @@ def main():
     args = ap.parse_args()
 
     if args.from_catalog:
-        fromCatalog(args.from_catalog, args.out)
+        fromCatalog(args.from_catalog, args.out, args.compact)
         return
     if not args.trilegal:
         raise SystemExit("give either --trilegal to build the maps or --from-catalog to convert them")
@@ -275,18 +318,15 @@ def main():
     index = np.full(12 * 4**args.order, -1, dtype=np.int32)
     index[np.asarray(built)[order]] = np.arange(len(built), dtype=np.int32)
     bc = getBayesConstants()
-    np.savez_compressed(
+    writePriors(
         args.out,
-        kde=cube,
-        rmag=np.linspace(bc["rmagMin"], bc["rmagMax"], bc["rmagNsteps"]),
-        xGrid=axes[0].astype(np.float64),
-        yGrid=axes[1].astype(np.float64),
-        index=index,
-        order=args.order,
-    )
-    print(
-        f"{args.out}: {len(built)} of {pixels.size} pixels, maps {cube.shape}, "
-        f"{cube.nbytes / 2**30:.2f} GiB"
+        cube,
+        np.linspace(bc["rmagMin"], bc["rmagMax"], bc["rmagNsteps"]),
+        axes[0].astype(np.float64),
+        axes[1].astype(np.float64),
+        index,
+        args.order,
+        args.compact,
     )
 
 

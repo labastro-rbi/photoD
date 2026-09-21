@@ -52,6 +52,7 @@ RAW_COLUMNS = ["objectId", "coord_ra", "coord_dec", "refExtendedness", "ebv"] + 
 ]
 FIT_COLUMNS = ["objectId", "ra", "dec", "rmag"] + [c + s for c in COLORS for s in ("", "Err")]
 INPUT_COLUMNS = RAW_COLUMNS  # kept for anything importing the old name
+PRIOR_DECADES = 8.0  # how far below its own peak a compact prior map is kept
 PRIORS = {}
 PARAMS = {}
 CURVES = {}
@@ -206,6 +207,22 @@ def mapFile(path):
     return Path(path).with_suffix(".kde.npy")
 
 
+def priorMaps(data):
+    """The maps as densities, undoing the quantisation a compact file stores them with.
+
+    A compact file keeps the log of each map relative to its own peak, to a byte over eight decades, on every
+    other point of the grid. The maps are smoothed densities, so that loses about 0.008 dex where the prior
+    has any weight, against a chi2 that runs to hundreds.
+    """
+    kde = data["kde"]
+    if kde.dtype != np.uint8:
+        return kde
+    levels = float(np.iinfo(np.uint8).max)
+    out = 10 ** (kde.astype(np.float32) / levels * PRIOR_DECADES - PRIOR_DECADES)
+    out *= data["kdeScale"][:, :, None, None]
+    return np.where(kde == 0, 0.0, out).astype(np.float32)
+
+
 def unpackPriors(path):
     """Write the maps out once as a plain array the workers can map.
 
@@ -217,16 +234,16 @@ def unpackPriors(path):
     if cache.exists() and cache.stat().st_mtime >= Path(path).stat().st_mtime:
         return
     with np.load(path) as data:
-        np.save(cache, data["kde"])
+        np.save(cache, priorMaps(data))
 
 
 def loadPriors(path):
     """The prior maps of a run, mapped rather than read, once per worker process."""
     if path not in PRIORS:
         with np.load(path) as data:
-            held = {name: data[name] for name in data.files if name != "kde"}
-        cache = mapFile(path)
-        held["kde"] = np.load(cache, mmap_mode="r") if cache.exists() else np.load(path)["kde"]
+            held = {name: data[name] for name in data.files if name not in ("kde", "kdeScale")}
+            cache = mapFile(path)
+            held["kde"] = np.load(cache, mmap_mode="r") if cache.exists() else priorMaps(data)
         PRIORS[path] = held
     return PRIORS[path]
 
