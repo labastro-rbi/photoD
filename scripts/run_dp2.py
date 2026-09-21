@@ -23,6 +23,7 @@ import argparse
 import multiprocessing as mp
 import os
 import shutil
+import tempfile
 from pathlib import Path
 
 # XLA's autotuner compiles and times dozens of variants of every kernel the first time it meets one, which
@@ -44,7 +45,10 @@ from photod.locus import LSSTsimsLocus, get3DmodelList, make3DlocusList, subsamp
 from photod.parameters import GlobalParams  # noqa: E402
 from photod.priors import priorGridFromMaps  # noqa: E402
 
-LOCUS = Path(__file__).resolve().parents[1] / "data" / "LSSTlocus_10Gyr_DP2.txt"
+DATA = Path(__file__).resolve().parents[1] / "data"
+LOCUS = DATA / "LSSTlocus_10Gyr_DP2.txt"
+PRIOR_FILE = DATA / "priors_dp2.npz"
+DUST_FILE = DATA / "dust_dp2.npz"
 BANDS = "ugrizy"
 COLORS = ("ug", "gr", "ri", "iz", "zy")
 RAW_COLUMNS = ["objectId", "coord_ra", "coord_dec", "refExtendedness", "ebv"] + [
@@ -203,8 +207,13 @@ def loadCurves(path):
 
 
 def mapFile(path):
-    """Where the unpacked maps live: beside the file they came out of."""
-    return Path(path).with_suffix(".kde.npy")
+    """Where the unpacked maps live: a scratch copy keyed to the file and the time it was written.
+
+    Not beside the maps themselves, which ship with the repository and should not collect half a gigabyte of
+    working file every time a run starts.
+    """
+    stamp = int(Path(path).stat().st_mtime)
+    return Path(tempfile.gettempdir()) / f"photod-{Path(path).stem}-{stamp}.kde.npy"
 
 
 def priorMaps(data):
@@ -231,7 +240,7 @@ def unpackPriors(path):
     compressed, a minute of unpacking; mapped they share one copy and take about thirty megabytes each.
     """
     cache = mapFile(path)
-    if cache.exists() and cache.stat().st_mtime >= Path(path).stat().st_mtime:
+    if cache.exists():
         return
     with np.load(path) as data:
         np.save(cache, priorMaps(data))
@@ -409,7 +418,11 @@ def main():
     """Command line entry point."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--catalog", required=True, help="DP2 object collection (HATS)")
-    ap.add_argument("--priors", required=True, help="TRILEGAL prior maps (scripts/make_priors.py)")
+    ap.add_argument(
+        "--priors",
+        default=str(PRIOR_FILE),
+        help="TRILEGAL prior maps; the ones the DP2 footprint was fitted with come with the repository",
+    )
     ap.add_argument("--out", required=True, help="directory for the result catalog")
     ap.add_argument("--name", default="dp2_photod")
     ap.add_argument("--cone", nargs=3, type=float, metavar=("RA", "DEC", "RADIUS_DEG"))
@@ -422,14 +435,15 @@ def main():
     ap.add_argument(
         "--ar-max",
         type=float,
-        default=5.0,
+        default=8.0,
         help="top of the A_r grid; keep it above 1.3 A_r(map) + 0.1 of the dustiest star in the field",
     )
     ap.add_argument("--no-dust-map", action="store_true", help="flat A_r prior instead of the dust-map bound")
     ap.add_argument(
         "--dust-curves",
-        default="",
-        help="npz from make_dust_curves.py: a 3D dust map as the A_r prior, worth having at |b| < 10",
+        default=str(DUST_FILE),
+        help="3D dust map as the A_r prior, which is what matters at low Galactic latitude; "
+        'the curves for the DP2 footprint come with the repository, and "" turns it off',
     )
     ap.add_argument("--workers", type=int, default=1, help="processes, which share the GPUs between them")
     ap.add_argument(
