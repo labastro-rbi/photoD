@@ -74,7 +74,7 @@ def fromCatalog(url, out):
     if not cube:
         raise SystemExit(f"no prior maps in {url}")
     cube = np.stack(cube)
-    np.savez(out, kde=cube, rmag=rGrid, xGrid=xGrid, yGrid=yGrid, index=index, order=order)
+    np.savez_compressed(out, kde=cube, rmag=rGrid, xGrid=xGrid, yGrid=yGrid, index=index, order=order)
     print(f"{out}: {len(cube)} pixels of order {order}, maps {cube.shape}, {cube.nbytes / 2**30:.2f} GiB")
 
 
@@ -275,7 +275,7 @@ def main():
     index = np.full(12 * 4**args.order, -1, dtype=np.int32)
     index[np.asarray(built)[order]] = np.arange(len(built), dtype=np.int32)
     bc = getBayesConstants()
-    np.savez(
+    np.savez_compressed(
         args.out,
         kde=cube,
         rmag=np.linspace(bc["rmagMin"], bc["rmagMax"], bc["rmagNsteps"]),

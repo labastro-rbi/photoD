@@ -201,10 +201,33 @@ def loadCurves(path):
     return CURVES[path]
 
 
+def mapFile(path):
+    """Where the unpacked maps live: beside the file they came out of."""
+    return Path(path).with_suffix(".kde.npy")
+
+
+def unpackPriors(path):
+    """Write the maps out once as a plain array the workers can map.
+
+    They are two gigabytes and every worker needs a different handful of sightlines out of them. Read as a
+    file each worker holds its own copy, which at eight workers is seventeen gigabytes and, if the file is
+    compressed, a minute of unpacking; mapped they share one copy and take about thirty megabytes each.
+    """
+    cache = mapFile(path)
+    if cache.exists() and cache.stat().st_mtime >= Path(path).stat().st_mtime:
+        return
+    with np.load(path) as data:
+        np.save(cache, data["kde"])
+
+
 def loadPriors(path):
-    """The prior maps, read once per worker process and kept for the partitions that follow."""
+    """The prior maps of a run, mapped rather than read, once per worker process."""
     if path not in PRIORS:
-        PRIORS[path] = dict(np.load(path))
+        with np.load(path) as data:
+            held = {name: data[name] for name in data.files if name != "kde"}
+        cache = mapFile(path)
+        held["kde"] = np.load(cache, mmap_mode="r") if cache.exists() else np.load(path)["kde"]
+        PRIORS[path] = held
     return PRIORS[path]
 
 
@@ -426,6 +449,7 @@ def main():
             f"{bounded} of them with a measured total column to bound the extinction"
         )
 
+    unpackPriors(args.priors)
     base = Path(args.out) / args.name
     if base.exists() and args.overwrite:
         shutil.rmtree(base)
