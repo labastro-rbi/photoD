@@ -35,10 +35,17 @@ PSF fluxes, the DP2 locus, the TRILEGAL prior maps, a pool of processes over the
 catalog, results written as a HATS catalog:
 
 ```
-python scripts/make_priors.py --trilegal <TRILEGAL_cluster_v08> --footprint <object_lc/skymap.6.fits> --out priors.npz
-python scripts/run_dp2.py --catalog <rubin_dp2/object_collection> --priors priors.npz --out <dir> \
-    --dust-curves dust_dp2.npz --ar-max 8 --workers 6
+python scripts/run_dp2.py --catalog <rubin_dp2/object_collection> --out <dir> --name dp2_photod --workers 6
 ```
+
+The prior maps and the dust curves for the DP2 footprint come with the repository, in `data/`, so a clone has
+everything the fit needs and nothing has to be built or fetched first. `--priors` and `--dust-curves` point at
+them by default; `--dust-curves ""` turns the 3D dust prior off.
+
+`data/priors_dp2.npz` is 80 MB because the maps are kept on every other point of the grid as a byte of log
+each, which moves the median star by under two millimagnitudes. The exact maps, 1366 MB, are attached to the
+release for reproducing the published catalog; pass them with `--priors` and nothing else changes.
+`scripts/make_priors.py` builds either kind for another footprint, with `--compact` for the small form.
 
 `--cone RA DEC RADIUS` runs a piece of sky, `--workers` sets the processes, which share whatever GPUs are
 there, `--chunk` how many partitions a process handles before it is replaced, `--floor` the colour-error floor,
