@@ -33,6 +33,51 @@ MIN_STARS = 2000
 WORKER = {}
 
 
+def fromCatalog(url, out):
+    """The same file, out of prior maps that already exist as a HATS catalog rather than from the model.
+
+    The maps are the same either way; what changes is that a catalog of them has to be joined against the
+    stars, and that join drops partitions wherever the maps are the coarser of the two trees.
+    """
+    from hats.io.paths import pixel_catalog_file
+
+    catalog = lsdb.open_catalog(url)
+    pixels = catalog.hc_structure.get_healpix_pixels()
+    base = catalog.hc_structure.catalog_base_dir
+    order = max(p.order for p in pixels)
+    bc = getBayesConstants()
+    rGrid = np.linspace(bc["rmagMin"], bc["rmagMax"], bc["rmagNsteps"])
+
+    cube, index = [], np.full(12 * 4**order, -1, dtype=np.int32)
+    xGrid = yGrid = None
+    for pixel in pixels:
+        table = pd.read_parquet(str(pixel_catalog_file(base, pixel)))
+        if not len(table):
+            continue
+        rmag = table["rmag"].to_numpy(dtype=float)
+        x = np.frombuffer(table["xGrid"].iloc[0], dtype=np.float64)
+        nX = np.unique(x).size
+        x = x.reshape(-1, nX)
+        y = np.frombuffer(table["yGrid"].iloc[0], dtype=np.float64).reshape(x.shape)
+        maps = np.stack(
+            [
+                np.frombuffer(table["kde"].iloc[int(np.argmin(np.abs(rmag - r)))], dtype=np.float64).reshape(
+                    x.shape
+                )
+                for r in rGrid
+            ]
+        ).astype(np.float32)
+        xGrid, yGrid = x[0], y[:, 0]
+        spread = 4 ** (order - pixel.order)
+        index[pixel.pixel * spread : (pixel.pixel + 1) * spread] = len(cube)
+        cube.append(maps)
+    if not cube:
+        raise SystemExit(f"no prior maps in {url}")
+    cube = np.stack(cube)
+    np.savez(out, kde=cube, rmag=rGrid, xGrid=xGrid, yGrid=yGrid, index=index, order=order)
+    print(f"{out}: {len(cube)} pixels of order {order}, maps {cube.shape}, {cube.nbytes / 2**30:.2f} GiB")
+
+
 def footprintPixels(path, order):
     """Pixels of the given order that the footprint covers, from the sky map of the object catalog."""
     if not path:
@@ -166,7 +211,12 @@ def buildPixel(pixel):
 def main():
     """Command line entry point."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--trilegal", required=True, help="TRILEGAL model catalog (HATS)")
+    ap.add_argument("--trilegal", default="", help="TRILEGAL model catalog (HATS) to build the maps from")
+    ap.add_argument(
+        "--from-catalog",
+        default="",
+        help="prior maps that already exist as a HATS catalog, to put in one file instead of building them",
+    )
     ap.add_argument("--out", required=True, help="file to write the prior maps to (npz)")
     ap.add_argument("--footprint", default="", help="sky map of the object catalog (skymap.N.fits)")
     ap.add_argument("--order", type=int, default=5, help="HEALPix order of the maps (5 is 1.8 degrees)")
@@ -190,6 +240,12 @@ def main():
         help="pixels a worker builds before it is replaced, which keeps the catalog reader from growing",
     )
     args = ap.parse_args()
+
+    if args.from_catalog:
+        fromCatalog(args.from_catalog, args.out)
+        return
+    if not args.trilegal:
+        raise SystemExit("give either --trilegal to build the maps or --from-catalog to convert them")
 
     pixels = footprintPixels(args.footprint, args.order)
     area = 4 * np.pi * (180 / np.pi) ** 2 / (12 * 4**args.order)

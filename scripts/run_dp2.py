@@ -37,6 +37,7 @@ import lsdb  # noqa: E402
 import nested_pandas as npd  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
+import pyarrow.parquet as pq  # noqa: E402
 
 from photod.bayes import getEstimatesMeta, makeBayesEstimates3d  # noqa: E402
 from photod.locus import LSSTsimsLocus, get3DmodelList, make3DlocusList, subsampleLocusData  # noqa: E402
@@ -46,17 +47,59 @@ from photod.priors import priorGridFromMaps  # noqa: E402
 LOCUS = Path(__file__).resolve().parents[1] / "data" / "LSSTlocus_10Gyr_DP2.txt"
 BANDS = "ugrizy"
 COLORS = ("ug", "gr", "ri", "iz", "zy")
-INPUT_COLUMNS = ["objectId", "coord_ra", "coord_dec", "refExtendedness", "ebv"] + [
+RAW_COLUMNS = ["objectId", "coord_ra", "coord_dec", "refExtendedness", "ebv"] + [
     f"{b}_{c}" for b in BANDS for c in ("psfFlux", "psfFluxErr")
 ]
+FIT_COLUMNS = ["objectId", "ra", "dec", "rmag"] + [c + s for c in COLORS for s in ("", "Err")]
+INPUT_COLUMNS = RAW_COLUMNS  # kept for anything importing the old name
 PRIORS = {}
 PARAMS = {}
 CURVES = {}
 WORK = {}
 
 
-def prepareStars(df, dustIndex=None, nside=0, arTotal=None):
-    """Magnitudes, colours and errors of the point sources in one partition of the object table."""
+def catalogColumns(url):
+    """Every column the catalog holds, which is not the same as the ones it hands out by default."""
+    base = lsdb.open_catalog(url).hc_structure.catalog_base_dir
+    try:
+        return list(pq.read_schema(f"{base}/dataset/_common_metadata").names)
+    except Exception:
+        return list(lsdb.open_catalog(url).columns)
+
+
+def inputColumns(available, arColumn):
+    """What to read from the catalog: one that already carries colours needs none of the fluxes."""
+    if set(FIT_COLUMNS) <= set(available):
+        return FIT_COLUMNS + ([arColumn] if arColumn in available else [])
+    missing = [c for c in RAW_COLUMNS if c not in available]
+    if missing:
+        raise SystemExit(
+            f"the catalog has neither the colours nor the fluxes to make them: missing {missing}"
+        )
+    return RAW_COLUMNS
+
+
+def prepareStars(df, dustIndex=None, nside=0, arTotal=None, arColumn=""):
+    """The stars of one partition with the columns the fit reads.
+
+    A catalog prepared beforehand already carries the colours and their errors, and is passed through; one
+    straight from the survey has its point sources selected and its colours built out of the PSF fluxes.
+    """
+    if set(FIT_COLUMNS) <= set(df.columns):
+        out = pd.DataFrame({c: df[c].to_numpy() for c in FIT_COLUMNS})
+        if arColumn and arColumn in df.columns:
+            out["Ar"] = df[arColumn].to_numpy(dtype=float)
+        elif "ebv" in df.columns:
+            out["Ar"] = 2.37 * df["ebv"].to_numpy(dtype=float)
+        else:
+            raise SystemExit("the prepared catalog carries no extinction column: name it with --ar-column")
+    else:
+        out = starsFromFluxes(df)
+    return withDust(out, dustIndex, nside, arTotal)
+
+
+def starsFromFluxes(df):
+    """Magnitudes, colours and errors of the point sources in one partition of the survey object table."""
     flux = {b: df[f"{b}_psfFlux"].to_numpy(dtype=float, na_value=np.nan) for b in BANDS}
     err = {b: df[f"{b}_psfFluxErr"].to_numpy(dtype=float, na_value=np.nan) for b in BANDS}
     snr = {b: flux[b] / err[b] for b in BANDS}
@@ -84,6 +127,11 @@ def prepareStars(df, dustIndex=None, nside=0, arTotal=None):
         useful = ((snr[a] > 3) & (snr[b] > 3))[keep]
         out[c] = np.where(useful, (mag[a] - mag[b])[keep], 0.0)
         out[c + "Err"] = np.where(useful, np.hypot(magErr[a], magErr[b])[keep], 9.99)
+    return out
+
+
+def withDust(out, dustIndex, nside, arTotal):
+    """The sightline each star sits on in the 3D dust map, and the bound its column puts on the extinction."""
     if dustIndex is None:
         out["dustIndex"] = np.zeros(len(out), dtype=np.int32)
     else:
@@ -187,7 +235,7 @@ def separation(ra, dec, ra0, dec0):
     return np.degrees(np.arccos(np.clip(cosine, -1.0, 1.0)))
 
 
-def fitAndWrite(source, pixel, base, priorPath, curvePath, setup, batchSize, cone=None):
+def fitAndWrite(source, pixel, base, priorPath, curvePath, setup, batchSize, cone, arColumn, columns):
     """Read one partition file, fit its stars and write them where the partition's HEALPix pixel belongs.
 
     The task carries a path rather than a piece of a catalog. Handing the workers pieces of a catalog sends
@@ -195,17 +243,17 @@ def fitAndWrite(source, pixel, base, priorPath, curvePath, setup, batchSize, con
     a single star is read, and the results are far larger than the stars they came from, so collecting them
     for a separate writing step holds the survey in memory as well.
     """
-    import pyarrow.parquet as pq
     from hats.io.paths import pixel_catalog_file
     from hats.pixel_math import HealpixPixel
 
-    frame = pq.read_table(source, columns=INPUT_COLUMNS).to_pandas()
+    frame = pq.read_table(source, columns=columns).to_pandas()
     curves = loadCurves(curvePath)
     stars = prepareStars(
         frame,
         dustIndex=curves.get("index"),
         nside=int(curves["nside"]) if curves else 0,
         arTotal=curves.get("total"),
+        arColumn=arColumn,
     )
     del frame
     if cone is not None and len(stars):
@@ -250,10 +298,17 @@ def fitPartition(partition, priorPath, setup, batchSize):
     return npd.NestedFrame(pd.concat(pieces, ignore_index=True))
 
 
-def startWorker(base, priorPath, curvePath, setup, batchSize, cone):
+def startWorker(base, priorPath, curvePath, setup, batchSize, cone, arColumn, columns):
     """What every partition of this run needs, held once per worker process."""
     WORK.update(
-        base=base, priorPath=priorPath, curvePath=curvePath, setup=setup, batchSize=batchSize, cone=cone
+        base=base,
+        priorPath=priorPath,
+        curvePath=curvePath,
+        setup=setup,
+        batchSize=batchSize,
+        cone=cone,
+        arColumn=arColumn,
+        columns=columns,
     )
 
 
@@ -269,6 +324,8 @@ def runPartition(source):
         WORK["setup"],
         WORK["batchSize"],
         WORK["cone"],
+        WORK["arColumn"],
+        WORK["columns"],
     )
 
 
@@ -318,6 +375,11 @@ def main():
     ap.add_argument("--cone", nargs=3, type=float, metavar=("RA", "DEC", "RADIUS_DEG"))
     ap.add_argument("--floor", type=float, default=0.03, help="colour-error floor in magnitudes")
     ap.add_argument(
+        "--ar-column",
+        default="Ar",
+        help="extinction column of a catalog prepared beforehand; from ebv when the fluxes are read instead",
+    )
+    ap.add_argument(
         "--ar-max",
         type=float,
         default=5.0,
@@ -350,8 +412,10 @@ def main():
         if args.cone
         else None
     )
-    objects = lsdb.open_catalog(args.catalog, columns=INPUT_COLUMNS, search_filter=search)
+    columns = inputColumns(catalogColumns(args.catalog), args.ar_column)
+    objects = lsdb.open_catalog(args.catalog, columns=columns, search_filter=search)
     sources = [(pixel, str(path)) for pixel, path in partitionFiles(objects)]
+    print(f"reading {'prepared colours' if 'ug' in columns else 'PSF fluxes'} from {args.catalog}")
     cone = tuple(args.cone) if args.cone else None
     setup = (args.floor, not args.no_dust_map, args.dust_curves, args.ar_max)
     if args.dust_curves:
@@ -372,7 +436,7 @@ def main():
     with mp.Pool(
         args.workers,
         initializer=startWorker,
-        initargs=(base, args.priors, args.dust_curves, setup, args.batch_size, cone),
+        initargs=(base, args.priors, args.dust_curves, setup, args.batch_size, cone, args.ar_column, columns),
         maxtasksperchild=args.chunk,
     ) as pool:
         for count in pool.imap_unordered(runPartition, sources, chunksize=1):
