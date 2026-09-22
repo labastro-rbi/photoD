@@ -155,6 +155,45 @@ def test_a_star_the_fit_never_saw_is_kept_and_flagged():
     assert not np.any(np.isfinite(rows[f"{bayes.cc.abs_mag_r}_quantile_median"].to_numpy()))
 
 
+def test_an_unfitted_row_still_says_what_was_measured_of_the_star():
+    """Bits 16 and 32 describe the input, so counting by them must not depend on which rows were fitted."""
+    catalog, _, params = setup(n=3)
+    catalog.loc[0, "rmag"] = np.nan
+    catalog.loc[1, "ugErr"] = 9.99
+    flags = unfittedEstimates(catalog, params, FLAG_NO_PRIOR)[bayes.cc.quality_flags].to_numpy()
+    assert flags[0] & FLAG_NO_MAGNITUDE and not flags[0] & FLAG_COLOR_MISSING
+    assert flags[1] & FLAG_COLOR_MISSING and not flags[1] & FLAG_NO_MAGNITUDE
+    assert flags[2] == FLAG_NO_PRIOR | FLAG_POOR_FIT
+    assert np.all(flags & FLAG_NO_PRIOR)
+
+
+def test_a_single_extinction_has_no_edge_to_be_pinned_against():
+    """With A_r held at one value every star sits on it, which is not the same as being against a limit."""
+    catalog, priorGrid, params = setup(n=4)
+    fixed = GlobalParams(
+        COLORS,
+        params.locusData,
+        {"ArFixed": np.array([0.2])},
+        {"ArFixed": params.locus3DList["ArFixed"]},
+        yLabel="tLoc",
+        MrColumn="tLoc",
+        computeMrTrue=True,
+        ArGridRange="Fixed",
+    )
+    estimates, _ = makeBayesEstimates3d(catalog, priorGrid, fixed, batchSize=4)
+    assert not np.any(estimates[bayes.cc.quality_flags].to_numpy() & FLAG_AR_EDGE)
+
+
+def test_a_batch_is_kept_within_its_memory_budget():
+    """batchBytes bounds one batch, whatever the number of stars asked for."""
+    catalog, priorGrid, params = setup(n=16)
+    cells = 12 * params.FeH1d.size * params.Mr1d.size * params.Ar1d.size
+    assert bayes._batchLimit(params, params.Ar1d.size, 3 * cells) == 3, "the budget is not what bounds it"
+    whole, _ = makeBayesEstimates3d(catalog, priorGrid, params, batchSize=16)
+    tiny, _ = makeBayesEstimates3d(catalog, priorGrid, params, batchSize=16, batchBytes=3 * cells)
+    assert_allclose(tiny.to_numpy(float), whole.to_numpy(float), rtol=1e-5, atol=1e-5, equal_nan=True)
+
+
 def test_the_distance_modulus_is_the_magnitude_less_the_reddened_absolute_one():
     """DM = r - (Mr + A_r), and Qr is the posterior of Mr + A_r, so the quantiles swap ends."""
     catalog, priorGrid, params = setup()

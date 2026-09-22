@@ -37,7 +37,9 @@ QUANTILE_NAMES = ("lo", "median", "hi")
 # batch size serve a locus of any size and a field of any extinction: bounding the plane alone leaves the
 # locus to decide how much memory a run needs, and the full locus of DP2 on a deep A_r grid then asks for
 # tens of gigabytes per batch.
-BATCH_BYTES = 8 << 30
+# The budget is for one batch of one process, and a run has as many processes as it has workers, so it is
+# set well below the memory of a machine rather than near it.
+BATCH_BYTES = 2 << 30
 BATCH_BYTES_PER_CELL = 12  # the posterior in float32, and the temporaries it is built from
 # Bits of the flags column. A star with none of them set is one the model describes, on a single branch, with
 # every colour measured and nothing of it against the edge of the grid.
@@ -60,6 +62,7 @@ def makeBayesEstimates3d(
     globalParams: GlobalParams,
     batchSize: int = 100,
     returnPosteriors: bool = False,
+    batchBytes: int = None,
 ):
     """Posterior statistics for all stars of a catalog partition.
 
@@ -72,8 +75,11 @@ def makeBayesEstimates3d(
         Prior maps interpolated onto the locus, from priors.initializePriorGrid.
     globalParams : GlobalParams
         Locus, color model, A_r grid and A_r prior settings.
+    batchBytes : int, optional
+        Memory one batch may take, BATCH_BYTES by default. It is the budget of one process, so a run of
+        several workers needs that many times more.
     batchSize : int
-        Number of stars computed together, as an upper bound: a batch is also kept within BATCH_BYTES, which
+        Number of stars computed together, as an upper bound: a batch is also kept within batchBytes, which
         for a large locus or a deep A_r grid is the limit that applies. 50-100 is a good choice on a CPU, a
         few hundred to a few thousand on a GPU.
     returnPosteriors : bool
@@ -109,7 +115,7 @@ def makeBayesEstimates3d(
     batches = []
     for nAr in np.unique(gridLength):
         stars = np.where(gridLength == nAr)[0]
-        size = max(1, min(batchSize, _batchLimit(globalParams, int(nAr))))
+        size = max(1, min(batchSize, _batchLimit(globalParams, int(nAr), batchBytes)))
         if returnPosteriors:
             # the cubes are as large as the batch, so a handful of stars must not pay for a full one
             size = min(size, stars.size)
@@ -190,7 +196,14 @@ def unfittedEstimates(starsData, globalParams, flag):
     columns = {name: np.full(len(starsData), np.nan) for name in meta.columns}
     for name in (cc.object_id, cc.right_ascension, cc.declination, cc.observed_mag_r):
         columns[name] = starsData[name].to_numpy()
-    columns[cc.quality_flags] = np.full(len(starsData), flag | FLAG_POOR_FIT, dtype=np.int32)
+    # the flags that describe the input rather than the answer are reported for these rows too, so that
+    # counting the stars of a run by what was measured of them does not depend on which rows were fitted
+    errors = starsData[[color + "Err" for color in globalParams.fitColors]].to_numpy(dtype=np.float64)
+    flags = np.full(len(starsData), flag | FLAG_POOR_FIT, dtype=np.int32)
+    rmag = starsData[cc.observed_mag_r].to_numpy(dtype=np.float64)
+    flags |= np.where((errors > MISSING_COLOR_ERR).any(axis=1), FLAG_COLOR_MISSING, 0)
+    flags |= np.where(~np.isfinite(rmag), FLAG_NO_MAGNITUDE, 0)
+    columns[cc.quality_flags] = flags
     return pd.DataFrame(columns)[list(meta.columns)].astype(meta.dtypes.to_dict())
 
 
@@ -446,19 +459,21 @@ def _qualityFlags(chi2min, statistics, colorsErr, arMax, noMagnitude, globalPara
 
     # A_r is bounded by the dust map as well as by the grid, and with a map it is the map that binds: a star
     # pinned against either has an extinction that is a limit, and a distance that goes wrong with it
-    ar = statistics[f"{cc.extinction_r}_quantile_median"]
-    step = globalParams.dAr if np.isfinite(globalParams.dAr) else 0.0
-    flags |= np.where(ar >= np.minimum(arMax, globalParams.Ar1d[-1]) - step, FLAG_AR_EDGE, 0)
+    # A single A_r held fixed has no edge to be pinned against: every star sits on the one value there is
+    if globalParams.Ar1d.size > 1:
+        ar = statistics[f"{cc.extinction_r}_quantile_median"]
+        limit = np.minimum(arMax, globalParams.Ar1d[-1]) - globalParams.dAr
+        flags |= np.where(ar >= limit, FLAG_AR_EDGE, 0)
 
     flags |= np.where((colorsErr > MISSING_COLOR_ERR).any(axis=1), FLAG_COLOR_MISSING, 0)
     flags |= np.where(noMagnitude, FLAG_NO_MAGNITUDE, 0)
     return flags
 
 
-def _batchLimit(globalParams, nAr):
-    """How many stars of this A_r grid length fit a batch into BATCH_BYTES."""
+def _batchLimit(globalParams, nAr, batchBytes=None):
+    """How many stars of this A_r grid length fit a batch into the memory budget."""
     cells = BATCH_BYTES_PER_CELL * globalParams.FeH1d.size * globalParams.Mr1d.size * nAr
-    return max(1, int(BATCH_BYTES // cells))
+    return max(1, int((BATCH_BYTES if batchBytes is None else batchBytes) // cells))
 
 
 def _toHost(out):
