@@ -4,7 +4,6 @@ from pathlib import Path
 
 import numpy as np
 from astropy.table import Table
-from scipy.interpolate import interpn
 from scipy.spatial import KDTree
 
 DEFAULT_LOCUS_FILE = Path(__file__).resolve().parents[2] / "data" / "MSandRGBcolors_v1.3.txt"
@@ -65,13 +64,22 @@ def LSSTsimsLocus(fixForStripe82=False, datafile=None, colnames=("Mr", "FeH", "u
 
 
 def subsampleLocusData(locusData, kMr, kFeH, xLabel="FeH", yLabel="Mr", verbose=False):
-    """Keep every kFeH-th [Fe/H] and every kMr-th Mr (or tLoc) value of a locus on a regular grid."""
+    """Keep every kFeH-th [Fe/H] and every kMr-th Mr (or tLoc) value of a locus on a regular grid.
+
+    The last value of each axis is kept whatever the step leaves over. Dropping it takes the end off the
+    model: with the DP2 locus and every twentieth tLoc that is the reddest dwarfs, and with every third
+    [Fe/H] the metal-rich end, neither of which the fit could then place a star on.
+    """
     nFeH = np.unique(locusData[xLabel]).size
     nMr = np.unique(locusData[yLabel]).size
-    nFeHs, nMrs = nFeH // kFeH, nMr // kMr
-    rows = (np.arange(nFeHs)[:, None] * kFeH * nMr + np.arange(nMrs)[None, :] * kMr).ravel()
+    keep = lambda n, k: np.unique(np.append(np.arange(0, n, k), n - 1))  # noqa: E731
+    feHrows, mrRows = keep(nFeH, kFeH), keep(nMr, kMr)
+    rows = (feHrows[:, None] * nMr + mrRows[None, :]).ravel()
     if verbose:
-        print(f"subsampled locus grid from {nFeH} x {nMr} to {nFeHs} x {nMrs} ([Fe/H] x {yLabel})")
+        print(
+            f"subsampled locus grid from {nFeH} x {nMr} to {feHrows.size} x {mrRows.size} "
+            f"([Fe/H] x {yLabel})"
+        )
     return locusData[rows]
 
 
@@ -139,19 +147,6 @@ def locusPlateau(locusData, xLabel="FeH", yLabel="Mr"):
 def extcoeff():
     """Extinction A_band / A_r (Berry et al. 2012 for ugriz, Cardelli et al. 1989 for y)."""
     return {"u": 1.810, "g": 1.400, "r": 1.000, "i": 0.759, "z": 0.561, "y": 0.484}
-
-
-def getMrFromFeHtLoc(df, locus):
-    """Mr_quantile_median from the posterior medians of [Fe/H] and tLoc and the locus table Mr(FeH, tLoc)."""
-    FeH1d = np.unique(locus["FeH"])
-    tLoc1d = np.unique(locus["tLoc"])
-    df["Mr_quantile_median"] = interpn(
-        (FeH1d, tLoc1d),
-        np.asarray(locus["Mr"]).reshape(FeH1d.size, tLoc1d.size),
-        (df["FeH_quantile_median"], df["tLoc_quantile_median"]),
-        bounds_error=False,
-    )
-    return df
 
 
 def getColorsFromMrFeHDSED(L, Lvalues, colors=("ug", "gr", "ri", "iz"), Mr_label="Mr"):

@@ -211,8 +211,15 @@ def pixelMaps(pixel, order, catalog, radius, maxStars, feH, segments, mrMin, mrM
     del stars
     if len(model) < 3:
         return None
-    model = lt.assignTLocPartition(model, segments, feH)
-    model = model[model["tLoc"].notna()]
+    # A model star whose Mr falls in more than one segment of its [Fe/H] track, and whose evolutionary label
+    # does not say which, has no tLoc and cannot go on the map. That is a handful of stars per pixel; a large
+    # share of them means the segment labels of locus.SEGMENT_LABEL_MAP no longer describe this locus, which
+    # would take the giants out of the prior without anything failing.
+    placed = lt.assignTLocPartition(model, segments, feH)
+    lost = int(placed["tLoc"].isna().sum())
+    if lost > 0.01 * len(placed):
+        print(f"  pixel {pixel}: {lost} of {len(placed)} model stars have no tLoc on this locus")
+    model = placed[placed["tLoc"].notna()]
     if len(model) < 3:
         return None
 

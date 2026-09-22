@@ -93,7 +93,14 @@ def test_color_error_floor_is_added_in_quadrature():
     )
     for floor in (0.0, 0.03):
         params = GlobalParams(
-            colors, locusData, ArGridList, locus3DList, yLabel="tLoc", MrColumn="tLoc", colorErrFloor=floor
+            colors,
+            locusData,
+            ArGridList,
+            locus3DList,
+            yLabel="tLoc",
+            MrColumn="tLoc",
+            computeMrTrue=True,
+            colorErrFloor=floor,
         )
         colorsErr = getColorsAndPriorIndices(catalog, params)[1]
         expected = np.sqrt(catalog[[c + "Err" for c in colors]].to_numpy() ** 2 + floor**2)

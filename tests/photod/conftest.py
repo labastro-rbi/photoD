@@ -31,6 +31,6 @@ def s82_priors_dir(test_data_dir):
 
 
 @pytest.fixture
-def locus_file_path(test_data_dir):
-    """SDSS/LSST stellar locus table."""
-    return test_data_dir / "locus" / "MSandRGBcolors_v1.3.txt"
+def locus_file_path():
+    """SDSS/LSST stellar locus table, the one that ships in data/ rather than a second copy of it."""
+    return TEST_DIR.parent / "data" / "MSandRGBcolors_v1.3.txt"

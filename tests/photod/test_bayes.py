@@ -195,6 +195,58 @@ def test_small_partitions():
         assert _starBatch._cache_size() == compiled
 
 
+def test_a_tLoc_grid_needs_the_true_absolute_magnitude():
+    """Otherwise Qr and the distance modulus would be built from tLoc and look like any other answer."""
+    locus = make_locus(True)
+    ArGridList, locus3DList = lt.get3DmodelList(locus, COLORS, xLabel="FeH", yLabel="tLoc")
+    with pytest.raises(ValueError, match="computeMrTrue"):
+        GlobalParams(COLORS, locus, ArGridList, locus3DList, xLabel="FeH", yLabel="tLoc", MrColumn="tLoc")
+
+
+def test_the_dust_prior_needs_a_width_where_there_is_no_dust():
+    """The map puts no extinction in front of the nearest stars, so a zero floor is a prior of zero width."""
+    locus = make_locus(True)
+    ArGridList, locus3DList = lt.get3DmodelList(locus, COLORS, xLabel="FeH", yLabel="tLoc")
+    with pytest.raises(ValueError, match="ArCurveFloor"):
+        GlobalParams(
+            COLORS,
+            locus,
+            ArGridList,
+            locus3DList,
+            xLabel="FeH",
+            yLabel="tLoc",
+            MrColumn="tLoc",
+            computeMrTrue=True,
+            ArCurves=np.ones((1, 5), dtype=np.float32),
+            ArCurveMu=np.linspace(4, 16, 5),
+            ArCurveIndexColumn="dustIndex",
+            ArCurveFloor=0.0,
+        )
+
+
+def test_the_locus_rows_have_to_be_the_grid_they_claim():
+    """The table is reshaped as it stands, so another row order would build a mirrored model in silence."""
+    locus = make_locus()
+    ArGridList, locus3DList = lt.get3DmodelList(locus, COLORS)
+    shuffled = locus[::-1]
+    with pytest.raises(ValueError, match="ascending"):
+        GlobalParams(COLORS, shuffled, ArGridList, locus3DList)
+    with pytest.raises(ValueError, match="rectangular"):
+        GlobalParams(COLORS, locus[:-1], ArGridList, locus3DList)
+
+
+def test_subsampling_keeps_the_end_of_each_axis():
+    """The reddest dwarfs and the metal-rich end are the two places a model must not quietly stop."""
+    locus = make_locus(True)
+    for kMr, kFeH in ((3, 2), (7, 3), (1, 1)):
+        sub = lt.subsampleLocusData(locus, kMr, kFeH, yLabel="tLoc")
+        for label, k in (("tLoc", kMr), ("FeH", kFeH)):
+            values, whole = np.unique(np.asarray(sub[label])), np.unique(np.asarray(locus[label]))
+            assert values[-1] == whole[-1], f"{label} stops at {values[-1]} of {whole[-1]} for k={k}"
+            assert values[0] == whole[0]
+        assert len(sub) == np.unique(np.asarray(sub["FeH"])).size * np.unique(np.asarray(sub["tLoc"])).size
+
+
 def test_reddening_follows_color_names():
     """Reddening is added to each fitted color by name, whatever the column order of the locus."""
     locus = make_locus(True)
@@ -222,9 +274,9 @@ def test_locus_plateau():
     assert np.array_equal(params.locusValid, ~plateau)
 
 
-def test_stripe82_fix_is_off_by_default(test_data_dir):
+def test_stripe82_fix_is_off_by_default(locus_file_path):
     """The Stripe 82 color corrections are only applied on request."""
-    datafile = test_data_dir / "locus" / "MSandRGBcolors_v1.3.txt"
+    datafile = locus_file_path
     raw = Table.read(datafile, format="ascii", names=["Mr", "FeH", "ug", "gr", "ri", "iz", "zy"])
     locus = lt.LSSTsimsLocus(datafile=datafile)
     assert_allclose(locus["ug"], raw["ug"])

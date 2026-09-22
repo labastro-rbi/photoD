@@ -82,6 +82,24 @@ class GlobalParams:
         self.dAr = self.Ar1d[1] - self.Ar1d[0] if self.Ar1d.size > 1 else 0.01
         nFeH, nMr, nAr = self.FeH1d.size, self.Mr1d.size, self.Ar1d.size
 
+        # Everything below reshapes the locus table as it stands, so its rows have to be the rectangular grid
+        # of FeH1d by Mr1d in that order. A table holding the same values in another order builds a model
+        # that is mirrored in one axis or the other and answers with it, saying nothing.
+        if len(self.locusData) != nFeH * nMr:
+            raise ValueError(
+                f"the locus is not a rectangular grid: {len(self.locusData)} rows for {nFeH} x {nMr} "
+                f"values of {self.xLabel} and {self.yLabel}"
+            )
+        onGrid = [
+            np.asarray(self.locusData[label], dtype=float).reshape(nFeH, nMr)
+            for label in (self.xLabel, self.yLabel)
+        ]
+        if not (np.allclose(onGrid[0], self.FeH1d[:, None]) and np.allclose(onGrid[1], self.Mr1d[None, :])):
+            raise ValueError(
+                f"the locus rows must run over {self.yLabel} within blocks of increasing {self.xLabel}, "
+                "both ascending"
+            )
+
         # the color model is linear in A_r: colors = locusColors2d + A_r * reddVector
         C = extcoeff()
         self.reddVector = np.array([C[c[0]] - C[c[1]] for c in self.fitColors])
@@ -92,6 +110,10 @@ class GlobalParams:
             raise ValueError("locus3DList must hold the locus colors reddened with locus.extcoeff()")
         if nAr > 2 and not np.allclose(np.diff(self.Ar1d), self.dAr, rtol=1e-9, atol=0):
             raise ValueError("the A_r grid must be uniform")
+        # the width of the 3D dust prior is sqrt((ArCurveFrac A_r)^2 + ArCurveFloor^2), and the map puts no
+        # extinction at all in front of the nearest stars, so without a floor their prior has zero width
+        if self.ArCurves is not None and not self.ArCurveFloor > 0:
+            raise ValueError("ArCurveFloor must be positive: it is the width of the prior where A_r is zero")
 
         # grid points that only pad an isochrone to the rectangular grid get no prior weight
         self.locusValid = ~locusPlateau(self.locusData, self.xLabel, self.yLabel)
@@ -107,6 +129,14 @@ class GlobalParams:
             self.MrTrueGrid, MrTrueIndices = np.unique(MrTrue, return_inverse=True)
             self.MrTrueIndices = MrTrueIndices.reshape(nFeH, nMr)
         else:
+            # Qr and the distance modulus are built from MrTrue, so on a grid that is not the absolute
+            # magnitude they would be the reddened tLoc and a distance wrong by the difference, which on the
+            # DP2 locus reaches five magnitudes above the turn-off and looks like any other answer
+            if self.trueMrLabel in self.locusData.colnames and self.yLabel != self.trueMrLabel:
+                raise ValueError(
+                    f"the locus is on a {self.yLabel} grid, so computeMrTrue=True is needed for Qr and the "
+                    f"distance modulus to come from {self.trueMrLabel} rather than from {self.yLabel}"
+                )
             MrTrue = np.broadcast_to(self.Mr1d, (nFeH, nMr))
             self.MrTrueGrid, self.MrTrueIndices = None, None
 
