@@ -191,4 +191,7 @@ class GlobalParams:
                 self.Mr1d.size,
             ]
         )
-        return (mdLocus, self.xLabel, self.yLabel, self.Mr1d, self.FeH1d, self.Ar1d)
+        # the true absolute magnitude of every grid point, the one the fit builds Qr from: with the locus
+        # parametrised by tLoc the second grid axis is not a magnitude (see plotting.getQmap)
+        MrTrue = self.MrTrueFlat.reshape(self.FeH1d.size, self.Mr1d.size)
+        return (mdLocus, self.xLabel, self.yLabel, self.Mr1d, self.FeH1d, self.Ar1d, MrTrue)
