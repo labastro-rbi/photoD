@@ -95,10 +95,15 @@ def readPriors(rootname, locusData, yColumn=ldc.abs_mag_r):
 
 
 def getPriorMapIndex(rObs):
-    """Index of the prior map (r bin) nearest to each observed r magnitude."""
+    """Index of the prior map (r bin) nearest to each observed r magnitude.
+
+    A star without a magnitude is given the first map so that the arrays keep their shape; it cannot be
+    fitted, and makeBayesEstimates3d empties its row and flags it rather than reporting that map's answer.
+    """
     bc = getBayesConstants()
     rGrid = np.linspace(bc["rmagMin"], bc["rmagMax"], bc["rmagNsteps"])
-    return (np.interp(rObs, rGrid, np.arange(bc["rmagNsteps"])) + 0.5).astype(int)
+    index = np.interp(rObs, rGrid, np.arange(bc["rmagNsteps"])) + 0.5
+    return np.where(np.isfinite(index), index, 0.0).astype(int)
 
 
 def get2Dmap(sample, labels, metadata, bandwidthFactor=1.0):
@@ -120,6 +125,9 @@ def get2Dmap(sample, labels, metadata, bandwidthFactor=1.0):
     dx, dy = xgrid[1] - xgrid[0], ya[1] - ya[0]
     fx, fy = (x - xgrid[0]) / dx, (y - ya[0]) / dy
     ix, iy = np.floor(fx).astype(int), np.floor(fy).astype(int)
+    # a star is spread over the four grid points around it, so it needs a point on each side; one sitting
+    # exactly on the last point of an axis has none beyond it and is left out. The grids of
+    # getBayesConstants() run wider than the locus in both parameters, so nothing reaches those edges.
     inside = (ix >= 0) & (ix < xgrid.size - 1) & (iy >= 0) & (iy < ya.size - 1)
     ix, iy, wx, wy = ix[inside], iy[inside], (fx - np.floor(fx))[inside], (fy - np.floor(fy))[inside]
     counts = np.zeros((ya.size, xgrid.size))
@@ -148,13 +156,14 @@ def dumpPriorMaps_testing(
     NrowMax=None,
     labels=("FeH", "Mr", "rmag"),
     bandwidthFactor=1.0,
+    seed=0,
 ):
     """Prior maps of labels[0] vs labels[1] for the r bins of getBayesConstants(), one file per bin.
 
     sample is the TRILEGAL catalog of one sky pixel, with the columns in labels and glon, glat, Av, label,
     logage and comp. Each map is written to fileRootname-NN.npz; bins with fewer than 3 stars are skipped.
     A table of sample statistics per bin is written to fileRootname-SummaryStats.txt. NrowMax, if given, caps
-    the number of stars used for each map.
+    the number of stars used for each map, drawn with seed so that a rebuild gives the same maps.
     """
     bc = getBayesConstants()
     metadata = np.array(
@@ -181,7 +190,7 @@ def dumpPriorMaps_testing(
             print(f"r = {rMin:.1f} to {rMax:.1f}: {len(tS)} of {len(sample)} stars")
         if len(tS) < 3:
             continue
-        tSmap = tS.sample(n=NrowMax) if NrowMax is not None and len(tS) > NrowMax else tS
+        tSmap = tS.sample(n=NrowMax, random_state=seed) if NrowMax and len(tS) > NrowMax else tS
         xGrid, yGrid, Z = get2Dmap(tSmap, labels, metadata, bandwidthFactor)
         if show2Dmap:
             from photod.plotting import show2Dmap as plotMap

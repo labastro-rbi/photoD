@@ -7,6 +7,16 @@ from photod.bayes import makeBayesEstimates3d
 from photod.parameters import GlobalParams
 from photod.priors import getBayesConstants
 
+try:
+    from jax import enable_x64
+
+    def float64():
+        """Context in which JAX computes in float64."""
+        return enable_x64(True)
+
+except ImportError:
+    from jax.experimental import enable_x64 as float64
+
 COLORS = ("ug", "gr", "ri")
 MU = np.arange(4.0, 16.01, 0.25)
 
@@ -52,6 +62,78 @@ def setup(**kwargs):
         }
     )
     return catalog, priorGrid, params
+
+
+def brutePosterior(star, params, shape, arMapColumn="Ar"):
+    """The posterior of one star on the full (locus, A_r) grid, written out directly.
+
+    The prior from the 3D map is the density N(A_r; A*_i, sigma_i) of the extinction the map puts at the
+    distance locus point i implies, so it carries its own normalisation, which varies with A*_i.
+    """
+    colors2d = np.asarray(params.locusColors2d, dtype=float)
+    redd = np.asarray(params.reddVector, dtype=float)
+    Ar1d = np.asarray(params.Ar1d, dtype=float)
+    MrTrue = np.asarray(params.MrTrueFlat, dtype=float)
+    curve = shape.astype(float) * star[arMapColumn]
+
+    obs = np.array([star[c] for c in COLORS])
+    err = np.array([star[c + "Err"] for c in COLORS])
+    model = colors2d[:, None, :] + Ar1d[None, :, None] * redd[None, None, :]
+    chi2 = np.sum(((obs - model) / err) ** 2, axis=-1)
+
+    Astar = np.interp(MrTrue, (star["rmag"] - np.asarray(MU, dtype=float) - curve)[::-1], curve[::-1])
+    w = 1.0 / ((params.ArCurveFrac * Astar) ** 2 + params.ArCurveFloor**2)
+    logPrior = -0.5 * w[:, None] * (Ar1d[None, :] - Astar[:, None]) ** 2 + 0.5 * np.log(w)[:, None]
+    allowed = Ar1d <= params.ArPriorScale * star[arMapColumn] + params.ArPriorOffset
+    post = np.exp(logPrior - 0.5 * chi2 + 0.5 * chi2.min()) * allowed
+    return post.reshape(params.FeH1d.size, params.Mr1d.size, Ar1d.size)
+
+
+def bruteQuantiles(post, params):
+    """The 14th, 50th and 86th percentiles of A_r, [Fe/H] and the true Mr of a posterior cube."""
+
+    def quantiles(values, weights):
+        order = np.argsort(values)
+        values, weights = np.asarray(values)[order], np.asarray(weights)[order]
+        cdf = (np.cumsum(weights) - 0.5 * weights) / weights.sum()
+        return np.interp([0.14, 0.5, 0.86], cdf, values)
+
+    MrTrue = np.zeros(np.asarray(params.MrTrueGrid).size)
+    np.add.at(MrTrue, np.asarray(params.MrTrueIndices), post.sum(axis=2))
+    return {
+        "Ar": quantiles(params.Ar1d, post.sum(axis=(0, 1))),
+        "FeH": quantiles(params.FeH1d, post.sum(axis=(1, 2))),
+        "Mr_true": quantiles(params.MrTrueGrid, MrTrue),
+    }
+
+
+def test_the_prior_is_the_density_the_map_implies():
+    """The fit must agree with the posterior written out directly, normalisation of the dust prior included.
+
+    The width of that prior follows A_r itself, so leaving its normalisation out would weigh the locus points
+    the map reddens most too heavily, and those are the distant, luminous solutions.
+    """
+    shape = np.clip((MU - 8.0) / 5.0, 0.0, 1.0).astype(np.float32)
+    _, priorGrid, params = setup(
+        ArCurves=shape[None, :], ArCurveMu=MU, ArCurveIndexColumn="dustIndex", ArCurveFrac=0.15
+    )
+    priorGrid = np.ones_like(priorGrid)
+    rng = np.random.default_rng(13)
+    index = int(np.argmin(np.abs(np.asarray(params.MrTrueFlat) - 5.0)))
+    catalog = pd.DataFrame([modelStar(params, index, mu, 1.0, rng) for mu in (9.0, 11.0, 13.0)])
+    with float64():
+        estimates, _ = makeBayesEstimates3d(catalog, priorGrid, params, batchSize=3)
+    for row, (_, star) in enumerate(catalog.iterrows()):
+        expected = bruteQuantiles(brutePosterior(star, params, shape), params)
+        for name, values in expected.items():
+            for q, value in zip(("lo", "median", "hi"), values, strict=True):
+                assert_allclose(
+                    estimates[f"{name}_quantile_{q}"].to_numpy()[row],
+                    value,
+                    rtol=1e-6,
+                    atol=1e-6,
+                    err_msg=f"star {row}, {name} {q}",
+                )
 
 
 def test_a_flat_shape_reproduces_the_flat_prior():

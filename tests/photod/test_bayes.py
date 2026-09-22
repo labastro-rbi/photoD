@@ -100,9 +100,10 @@ def brute_force(star, params, priorGrid):
         grid, index = np.unique(np.round(values, 3), return_inverse=True)
         return grid, np.bincount(index.ravel(), weights.ravel(), minlength=grid.size)
 
-    def entropy(p):
+    def entropy(p, dx):
+        """Entropy of a sampled density, in bits, so with the width of its own bin."""
         p = p[p > 0]
-        return -np.sum(p * np.log2(p))
+        return -np.sum(p * np.log2(p)) * dx
 
     pnorm = lambda p, dx: p / p.sum() / dx  # noqa: E731
     MrTrue = np.broadcast_to(params.Mr1d, (nFeH, nMr))
@@ -121,25 +122,33 @@ def brute_force(star, params, priorGrid):
         out.update(
             zip([f"{name}_quantile_{q}" for q in ("lo", "median", "hi")], quantiles(x, p), strict=True)
         )
-    out["MrdS"] = entropy(margs["Mr"][1]) - entropy(pnorm(prior.sum(axis=0), params.dMr))
-    out["FeHdS"] = entropy(margs["FeH"][1]) - entropy(pnorm(prior.sum(axis=1), params.dFeH))
-    out["ArdS"] = entropy(margs["Ar"][1]) - entropy(pnorm(allowed * 1.0, params.dAr))
+    out["MrdS"] = entropy(margs["Mr"][1], params.dMr) - entropy(
+        pnorm(prior.sum(axis=0), params.dMr), params.dMr
+    )
+    out["FeHdS"] = entropy(margs["FeH"][1], params.dFeH) - entropy(
+        pnorm(prior.sum(axis=1), params.dFeH), params.dFeH
+    )
+    out["ArdS"] = entropy(margs["Ar"][1], params.dAr) - entropy(pnorm(allowed * 1.0, params.dAr), params.dAr)
     return out
 
 
 @pytest.mark.parametrize("tLoc", [False, True])
 @pytest.mark.parametrize("ArGridRange,ArMapColumn", [("Small", "ArMap"), ("Small", None), ("Fixed", None)])
 def test_estimates_match_brute_force(tLoc, ArGridRange, ArMapColumn):
-    """The fast computation gives the statistics of the full posterior cube."""
+    """The fast computation gives the statistics of the full posterior cube.
+
+    Read from the results rather than from the frame, which carries the float32 of the output schema.
+    """
     locus = make_locus(tLoc)
     params = make_params(locus, tLoc, ArGridRange, ArMapColumn)
     stars = make_stars(locus)
     priorGrid = np.random.default_rng(0).uniform(0.1, 1.0, (getBayesConstants()["rmagNsteps"], len(locus)))
     with float64():
-        estimates, _ = makeBayesEstimates3d(stars, priorGrid, params, batchSize=5)
+        _, results = makeBayesEstimates3d(stars, priorGrid, params, batchSize=5)
     for i, star in stars.iterrows():
         for name, value in brute_force(star, params, priorGrid).items():
-            assert_allclose(estimates[name].iloc[i], value, rtol=1e-9, atol=1e-9, err_msg=name)
+            computed = results.chi2min if name == "chi2min" else results.statistics[name]
+            assert_allclose(computed[i], value, rtol=1e-9, atol=1e-9, err_msg=name)
 
 
 def test_posteriors_match_estimates():

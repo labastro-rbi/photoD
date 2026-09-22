@@ -32,10 +32,13 @@ set_column_mapping(Path(__file__).parent / "column_map" / "variables.yaml")
 # compiled once per process; grid values above a star's limit have zero prior and are left out.
 AR_GRID_LENGTHS = (8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512)
 QUANTILE_NAMES = ("lo", "median", "hi")
-# A batch holds a locus by A_r plane for each of its stars, so its memory is the batch size times the length
-# of its A_r grid. Bounding that product lets one batch size serve a field of any extinction: without it the
-# top of the A_r grid silently decides how much memory the run needs, and a dusty field runs out of it.
-AR_BATCH_BUDGET = 100_000
+# A batch holds a locus by A_r plane for each of its stars, so its memory is the batch size times the number
+# of locus points times the length of the star's A_r grid. Bounding the bytes rather than that plane lets one
+# batch size serve a locus of any size and a field of any extinction: bounding the plane alone leaves the
+# locus to decide how much memory a run needs, and the full locus of DP2 on a deep A_r grid then asks for
+# tens of gigabytes per batch.
+BATCH_BYTES = 8 << 30
+BATCH_BYTES_PER_CELL = 12  # the posterior in float32, and the temporaries it is built from
 # Bits of the flags column. A star with none of them set is one the model describes, on a single branch, with
 # every colour measured and nothing of it against the edge of the grid.
 FLAG_POOR_FIT = 1  # chi2 above CHI2_POOR, or no answer at all: the locus does not describe this star
@@ -43,9 +46,12 @@ FLAG_TWO_BRANCHES = 2  # the Mr posterior is lopsided, which is how a giant and 
 FLAG_FEH_EDGE = 4  # [Fe/H] is against the end of the model grid, so it is a limit rather than a measurement
 FLAG_AR_EDGE = 8  # A_r is against the top of its grid, and the distance goes wrong with it
 FLAG_COLOR_MISSING = 16  # at least one colour had no measurement and carried no weight in the fit
+FLAG_NO_MAGNITUDE = 32  # no r magnitude, so neither a prior map nor a distance: the row carries no estimate
+FLAG_NO_PRIOR = 64  # no prior map for this part of the sky, so the fit was never run: no estimate either
 CHI2_POOR = 100.0
 ASYMMETRY_POOR = 3.0
-MISSING_COLOR_ERR = 1.0  # a colour whose error is above this carried no weight, however it was marked
+MISSING_COLOR_ERR = 1.0  # a colour whose error is above this is effectively unmeasured: the fit weighs it
+# by 1 / err^2 like any other, which against a well measured colour is a ten-thousandth of the weight or less
 
 
 def makeBayesEstimates3d(
@@ -67,8 +73,9 @@ def makeBayesEstimates3d(
     globalParams : GlobalParams
         Locus, color model, A_r grid and A_r prior settings.
     batchSize : int
-        Number of stars computed together. Memory use is about 12 * batchSize * (locus points) *
-        (A_r grid length) bytes: 50-100 is a good choice on a CPU, a few thousand on a GPU.
+        Number of stars computed together, as an upper bound: a batch is also kept within BATCH_BYTES, which
+        for a large locus or a deep A_r grid is the limit that applies. 50-100 is a good choice on a CPU, a
+        few hundred to a few thousand on a GPU.
     returnPosteriors : bool
         Also return the prior, likelihood and posterior cubes and their marginal distributions. Meant for
         inspecting a few stars.
@@ -102,7 +109,10 @@ def makeBayesEstimates3d(
     batches = []
     for nAr in np.unique(gridLength):
         stars = np.where(gridLength == nAr)[0]
-        size = max(1, min(batchSize, AR_BATCH_BUDGET // int(nAr)))
+        size = max(1, min(batchSize, _batchLimit(globalParams, int(nAr))))
+        if returnPosteriors:
+            # the cubes are as large as the batch, so a handful of stars must not pay for a full one
+            size = min(size, stars.size)
         args = jax.device_put(globalParams.starArgs(int(nAr)))
         stars = np.concatenate([stars, np.full(-stars.size % size, stars[0])])
         for b in np.split(stars, stars.size // size):
@@ -132,7 +142,16 @@ def makeBayesEstimates3d(
         statistics[f"{cc.distance_modulus}_quantile_{name}"] = (
             rmag - statistics[f"{cc.abs_mag_ext_r}_quantile_{source}"]
         )
-    statistics[cc.quality_flags] = _qualityFlags(chi2min, statistics, colorsErr, globalParams)
+    # a star with no r magnitude has neither a prior map nor a distance modulus, and an answer read off the
+    # brightest map would look like any other: it keeps its row, empty, and the flag says why
+    noMagnitude = ~np.isfinite(rmag)
+    if noMagnitude.any():
+        chi2min[noMagnitude] = np.nan
+        for value in statistics.values():
+            value[noMagnitude] = np.nan
+    statistics[cc.quality_flags] = _qualityFlags(
+        chi2min, statistics, colorsErr, arMax, noMagnitude, globalParams
+    )
 
     results = BayesResults(chi2min, statistics)
     if returnPosteriors:
@@ -154,8 +173,25 @@ def makeBayesEstimates3d(
             **statistics,
         }
     )
-    # in the order the meta declares, so that every partition of a run has the same schema
-    return estimatesDf[list(getEstimatesMeta(globalParams.computeMrTrue).columns)], results
+    # in the order and the types the meta declares, so that every partition of a run, and a partition that
+    # holds no stars at all, describe themselves the same way
+    meta = getEstimatesMeta(globalParams.computeMrTrue)
+    return estimatesDf[list(meta.columns)].astype(meta.dtypes.to_dict()), results
+
+
+def unfittedEstimates(starsData, globalParams, flag):
+    """Rows for stars the fit could never be run on, with the flag that says why.
+
+    Only their identity, position and magnitude are known, and the estimates are empty. They are kept because
+    a catalog whose star count no longer matches the selection it came from cannot be used to count stars,
+    which is most of what these catalogs are for.
+    """
+    meta = getEstimatesMeta(globalParams.computeMrTrue)
+    columns = {name: np.full(len(starsData), np.nan) for name in meta.columns}
+    for name in (cc.object_id, cc.right_ascension, cc.declination, cc.observed_mag_r):
+        columns[name] = starsData[name].to_numpy()
+    columns[cc.quality_flags] = np.full(len(starsData), flag | FLAG_POOR_FIT, dtype=np.int32)
+    return pd.DataFrame(columns)[list(meta.columns)].astype(meta.dtypes.to_dict())
 
 
 def makeBayesPosteriors3d(starsData: npd.NestedFrame, mapCatalog: MapCatalog, globalParams: GlobalParams):
@@ -211,7 +247,15 @@ def getEstimatesMeta(computeMrTrue: bool = False):
         cc.quality_flags,
         *sorted(quantileCols + entropyCols),
     ]
-    dtypes = {cc.object_id: np.int64, cc.quality_flags: np.int32}
+    # the positions and the magnitude are carried over from the catalog rather than fitted, and float32
+    # would round a position by a tenth of an arcsecond
+    dtypes = {
+        cc.object_id: np.int64,
+        cc.quality_flags: np.int32,
+        cc.right_ascension: np.float64,
+        cc.declination: np.float64,
+        cc.observed_mag_r: np.float64,
+    }
     meta = npd.NestedFrame.from_dict(
         {col: pd.Series([], dtype=dtypes.get(col, np.float32)) for col in colNames}
     )
@@ -244,23 +288,29 @@ def starPosterior(star, logPriorGrid, priorEntropy, args, computeMrTrue=False, r
     allowed = (Ar1d <= arMax) | (ArFull.size == 1)
     logPrior = logPriorGrid[priorIndex]
     if args["ArCurves"] is None:
-        Astar, w = jnp.zeros_like(A0), jnp.zeros_like(A0)
+        Astar, wDust = jnp.zeros_like(A0), jnp.zeros_like(A0)
     else:
         # A 3D dust map adds a second quadratic in A_r: locus point i puts the star at mu = r - MrTrue_i - A,
         # where the map has A*_i, so ln prior = -w_i (A - A*_i)^2 / 2. The chi2 is quadratic in A_r as well,
         # so the two combine into one quadratic and the fit stays a single pass over the (locus, A_r) grid.
         curve = args["ArCurves"][curveIndex] * arMap
         Astar = jnp.interp(args["MrTrueFlat"], (rmag - args["ArCurveMu"] - curve)[::-1], curve[::-1])
-        w = jnp.where(
+        wDust = jnp.where(
             curve[-1] > 0, 1.0 / ((args["ArCurveFrac"] * Astar) ** 2 + args["ArCurveFloor"] ** 2), 0.0
         )
-    S = s + w
-    Acomb = (s * A0 + w * Astar) / S
-    extra = s * w / S * (A0 - Astar) ** 2
+    S = s + wDust
+    Acomb = (s * A0 + wDust * Astar) / S
+    extra = s * wDust / S * (A0 - Astar) ** 2
+    # That Gaussian is a density in A_r whose width follows A*_i, so it has to be normalised along with it.
+    # Dropping the normalisation weighs every locus point as if its A_r were equally well known, which
+    # favours the points the map reddens the most, and those are the distant, luminous solutions.
+    logDust = 0.5 * jnp.log(jnp.where(wDust > 0, wDust, 1.0))
     # the peak is taken over the A_r grid, not over the real line: without that, a star whose best A_r falls
     # outside the grid underflows everywhere and its quantiles come out as NaN
-    logPeak = jnp.max(logPrior - 0.5 * _chi2GridMin(c + extra, S, Acomb, Ar1d, jnp.sum(allowed) - 1))
-    u = logPrior - 0.5 * (c + extra) - logPeak
+    logPeak = jnp.max(
+        logPrior + logDust - 0.5 * _chi2GridMin(c + extra, S, Acomb, Ar1d, jnp.sum(allowed) - 1)
+    )
+    u = logPrior + logDust - 0.5 * (c + extra) - logPeak
     post = jnp.exp(u[:, None] - 0.5 * S[:, None] * (Ar1d - Acomb[:, None]) ** 2) * allowed
 
     # sums over the short trailing axes as products with vectors of ones: several times faster on CPUs
@@ -294,15 +344,19 @@ def starPosterior(star, logPriorGrid, priorEntropy, args, computeMrTrue=False, r
     for values, pdf, name in pdfs:
         for q, value in zip(QUANTILE_NAMES, getPosteriorQuantiles(values, pdf), strict=True):
             statistics[f"{name}_quantile_{q}"] = value
+    # the entropies are of sampled densities, so each carries the width of its own bin and comes out in bits
     HMr, HFeH, HAr, HAr0 = entropies([margMr, margFeH, margAr, pnorm(allowed * 1.0, args["dAr"])])
-    statistics[cc.abs_mag_r_entropy_drop] = HMr - priorEntropy[priorIndex, 0]
-    statistics[cc.metallicity_entropy_drop] = HFeH - priorEntropy[priorIndex, 1]
-    statistics[cc.extinction_r_entropy_drop] = HAr - HAr0
+    statistics[cc.abs_mag_r_entropy_drop] = HMr * args["dMr"] - priorEntropy[priorIndex, 0]
+    statistics[cc.metallicity_entropy_drop] = HFeH * args["dFeH"] - priorEntropy[priorIndex, 1]
+    statistics[cc.extinction_r_entropy_drop] = (HAr - HAr0) * args["dAr"]
 
     cubes = {}
     if returnPosteriors:
         prior = (
-            jnp.exp(logPrior[:, None] - 0.5 * w[:, None] * (Ar1d - Astar[:, None]) ** 2) * allowed
+            jnp.exp(
+                logPrior[:, None] + logDust[:, None] - 0.5 * wDust[:, None] * (Ar1d - Astar[:, None]) ** 2
+            )
+            * allowed
         ).reshape(nFeH, nMr, nAr)
         like = jnp.exp(-0.5 * (c[:, None] + s * (Ar1d - A0[:, None]) ** 2 - chi2min)).reshape(nFeH, nMr, nAr)
         cubes = {"prior": prior, "like": like, "post": post}
@@ -351,7 +405,7 @@ def _priorTables(priorGrid, params):
     for marg, step in ((maps.sum(axis=1), params.dMr), (maps.sum(axis=2), params.dFeH)):
         p = marg / marg.sum(axis=1, keepdims=True) / step
         p = jnp.where(p > 0, p, 1)
-        columns.append(-jnp.sum(p * jnp.log2(p), axis=1))
+        columns.append(-jnp.sum(p * jnp.log2(p), axis=1) * step)
     return jnp.log(prior), jnp.stack(columns, axis=1)
 
 
@@ -364,14 +418,17 @@ def _arGridLengths(arMax, Ar1d):
     return lengths[np.searchsorted(lengths, need)]
 
 
-def _qualityFlags(chi2min, statistics, colorsErr, globalParams):
+def _qualityFlags(chi2min, statistics, colorsErr, arMax, noMagnitude, globalParams):
     """One bit per thing worth knowing about a star's fit, as described by the FLAG_ constants.
 
     Everything here is a property of the answer rather than of the star, and none of it removes a row: a
     catalog that quietly drops what it cannot fit is harder to use than one that says so.
     """
     flags = np.zeros(chi2min.size, dtype=np.int32)
-    low, median, high = (statistics[f"{cc.abs_mag_r}_quantile_{q}"] for q in QUANTILE_NAMES)
+    # the absolute magnitude itself when the locus is parametrised by tLoc, since that is where a giant and a
+    # dwarf solution sit far apart
+    name = "Mr_true" if "Mr_true_quantile_median" in statistics else cc.abs_mag_r
+    low, median, high = (statistics[f"{name}_quantile_{q}"] for q in QUANTILE_NAMES)
     # a star the fit could not place at all must not come out looking like one it placed well
     flags |= np.where((chi2min > CHI2_POOR) | ~np.isfinite(median), FLAG_POOR_FIT, 0)
 
@@ -387,11 +444,21 @@ def _qualityFlags(chi2min, statistics, colorsErr, globalParams):
         (feH <= globalParams.FeH1d[0] + step) | (feH >= globalParams.FeH1d[-1] - step), FLAG_FEH_EDGE, 0
     )
 
+    # A_r is bounded by the dust map as well as by the grid, and with a map it is the map that binds: a star
+    # pinned against either has an extinction that is a limit, and a distance that goes wrong with it
     ar = statistics[f"{cc.extinction_r}_quantile_median"]
-    flags |= np.where(ar >= globalParams.Ar1d[-1] - globalParams.dAr, FLAG_AR_EDGE, 0)
+    step = globalParams.dAr if np.isfinite(globalParams.dAr) else 0.0
+    flags |= np.where(ar >= np.minimum(arMax, globalParams.Ar1d[-1]) - step, FLAG_AR_EDGE, 0)
 
     flags |= np.where((colorsErr > MISSING_COLOR_ERR).any(axis=1), FLAG_COLOR_MISSING, 0)
+    flags |= np.where(noMagnitude, FLAG_NO_MAGNITUDE, 0)
     return flags
+
+
+def _batchLimit(globalParams, nAr):
+    """How many stars of this A_r grid length fit a batch into BATCH_BYTES."""
+    cells = BATCH_BYTES_PER_CELL * globalParams.FeH1d.size * globalParams.Mr1d.size * nAr
+    return max(1, int(BATCH_BYTES // cells))
 
 
 def _toHost(out):

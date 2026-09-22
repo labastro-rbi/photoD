@@ -46,7 +46,14 @@ def LSSTsimsLocus(fixForStripe82=False, datafile=None, colnames=("Mr", "FeH", "u
     colnames : sequence of str
         Column names, in the order of the file columns.
     """
-    locus = Table.read(datafile or DEFAULT_LOCUS_FILE, format="ascii", names=list(colnames))
+    path = Path(datafile or DEFAULT_LOCUS_FILE)
+    if not path.exists():
+        # the tables live in data/ of the repository rather than inside the package, so the default only
+        # resolves in a checkout; from an installed copy the table has to be named
+        raise FileNotFoundError(
+            f"no locus table at {path}; pass datafile=, the tables are in data/ of the photoD repository"
+        )
+    locus = Table.read(path, format="ascii", names=list(colnames))
     locus["gi"] = locus["gr"] + locus["ri"]
     if fixForStripe82:
         ugFix = locus["ug"] + 0.02 * (2 + locus["FeH"]) * locus["gi"]
