@@ -141,7 +141,7 @@ def test_a_star_with_no_prior_map_is_kept_and_flagged(run, monkeypatch):
     only part of it this reads. When this was written the file was missing three of the order 5 pixels its
     own dust file covers, so the sky it does not reach is not a hypothetical.
     """
-    globalParams = SimpleNamespace(computeMrTrue=True)
+    globalParams = SimpleNamespace(computeMrTrue=True, fitColors=("ug", "gr", "ri", "iz", "zy"))
     with np.load(DATA / "priors_dp2.npz") as data:
         index, order = np.asarray(data["index"]), int(data["order"])
     covered = np.where(index >= 0)[0][:2]
@@ -166,6 +166,7 @@ def test_a_star_with_no_prior_map_is_kept_and_flagged(run, monkeypatch):
     ra, dec = zip(*[pixelCentre(pixel, order) for pixel in pixels], strict=True)
     stars = pd.DataFrame(
         {"objectId": np.arange(5), "ra": ra, "dec": dec, "rmag": np.full(5, 20.0), "Ar": np.zeros(5)}
+        | {color + "Err": np.full(5, 0.02) for color in globalParams.fitColors}
     )
     estimates = run.fitPartition(stars, "priors.npz", (0.03, True, "", 8.0), 100)
 
@@ -180,7 +181,7 @@ def test_an_answer_is_either_whole_or_not_there(run, tmp_path):
     """A truncated file is worse than a missing one, because a later run counts it as done."""
     path = tmp_path / "answers.parquet"
     frame = estimatesFrame(*zip(*[pixelCentre(p, 5) for p in (0, 1, 2)], strict=True))
-    run.writeAtomically(path, lambda name: run.withSpatialIndex(frame).to_parquet(name, index=True))
+    run.writeAtomically(path, lambda name: run.withSpatialIndex(frame).to_parquet(name, index=False))
     assert run.writtenRows(path) == 3
 
     def killed(name):
@@ -201,10 +202,8 @@ def test_a_partition_that_is_already_written_is_not_fitted_again(run, tmp_path):
     todo, rows = run.partitionsToFit(base, sources)
     assert todo == sources and rows == 0, "nothing is written yet, so everything is to be fitted"
 
-    path = Path(str(run.pixelFile(base, sources[1][0])))
-    path.parent.mkdir(parents=True, exist_ok=True)
     frame = estimatesFrame(*zip(*[pixelCentre(p, 5) for p in (7, 8)], strict=True))
-    run.writeAtomically(path, lambda name: run.withSpatialIndex(frame).to_parquet(name, index=True))
+    path = run.writePartition(base, sources[1][0], frame)
     todo, rows = run.partitionsToFit(base, sources)
     assert todo == [sources[0], sources[2]], "a partition that is written was fitted again"
     assert rows == 2, "the stars already written are not counted towards the catalog"
@@ -265,21 +264,52 @@ def test_the_answers_read_back_as_a_catalog(run, tmp_path):
     base = tmp_path / "photod"
     pixels = [HealpixPixel(3, 0), HealpixPixel(3, 5)]
     for pixel in pixels:
-        path = Path(str(run.pixelFile(base, pixel)))
-        path.parent.mkdir(parents=True, exist_ok=True)
         inside = [pixelCentre(pixel.pixel * 4 + corner, 4) for corner in range(4)]
-        frame = run.withSpatialIndex(estimatesFrame(*zip(*inside, strict=True)))
-        assert frame.index.name == SPATIAL_INDEX_COLUMN
-        assert np.all(np.diff(frame.index.to_numpy()) >= 0), "the rows are not in the order of the index"
-        run.writeAtomically(path, lambda name, frame=frame: frame.to_parquet(name, index=True))
+        estimates = estimatesFrame(*zip(*inside, strict=True))
+        index = run.withSpatialIndex(estimates)[SPATIAL_INDEX_COLUMN].to_numpy()
+        assert np.all(np.diff(index) >= 0), "the rows are not in the order of the index"
+        path = run.writePartition(base, pixel, estimates)
         assert SPATIAL_INDEX_COLUMN in pq.read_schema(path).names, "the file has no spatial index column"
-    run.writeCatalogMetadata(base, "photod", pixels, 8)
+    assert run.writeCatalogMetadata(base, "photod", pixels, 8) is True
 
     catalog = lsdb.open_catalog(base)
     answers = catalog.compute()
     assert len(answers) == 8
     assert answers.index.name == SPATIAL_INDEX_COLUMN, "the catalog came back without its index"
     assert list(answers.columns) == list(getEstimatesMeta(computeMrTrue=True).columns)
+
+
+def test_a_reader_can_ask_a_written_catalog_for_columns_and_a_cone(run, tmp_path):
+    """The two readers that matter, on a catalog written the way a run writes one.
+
+    The order 29 cell of each row has to be a plain column of the partition file and not the pandas index of
+    the frame it was written from. A file whose parquet metadata names an index column hands back a frame
+    with that column already taken out of it, and lsdb, which reads the rows by that column, is told it is
+    not there: only the plain read of the whole catalog survives, which is the one nobody uses on a survey.
+    """
+    import lsdb
+    import pyarrow.parquet as pq
+    from hats.io.validation import is_valid_catalog
+    from hats.pixel_math import HealpixPixel
+    from hats.pixel_math.spatial_index import SPATIAL_INDEX_COLUMN
+
+    base = tmp_path / "photod"
+    pixels = [HealpixPixel(3, 0), HealpixPixel(3, 5)]
+    centre = None
+    for pixel in pixels:
+        inside = [pixelCentre(pixel.pixel * 4 + corner, 4) for corner in range(4)]
+        centre = centre or inside[0]
+        path = run.writePartition(base, pixel, estimatesFrame(*zip(*inside, strict=True)))
+    assert run.writeCatalogMetadata(base, "photod", pixels, 8) is True
+
+    picked = lsdb.open_catalog(base, columns=["ra", "dec", "chi2min"]).compute()
+    assert list(picked.columns) == ["ra", "dec", "chi2min"] and len(picked) == 8
+    assert picked.index.name == SPATIAL_INDEX_COLUMN, "the rows came back without their spatial index"
+    cone = lsdb.open_catalog(base).cone_search(ra=centre[0], dec=centre[1], radius_arcsec=600).compute()
+    assert len(cone) == 1, "a cone over one corner of one partition did not come back with that one row"
+    recorded = pq.read_schema(path).pandas_metadata
+    assert not (recorded or {}).get("index_columns"), "the file still records a pandas index column"
+    assert is_valid_catalog(base, strict=True), "the result no longer validates as a HATS catalog"
 
 
 def test_the_maps_are_decoded_the_way_the_file_that_holds_them_says(run):
@@ -338,3 +368,201 @@ def test_a_prepared_catalog_with_no_extinction_column_is_refused_before_the_pool
         run.inputColumns(prepared, "Ar")
     with pytest.raises(SystemExit, match="missing"):
         run.inputColumns(["objectId", "coord_ra"], "Ar")
+
+
+def test_a_catalog_is_asked_for_extinction_only_where_the_fit_reads_it(run):
+    """The flat A_r prior reads no extinction, so a prepared catalog carrying none is not its problem.
+
+    arColumn is None for that mode, all the way from the command line to the frame the fit is handed, so
+    nothing asks the catalog for a column and nothing makes an A_r that would never be looked at.
+    """
+    prepared = run.FIT_COLUMNS + ["something_else"]
+    assert run.inputColumns(prepared, None) == run.FIT_COLUMNS, "a column nothing reads was asked for"
+    assert run.inputColumns(run.FIT_COLUMNS, None) == run.FIT_COLUMNS
+
+    frame = pd.DataFrame({c: np.zeros(2) for c in run.FIT_COLUMNS})
+    stars = run.prepareStars(frame, {}, None)
+    assert "Ar" not in stars.columns, "an extinction was made for a fit that does not read one"
+    assert list(stars["dustIndex"]) == [0, 0], "a run with no curves still looked a sightline up"
+    with pytest.raises(SystemExit, match="extinction"):
+        run.prepareStars(frame, {}, "Ar")
+
+
+def test_a_resume_that_asks_for_another_fit_is_refused(run, tmp_path):
+    """A partition already written is kept whatever this run asked for, so the two have to agree.
+
+    Nothing in a catalog says which settings each of its partitions was fitted with, so a resume under other
+    settings cannot be seen afterwards, let alone undone. The cone is part of that: it keeps whole
+    partitions outside itself, and inside the ones it keeps it is a filter on single stars, so resuming a
+    wider run with a narrower cone leaves partitions full of stars the narrower run would never have kept.
+    """
+    base = tmp_path / "photod"
+    base.mkdir()
+    settings = dict(
+        catalog="/data/dp2",
+        priors="/data/priors.npz",
+        floor=0.03,
+        ar_column="Ar",
+        ar_max=8.0,
+        no_dust_map=False,
+        dust_curves="/data/dust.npz",
+        cone=None,
+    )
+    wanted = run.runConfiguration(SimpleNamespace(**settings))
+    run.recordConfiguration(base, wanted)
+    assert json.loads((base / run.RUN_FILE).read_text()) == wanted, "the run recorded something else"
+    run.recordConfiguration(base, wanted)  # the same command again, which is how a run is resumed
+
+    for name, value in (
+        ("ar_max", 4.0),
+        ("floor", 0.05),
+        ("no_dust_map", True),
+        ("dust_curves", "/data/other.npz"),
+        ("cone", [30.0, 15.0, 1.0]),
+        ("catalog", "/data/dp3"),
+    ):
+        other = run.runConfiguration(SimpleNamespace(**(settings | {name: value})))
+        with pytest.raises(SystemExit, match="--overwrite"):
+            run.recordConfiguration(base, other)
+
+    # how the work is divided up does not change an answer, so a run must be free to finish elsewhere
+    divided = settings | {"workers": 8, "chunk": 10, "batch_size": 4000, "batch_bytes": 1 << 30}
+    run.recordConfiguration(base, run.runConfiguration(SimpleNamespace(**divided)))
+    # and the same catalog named with the trailing slash the shell completes it with is the same catalog
+    completed = run.runConfiguration(SimpleNamespace(**(settings | {"catalog": "/data/dp2/"})))
+    assert completed == wanted, "a path the shell completed read as another catalog"
+    run.recordConfiguration(base, completed)
+    # and the flat A_r prior reads no curves, so naming some of them is the same run either way
+    flat = run.runConfiguration(SimpleNamespace(**(settings | {"no_dust_map": True})))
+    bare = run.runConfiguration(SimpleNamespace(**(settings | {"no_dust_map": True, "dust_curves": ""})))
+    assert flat == bare and flat["dustCurves"] == "" and flat["arColumn"] is None
+
+
+def test_a_result_with_no_record_of_its_settings_is_taken_as_it_comes(run, tmp_path, capsys):
+    """The one case with nothing to compare against: answers written before this was recorded."""
+    from hats.pixel_math import HealpixPixel
+
+    base = tmp_path / "photod"
+    frame = estimatesFrame(*zip(*[pixelCentre(p, 5) for p in (7, 8)], strict=True))
+    run.writePartition(base, HealpixPixel(5, 1), frame)
+    wanted = {"floor": 0.03}
+    run.recordConfiguration(base, wanted)
+
+    assert "no record" in capsys.readouterr().out, "a resume of an older result said nothing about it"
+    assert json.loads((base / run.RUN_FILE).read_text()) == wanted
+
+
+def test_a_partition_is_written_where_the_dataset_scan_cannot_see_it(run, tmp_path, monkeypatch):
+    """A temporary file inside the dataset breaks the metadata step of this run and of every later one.
+
+    hats.io.write_parquet_metadata reads every parquet file under the dataset directory, so one truncated
+    file there is enough, and nothing in the catalog says which file it is. Only a kill between the write
+    and the rename can leave one, so what is checked here is the name the writer writes under: it has to be
+    outside the dataset, and one directory up is the same filesystem, so the rename stays atomic.
+    """
+    from hats.pixel_math import HealpixPixel
+
+    base = tmp_path / "photod"
+    pixels = [HealpixPixel(3, 0), HealpixPixel(3, 5), HealpixPixel(3, 40)]
+    for pixel in pixels[:2]:
+        inside = [pixelCentre(pixel.pixel * 4 + corner, 4) for corner in range(4)]
+        run.writePartition(base, pixel, estimatesFrame(*zip(*inside, strict=True)))
+
+    seen = []
+    writeAtomically = run.writeAtomically
+
+    def watched(path, write, scratch=None):
+        def peek(name):
+            seen.append(Path(name))
+            return write(name)
+
+        return writeAtomically(path, peek, scratch=scratch)
+
+    monkeypatch.setattr(run, "writeAtomically", watched)
+    inside = [pixelCentre(pixels[2].pixel * 4 + corner, 4) for corner in range(4)]
+    run.writePartition(base, pixels[2], estimatesFrame(*zip(*inside, strict=True)))
+    assert seen[0].parent == base / run.PARTIAL, "the temporary file was written inside the catalog dataset"
+
+    # the file put back where the write had it, as a kernel kill between the write and the rename leaves it
+    seen[0].write_bytes(b"PAR1 and then the run was killed")
+    assert run.writeCatalogMetadata(base, "photod", pixels, 12) is True, "a leftover broke the metadata step"
+    assert run.sweepOrphans(base) == 0, "there was nothing in the dataset to sweep"
+
+
+def test_an_orphan_of_an_earlier_version_is_swept_and_the_failure_is_visible(run, tmp_path, capsys):
+    """Earlier runs wrote the temporary file beside the partition, where it breaks every run that follows."""
+    from hats.pixel_math import HealpixPixel
+
+    base = tmp_path / "photod"
+    pixels = [HealpixPixel(3, 0)]
+    inside = [pixelCentre(corner, 4) for corner in range(4)]
+    path = run.writePartition(base, pixels[0], estimatesFrame(*zip(*inside, strict=True)))
+    orphan = path.with_name("Npix=40-ab12cd34.parquet")
+    orphan.write_bytes(b"PAR1 and then the run was killed")
+
+    assert run.writeCatalogMetadata(base, "photod", pixels, 4) is False, "the orphan did not break anything"
+    assert "the catalog index is not" in capsys.readouterr().out, "the failure was not reported"
+    assert run.sweepOrphans(base) == 1 and not orphan.exists(), "the orphan was not swept"
+    assert run.writeCatalogMetadata(base, "photod", pixels, 4) is True, "sweeping did not repair the catalog"
+    assert path.exists(), "sweeping took a real partition with it"
+
+
+def test_the_pool_replaces_its_workers_only_where_the_interpreter_can(run, monkeypatch):
+    """max_tasks_per_child arrived in Python 3.11 and this package supports 3.10, where it is a TypeError."""
+    import multiprocessing
+
+    monkeypatch.setattr(run, "WORKERS_REPLACED", True)
+    options = run.poolOptions(400)
+    assert options["max_tasks_per_child"] == 400, "the workers are no longer replaced"
+    assert options["mp_context"].get_start_method() == "spawn"
+    assert "max_tasks_per_child" not in run.poolOptions(0), "a chunk of zero asked for replacement anyway"
+
+    monkeypatch.setattr(run, "WORKERS_REPLACED", False)
+    older = run.poolOptions(400)
+    assert "max_tasks_per_child" not in older, "an older interpreter was handed an argument it has not got"
+    assert isinstance(older["mp_context"], type(multiprocessing.get_context("spawn")))
+    # the pool has to be buildable with exactly what poolOptions returns, on either interpreter
+    run.ProcessPoolExecutor(max_workers=1, **older).shutdown()
+
+
+def test_the_pool_says_when_it_cannot_replace_its_workers(run, monkeypatch, capsys):
+    """A survey-wide run on 3.10 grows without bound, so it is worth one line rather than a surprise."""
+    monkeypatch.setattr(run, "WORKERS_REPLACED", False)
+    run.poolOptions(400)
+    printed = capsys.readouterr().out
+    assert "replace a worker" in printed and "memory" in printed, "nothing said the memory would grow"
+    monkeypatch.setattr(run, "WORKERS_REPLACED", True)
+    run.poolOptions(400)
+    assert capsys.readouterr().out == "", "an interpreter that can replace a worker was warned anyway"
+
+
+def test_the_batch_memory_budget_reaches_the_fit(run, monkeypatch):
+    """--batch-bytes bounds one batch of one worker, and has to arrive at the call that makes the batch."""
+    globalParams = SimpleNamespace(computeMrTrue=True, fitColors=("ug", "gr", "ri", "iz", "zy"))
+    with np.load(DATA / "priors_dp2.npz") as data:
+        index, order = np.asarray(data["index"]), int(data["order"])
+    covered = int(np.where(index >= 0)[0][0])
+    maps = np.zeros((int(index.max()) + 1, 4, 4, 4))
+    asked = {}
+    monkeypatch.setattr(run, "loadParams", lambda setup: globalParams)
+    monkeypatch.setattr(
+        run,
+        "loadPriors",
+        lambda path: {"index": index, "order": order, "kde": maps}
+        | dict.fromkeys(("rmag", "xGrid", "yGrid"), np.zeros(4)),
+    )
+    monkeypatch.setattr(run, "priorGridFromMaps", lambda *args: {0: np.zeros(4)})
+
+    def watched(stars, *args, **kwargs):
+        asked.update(kwargs)
+        return unfittedEstimates(stars, globalParams, 0), None
+
+    monkeypatch.setattr(run, "makeBayesEstimates3d", watched)
+    ra, dec = pixelCentre(covered, order)
+    stars = pd.DataFrame(
+        {"objectId": [0], "ra": [ra], "dec": [dec], "rmag": [20.0], "Ar": [0.0]}
+        | {color + "Err": [0.02] for color in globalParams.fitColors}
+    )
+    run.fitPartition(stars, "priors.npz", (0.03, True, "", 8.0), 100, 1 << 30)
+
+    assert asked == {"batchSize": 100, "batchBytes": 1 << 30}, "the batch budget did not reach the fit"

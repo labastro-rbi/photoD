@@ -5,15 +5,18 @@ pool of processes over the partition files, results written as a HATS catalog.
                             --out /path/to/results --name dp2_photod
 
 Options: --cone RA DEC RADIUS_DEG to run a piece of sky, --workers for the processes (they share the GPUs
-between them) and --batch-size for the JAX setup, --chunk for how many partitions a process handles before it
-is replaced, --floor for the colour-error floor (0.03 mag), --no-dust-map to run the flat A_r prior,
---dust-curves to use a 3D dust map as the A_r prior (scripts/make_dust_curves.py), which matters at low
-Galactic latitude, and --ar-max for the top of the A_r grid, which has to be above the extinction of the
-field.
+between them), --batch-size and --batch-bytes for the JAX setup, the second of them a memory budget for one
+batch of one worker, --chunk for how many partitions a process handles before it is replaced, --floor for the
+colour-error floor (0.03 mag), --no-dust-map to run the flat A_r prior, which reads no extinction and no 3D
+curves at all, --dust-curves to use a 3D dust map as the A_r prior (scripts/make_dust_curves.py), which
+matters at low Galactic latitude, and --ar-max for the top of the A_r grid, which has to be above the
+extinction of the field.
 
 A partition whose answers are already written is left alone, so a run that stopped part way is finished by
-repeating the command; --overwrite starts the result again from nothing. A partition that fails takes only
-itself down, and the run ends with a non-zero status saying how much of the sky is missing.
+repeating the command; --overwrite starts the result again from nothing. What the run was configured with is
+recorded beside the answers, and a resume that asks for anything else is refused rather than allowed to mix
+two fits inside one catalog. A partition that fails takes only itself down, and the run ends with a non-zero
+status saying how much of the sky is missing.
 
 Input columns (DP2 object table): coord_ra, coord_dec, objectId, <band>_psfFlux and _psfFluxErr for ugrizy,
 refExtendedness, ebv. Point sources are refExtendedness == 0 with r between 16.5 and 23.5 and S/N > 10 in r,
@@ -28,6 +31,7 @@ import json
 import multiprocessing as mp
 import os
 import shutil
+import sys
 import tempfile
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
@@ -69,6 +73,11 @@ FIT_COLUMNS = ["objectId", "ra", "dec", "rmag"] + [c + s for c in COLORS for s i
 INPUT_COLUMNS = RAW_COLUMNS  # kept for anything importing the old name
 PRIOR_DECADES = 8.0  # how far below its own peak a compact prior map is kept, for a file that says nothing
 FAILURES_REPORTED = 20  # failed partitions named one by one, after which only the count is kept
+RUN_FILE = "photod_run.json"  # what the run was configured with, beside the answers it wrote
+PARTIAL = ".partial"  # where a partition is written before it is renamed into the dataset
+# ProcessPoolExecutor learned to replace a worker in Python 3.11, and the package supports 3.10 as well.
+# Checked here rather than at the call so that both paths can be exercised without another interpreter.
+WORKERS_REPLACED = sys.version_info >= (3, 11)
 PRIORS = {}
 PARAMS = {}
 CURVES = {}
@@ -89,8 +98,13 @@ def inputColumns(available, arColumn):
 
     Everything the run needs of the catalog is settled here, in the parent process. A column that is only
     missed once the pool is running arrives as a worker that crashed, over and over, instead of a sentence.
+
+    arColumn is None when the fit reads no extinction at all, which is what the flat A_r prior does, and a
+    prepared catalog is then not asked for a column nothing will look at.
     """
     if set(FIT_COLUMNS) <= set(available):
+        if arColumn is None:
+            return list(FIT_COLUMNS)
         extinction = [c for c in (arColumn, "ebv") if c in available]
         if not extinction:
             raise SystemExit(
@@ -111,15 +125,20 @@ def prepareStars(df, curves=None, arColumn=""):
 
     A catalog prepared beforehand already carries the colours and their errors, and is passed through; one
     straight from the survey has its point sources selected and its colours built out of the PSF fluxes.
+
+    arColumn is None where the fit reads no extinction, as inputColumns describes, and no A_r is made.
     """
     if set(FIT_COLUMNS) <= set(df.columns):
         out = pd.DataFrame({c: df[c].to_numpy() for c in FIT_COLUMNS})
-        if arColumn and arColumn in df.columns:
-            out["Ar"] = df[arColumn].to_numpy(dtype=float)
-        elif "ebv" in df.columns:
-            out["Ar"] = 2.37 * df["ebv"].to_numpy(dtype=float)
-        else:
-            raise SystemExit("the prepared catalog carries no extinction column: name it with --ar-column")
+        if arColumn is not None:
+            if arColumn in df.columns:
+                out["Ar"] = df[arColumn].to_numpy(dtype=float)
+            elif "ebv" in df.columns:
+                out["Ar"] = 2.37 * df["ebv"].to_numpy(dtype=float)
+            else:
+                raise SystemExit(
+                    "the prepared catalog carries no extinction column: name it with --ar-column"
+                )
     else:
         out = starsFromFluxes(df)
     return withDust(out, curves)
@@ -358,22 +377,60 @@ def unpackPriors(path):
     writeAtomically(cache, lambda name: np.save(name, maps))
 
 
-def writeAtomically(path, write):
-    """Put a file in place in one step: written under a temporary name in the same directory, then renamed.
+def writeAtomically(path, write, scratch=None):
+    """Put a file in place in one step: written under a temporary name, then renamed.
 
     A truncated file is worse than a missing one, because nothing downstream can tell: a resumed run counts
     whatever partition file it finds as done, and a half-written copy of the unpacked prior maps fails every
-    worker of every run that follows. A rename inside one directory is atomic, so the file is either whole or
-    not there, however the run is killed and however many runs are writing it at once.
+    worker of every run that follows. A rename inside one filesystem is atomic, so the file is either whole
+    or not there, however the run is killed and however many runs are writing it at once.
+
+    The temporary name goes in scratch, which has to be on the same filesystem for the rename to stay
+    atomic, and by default beside the file itself. A partition of the result is written in a directory of
+    its own instead: see partialDirectory.
     """
     path = Path(str(path))
-    handle, temporary = tempfile.mkstemp(dir=path.parent, prefix=f"{path.stem}-", suffix=path.suffix)
+    handle, temporary = tempfile.mkstemp(
+        dir=Path(str(scratch)) if scratch else path.parent, prefix=f"{path.stem}-", suffix=path.suffix
+    )
     os.close(handle)
     try:
         write(temporary)
         os.replace(temporary, path)
     finally:
         Path(temporary).unlink(missing_ok=True)
+
+
+def partialDirectory(base):
+    """Where a partition is written before it is renamed into place: beside the dataset, not inside it.
+
+    hats.io.write_parquet_metadata reads every parquet file under <base>/dataset, so a temporary file left
+    there by a run the kernel killed breaks the metadata step of that run and of every run that follows, and
+    nothing in the catalog says which file to remove. One directory up is the same filesystem, so the rename
+    is still atomic, and the scan never sees the file at all.
+    """
+    directory = Path(str(base)) / PARTIAL
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
+def sweepOrphans(base):
+    """Drop what a run of an earlier version left half written inside the dataset, and say so.
+
+    Those runs wrote a partition under its temporary name beside the partition itself, so a kill between the
+    write and the rename left a Npix=<pixel>-<suffix>.parquet that the metadata step of every later run then
+    failed on, with nothing in the catalog to say which file to remove. It is reported and removed rather
+    than only reported, because the catalog is broken for as long as it is there and no version of this
+    script writes such a name any more, so nothing can be in the middle of writing one.
+
+    What this version leaves behind instead is a file in PARTIAL, which nothing reads and which the writer
+    itself removes unless the kernel takes the process without warning.
+    """
+    orphans = sorted(Path(str(base)).glob("dataset/Norder=*/Dir=*/Npix=*-*.parquet"))
+    for path in orphans:
+        print(f"removing {path}, which a killed run of an earlier version left half written")
+        path.unlink(missing_ok=True)
+    return len(orphans)
 
 
 def loadPriors(path):
@@ -416,7 +473,9 @@ def separation(ra, dec, ra0, dec0):
     return np.degrees(np.arccos(np.clip(cosine, -1.0, 1.0)))
 
 
-def fitAndWrite(source, pixel, base, priorPath, curvePath, setup, batchSize, cone, arColumn, columns):
+def fitAndWrite(
+    source, pixel, base, priorPath, curvePath, setup, batchSize, batchBytes, cone, arColumn, columns
+):
     """Read one partition file, fit its stars and write them where the partition's HEALPix pixel belongs.
 
     The task carries a path rather than a piece of a catalog. Handing the workers pieces of a catalog sends
@@ -424,39 +483,53 @@ def fitAndWrite(source, pixel, base, priorPath, curvePath, setup, batchSize, con
     a single star is read, and the results are far larger than the stars they came from, so collecting them
     for a separate writing step holds the survey in memory as well.
     """
-    from hats.io.paths import pixel_catalog_file
-    from hats.pixel_math import HealpixPixel
-
     frame = pq.read_table(source, columns=columns).to_pandas()
     stars = prepareStars(frame, loadCurves(curvePath), arColumn)
     del frame
     if cone is not None and len(stars):
         ra, dec, radius = cone
         stars = stars[separation(stars["ra"].to_numpy(), stars["dec"].to_numpy(), ra, dec) <= radius]
-    estimates = fitPartition(stars, priorPath, setup, batchSize)
+    estimates = fitPartition(stars, priorPath, setup, batchSize, batchBytes)
     if not len(estimates):
         return 0
-    path = Path(str(pixel_catalog_file(base, HealpixPixel(pixel.order, pixel.pixel))))
-    path.parent.mkdir(parents=True, exist_ok=True)
-    answers = withSpatialIndex(pd.DataFrame(estimates))
-    writeAtomically(path, lambda name: answers.to_parquet(name, index=True))
+    writePartition(base, pixel, estimates)
     return len(estimates)
 
 
+def writePartition(base, pixel, estimates):
+    """One partition of answers in place, under the name its HEALPix pixel gives it.
+
+    The whole of what a partition looks like on disk is here, so that what a run writes and what a test
+    reads back are the same thing rather than two spellings of it.
+    """
+    path = Path(str(pixelFile(base, pixel)))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    answers = withSpatialIndex(pd.DataFrame(estimates))
+    writeAtomically(path, lambda name: answers.to_parquet(name, index=False), scratch=partialDirectory(base))
+    return path
+
+
 def withSpatialIndex(estimates):
-    """The answers as a HATS partition: each row indexed by the order 29 HEALPix cell it falls in, sorted.
+    """The answers as a HATS partition: a column of the order 29 HEALPix cell of each row, in its order.
 
     That index is what makes the result a catalog rather than a heap of parquet files. A reader uses it to
     find the rows of a partition that lie in a region without reading the positions, and expects the rows in
     its order.
+
+    It is a plain column and not the pandas index of the frame, which is how lsdb writes a catalog of its
+    own. A file whose parquet metadata names an index column hands the reader a frame with that column
+    already taken out of it, and lsdb then asks a partition for the index column it means to read the rows
+    by and is told it is not there: open_catalog(columns=...) and cone_search both fail on such a file,
+    while a plain read of the whole catalog works, so the fault only shows up in the readers that matter.
     """
     from hats.pixel_math.spatial_index import SPATIAL_INDEX_COLUMN, compute_spatial_index
 
     index = compute_spatial_index(estimates["ra"].to_numpy(), estimates["dec"].to_numpy())
-    return estimates.set_index(pd.Index(index, name=SPATIAL_INDEX_COLUMN)).sort_index()
+    out = estimates.assign(**{SPATIAL_INDEX_COLUMN: index}).sort_values(SPATIAL_INDEX_COLUMN)
+    return out.reset_index(drop=True)
 
 
-def fitPartition(partition, priorPath, setup, batchSize):
+def fitPartition(partition, priorPath, setup, batchSize, batchBytes=None):
     """One partition of stars, each group of them fitted with the prior maps of the sky pixel it lies in.
 
     Looking the sightline up beats joining against a catalog of maps: a join is between two pixel trees of
@@ -467,6 +540,9 @@ def fitPartition(partition, priorPath, setup, batchSize):
     that ship here are missing three of the pixels their own dust file covers. Dropping those stars leaves a
     catalog that holds fewer stars than the selection it came from, and such a catalog cannot count stars,
     which is most of what these catalogs are for. The rows come back in no particular order.
+
+    batchBytes bounds the memory of one batch, and so of one worker at a time: a run of several workers asks
+    for that much again for each of them.
     """
     empty = npd.NestedFrame(getEstimatesMeta(computeMrTrue=True).reset_index(drop=True))
     if not len(partition):
@@ -486,7 +562,11 @@ def fitPartition(partition, priorPath, setup, batchSize):
         )
         with jax.default_device(device):
             estimates, _ = makeBayesEstimates3d(
-                stars, jax.numpy.array(list(grid.values())), globalParams, batchSize=batchSize
+                stars,
+                jax.numpy.array(list(grid.values())),
+                globalParams,
+                batchSize=batchSize,
+                batchBytes=batchBytes,
             )
         pieces.append(estimates)
     if not pieces:
@@ -494,7 +574,7 @@ def fitPartition(partition, priorPath, setup, batchSize):
     return npd.NestedFrame(pd.concat(pieces, ignore_index=True))
 
 
-def startWorker(base, priorPath, curvePath, setup, batchSize, cone, arColumn, columns):
+def startWorker(base, priorPath, curvePath, setup, batchSize, batchBytes, cone, arColumn, columns):
     """What every partition of this run needs, held once per worker process."""
     WORK.update(
         base=base,
@@ -502,6 +582,7 @@ def startWorker(base, priorPath, curvePath, setup, batchSize, cone, arColumn, co
         curvePath=curvePath,
         setup=setup,
         batchSize=batchSize,
+        batchBytes=batchBytes,
         cone=cone,
         arColumn=arColumn,
         columns=columns,
@@ -519,6 +600,7 @@ def runPartition(source):
         WORK["curvePath"],
         WORK["setup"],
         WORK["batchSize"],
+        WORK["batchBytes"],
         WORK["cone"],
         WORK["arColumn"],
         WORK["columns"],
@@ -566,6 +648,80 @@ def partitionsToFit(base, sources):
     return todo, rows
 
 
+def runConfiguration(args):
+    """What this run asks of the fit, as the settings that decide the answers and not one more.
+
+    A partition is resumed on the strength of the file being there, which says nothing about what produced
+    it, so the settings are recorded beside the answers and a resume that asks for others is refused. The
+    cone belongs here: a narrower one leaves the partitions outside it untouched but is also a fine filter
+    inside the ones it keeps, so resuming with it would leave whole partitions of stars that are outside it.
+    How the work is divided up is not here, neither the workers nor the chunk nor either batch setting,
+    because none of it changes an answer and a run must be free to finish on a smaller machine than it
+    started on.
+    """
+    return {
+        # a directory completed by the shell carries a trailing slash and the same command typed again may
+        # not, which is the same catalog and must not read as another fit
+        "catalog": str(args.catalog).rstrip("/"),
+        "priors": str(args.priors),
+        "floor": float(args.floor),
+        "arMax": float(args.ar_max),
+        # what the fit actually reads, so that --no-dust-map with curves named and --no-dust-map without
+        # them, which give the same answers to the last bit, resume one another
+        "arColumn": args.ar_column if not args.no_dust_map else None,
+        "dustMap": not args.no_dust_map,
+        "dustCurves": str(args.dust_curves) if not args.no_dust_map else "",
+        "cone": [float(x) for x in args.cone] if args.cone else None,
+    }
+
+
+def recordConfiguration(base, configuration):
+    """Refuse a resume that asks for another fit than the answers already there were made with.
+
+    An answer already written is kept whatever this run was asked for, so two settings inside one catalog
+    are not something a reader can see, let alone undo. A result written before this was recorded says
+    nothing about itself and is taken as it comes, which is the one case where there is nothing to compare.
+    """
+    path = Path(str(base)) / RUN_FILE
+    if path.exists():
+        found = json.loads(path.read_text())
+        differs = {
+            name: (found.get(name), value)
+            for name, value in configuration.items()
+            if found.get(name) != value
+        }
+        if differs:
+            said = ", ".join(f"{name} {was!r} rather than {now!r}" for name, (was, now) in differs.items())
+            raise SystemExit(
+                f"{base} was fitted with {said}: a resume keeps every partition already written, so this "
+                "would leave two fits inside one catalog. Fit it again with --overwrite, or write this one "
+                "under another --name"
+            )
+    elif any(Path(str(base)).glob("dataset/Norder=*/Dir=*/Npix=*.parquet")):
+        print(f"{base} holds answers but no record of what made them, so they are taken as this run's")
+    path.write_text(json.dumps(configuration, indent=2, sort_keys=True) + "\n")
+
+
+def poolOptions(chunk):
+    """How the pool bounds the memory of a survey-wide run, as far as this interpreter allows.
+
+    A worker is replaced every chunk partitions, which the pool only does with processes it starts itself
+    rather than forks. ProcessPoolExecutor learned to do it in Python 3.11 and this package supports 3.10,
+    where the argument is not merely ignored but a TypeError as the pool is built.
+    """
+    options = {"mp_context": mp.get_context("spawn")}
+    if chunk <= 0:
+        return options
+    if not WORKERS_REPLACED:
+        print(
+            "this Python cannot replace a worker of the pool (3.11 and up can), so the workers live for the "
+            "whole run and their memory grows with it: split a survey-wide run by --cone if it runs out",
+            flush=True,
+        )
+        return options
+    return options | {"max_tasks_per_child": chunk}
+
+
 def fitPartitions(sources, workers, chunk, initargs):
     """Every partition of the run, fitted in a pool of processes, a failure reported rather than fatal.
 
@@ -580,10 +736,7 @@ def fitPartitions(sources, workers, chunk, initargs):
         max_workers=workers,
         initializer=startWorker,
         initargs=initargs,
-        # a worker is replaced to bound the memory of a survey-wide run, which the pool only does with
-        # processes it starts itself rather than forks
-        mp_context=mp.get_context("spawn"),
-        max_tasks_per_child=chunk if chunk > 0 else None,
+        **poolOptions(chunk),
     ) as pool:
         futures = {pool.submit(runPartition, source): source for source in sources}
         for done, future in enumerate(as_completed(futures), start=1):
@@ -599,7 +752,12 @@ def fitPartitions(sources, workers, chunk, initargs):
 
 
 def writeCatalogMetadata(base, name, pixels, total):
-    """The HATS metadata beside the parquet files, so that the result reads back as a catalog."""
+    """The HATS metadata beside the parquet files, so that the result reads back as a catalog.
+
+    True when it is written. The parquet files are the result and the index can be rebuilt from them, so a
+    failure here is not worth throwing the run away over, but it leaves something that does not read back as
+    a catalog and the caller says so in the exit status.
+    """
     try:
         from hats.catalog import PartitionInfo, TableProperties
         from hats.io import write_parquet_metadata
@@ -614,8 +772,10 @@ def writeCatalogMetadata(base, name, pixels, total):
             dec_column="dec",
         ).to_properties_file(base)
         write_parquet_metadata(base)
-    except Exception as error:  # the parquet files are the result; the index can be rebuilt from them
+        return True
+    except Exception as error:
         print(f"the parquet files are written but the catalog index is not: {type(error).__name__}: {error}")
+        return False
 
 
 def pixelFile(base, pixel):
@@ -650,7 +810,13 @@ def main():
         default=8.0,
         help="top of the A_r grid; keep it above 1.3 A_r(map) + 0.1 of the dustiest star in the field",
     )
-    ap.add_argument("--no-dust-map", action="store_true", help="flat A_r prior instead of the dust-map bound")
+    ap.add_argument(
+        "--no-dust-map",
+        action="store_true",
+        help="flat A_r prior instead of the dust-map bound, which reads neither the extinction column nor "
+        "any 3D curve: the Gaussian prior of a 3D map is its curve scaled by A_r(map), so without that map "
+        "the curves weigh nothing, and --dust-curves is ignored",
+    )
     ap.add_argument(
         "--dust-curves",
         default=str(DUST_FILE),
@@ -675,35 +841,52 @@ def main():
         default=400,
         help="stars per JAX call; a few hundred is the fastest, larger batches spill and slow down",
     )
+    ap.add_argument(
+        "--batch-bytes",
+        type=int,
+        default=2 << 30,
+        help="memory one batch of the fit may take, per worker: a pool of several asks for that much each",
+    )
     args = ap.parse_args()
 
+    # what the fit reads, which is not quite what was asked for: the flat A_r prior reads no extinction and
+    # no 3D curves, so the run is configured, resumed and reported as the fit it actually is
+    configuration = runConfiguration(args)
+    arColumn, curvePath = configuration["arColumn"], configuration["dustCurves"]
     search = (
         lsdb.ConeSearch(ra=args.cone[0], dec=args.cone[1], radius_arcsec=3600 * args.cone[2])
         if args.cone
         else None
     )
-    columns = inputColumns(catalogColumns(args.catalog), args.ar_column)
+    columns = inputColumns(catalogColumns(args.catalog), arColumn)
     objects = lsdb.open_catalog(args.catalog, columns=columns, search_filter=search)
     sources = [(pixel, str(path)) for pixel, path in partitionFiles(objects)]
     print(f"reading {'prepared colours' if 'ug' in columns else 'PSF fluxes'} from {args.catalog}")
     cone = tuple(args.cone) if args.cone else None
-    setup = (args.floor, not args.no_dust_map, args.dust_curves, args.ar_max)
-    if args.dust_curves:
-        curves = readCurves(args.dust_curves)
-        total = curves.get("total")
-        bounded = int((total > 0).sum()) if total is not None else 0
+    setup = (args.floor, not args.no_dust_map, curvePath, args.ar_max)
+    if curvePath:
+        curves = readCurves(curvePath)
+        measured = curves.get("total")
+        bounded = int((measured > 0).sum()) if measured is not None else 0
         print(
-            f"3D dust prior from {args.dust_curves}: {len(curves['shapes']) - 1} sightlines, "
+            f"3D dust prior from {curvePath}: {len(curves['shapes']) - 1} sightlines, "
             f"{bounded} of them with a measured total column to bound the extinction; "
             "a star the maps do not reach keeps the flat A_r prior"
         )
+    elif args.no_dust_map:
+        print(
+            "flat A_r prior over the whole grid: no extinction column is read and no 3D curve is opened"
+            + (f", so {args.dust_curves} is left alone" if args.dust_curves else "")
+        )
 
-    checkPriorFile(args.priors)
-    unpackPriors(args.priors)
     base = Path(args.out) / args.name
     if base.exists() and args.overwrite:
         shutil.rmtree(base)
     base.mkdir(parents=True, exist_ok=True)
+    recordConfiguration(base, configuration)
+    sweepOrphans(base)
+    checkPriorFile(args.priors)
+    unpackPriors(args.priors)
 
     todo, total = partitionsToFit(base, sources)
     kept = len(sources) - len(todo)
@@ -713,13 +896,25 @@ def main():
         flush=True,
     )
 
-    initargs = (base, args.priors, args.dust_curves, setup, args.batch_size, cone, args.ar_column, columns)
+    initargs = (
+        base,
+        args.priors,
+        curvePath,
+        setup,
+        args.batch_size,
+        args.batch_bytes,
+        cone,
+        arColumn,
+        columns,
+    )
     fitted, failed = fitPartitions(todo, args.workers, args.chunk, initargs)
     total += fitted
-    writeCatalogMetadata(base, args.name, [p for p, _ in sources], total)
+    indexed = writeCatalogMetadata(base, args.name, [p for p, _ in sources], total)
     print(f"written {base}: {total} stars")
     if failed:
         raise SystemExit(f"{failed} of {len(todo)} partitions failed; run the same command again for them")
+    if not indexed:
+        raise SystemExit(f"{base} does not read back as a catalog until its parquet metadata is written")
 
 
 if __name__ == "__main__":
