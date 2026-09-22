@@ -154,21 +154,23 @@ stays and says so, empty if the fit could not be run at all.
 
 | bit | meaning | on DP2 |
 |---|---|---|
-| 1 | chi2 above 100, or no answer at all: the locus does not pass through this star's colours | 3.0 % |
-| 2 | the Mr_true posterior is lopsided, which is how a giant and a dwarf solution both survive | to measure |
-| 4 | [Fe/H] is against the end of the model grid, so it is a limit rather than a measurement | 0.4 % |
-| 8 | A_r is against its bound, the dust map's or the grid's, and the distance goes wrong with it | to measure |
-| 16 | a colour was effectively unmeasured: its error is above a magnitude and it carries no weight worth the name | 49 % |
+| 1 | chi2 above 100, or no answer at all: the locus does not pass through this star's colours | 2.72 % |
+| 2 | the Mr_true posterior is lopsided, which is how a giant and a dwarf solution both survive | 3.45 % |
+| 4 | [Fe/H] is against the end of the model grid, so it is a limit rather than a measurement | 0.93 % |
+| 8 | A_r is against its bound, the dust map's or the grid's, and the distance goes wrong with it | 0.08 % |
+| 16 | a colour was effectively unmeasured: its error is above a magnitude and it carries no weight worth the name | 56.2 % |
 | 32 | no r magnitude, so neither a prior map nor a distance: the row carries no estimate | 0 |
 | 64 | no prior map for this part of the sky, so the fit was never run: no estimate either | 0 |
+
+The fractions are of the 93,688,843 stars of the whole DP2 run, of which 40.2 % carry no flag at all and
+94.2 % are usable. Neither of the last two bits is set by a single star of it: every point source has an r
+magnitude, and the three sky pixels the prior file that ships here has no maps for hold none of them.
 
 The first two are the ones that mean the answer is suspect rather than merely uncertain: against Gaia
 parallaxes the stars with bit 1 scatter five to twenty five times their quoted uncertainty, where the rest
 scatter 1.09 times it. Bit 4 marks a limit rather than a failure. Bit 16 is about the input and is normal:
-it is nearly all the u band, which is the shallowest, and half of DP2 has no usable u-g. So the cut to reach
-for is `flags & 3 == 0`, not `flags == 0`. The two fractions marked "to measure" are from definitions that
-have since changed: bit 2 used to be measured on tLoc rather than on Mr_true, and bit 8 only against the top
-of the A_r grid rather than against the bound that binds.
+it is nearly all the u band, which is the shallowest, and more than half of DP2 has no usable u-g. So the cut
+to reach for is `flags & 3 == 0`, not `flags == 0`.
 
 ### A 3D dust map as the A_r prior
 
