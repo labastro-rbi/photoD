@@ -370,6 +370,76 @@ def test_the_prior_maps_that_ship_are_taken_as_they_come(run):
     run.checkPriorFile(DATA / "priors_dp2.npz")
 
 
+def test_the_pool_is_kept_fed_rather_than_handed_the_whole_survey(run, monkeypatch):
+    """A pool that replaces its workers starts the replacement only when something is submitted to it.
+
+    Handed every partition at once it goes quiet for good the moment the last of its first workers reaches
+    its chunk: the queue is full, every worker has retired, and nothing will submit the task that would
+    start another. A survey run of 8840 partitions stopped dead at 2400 of them, which is 6 workers times a
+    chunk of 400, and sat there until it was killed. The stand-in below retires a worker and starts its
+    replacement in the same places the real pool does, so a loop that stops submitting stops the run.
+    """
+    CHUNK, WORKERS = 3, 2
+
+    class RetiringPool:
+        """The pool as far as this matters: a worker lives for CHUNK tasks, a replacement starts on submit."""
+
+        def __init__(self, max_workers, max_tasks_per_child=None, **kwargs):
+            self.workers, self.chunk = max_workers, max_tasks_per_child or len(sources)
+            self.live, self.queued = [], []
+            self.outstanding, self.peak, self.ran = 0, 0, 0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *problem):
+            return False
+
+        def submit(self, task, *args):
+            future = Future()
+            self.queued.append((future, task, args))
+            self.outstanding += 1
+            self.peak = max(self.peak, self.outstanding)
+            if len(self.live) < self.workers:  # the replacement the real pool starts here and nowhere else
+                self.live.append(self.chunk)
+            return future
+
+        def work(self):
+            finished = set()
+            while self.queued and any(left > 0 for left in self.live):
+                worker = next(i for i, left in enumerate(self.live) if left > 0)
+                future, task, args = self.queued.pop(0)
+                self.live[worker] -= 1
+                self.ran += 1
+                future.set_result(task(*args))
+                finished.add(future)
+                self.outstanding -= 1
+            self.live = [left for left in self.live if left > 0]
+            return finished
+
+    pools = []
+
+    def build(**kwargs):
+        pools.append(RetiringPool(**kwargs))
+        return pools[-1]
+
+    def waitFor(futures, return_when=None, timeout=None):
+        finished = pools[-1].work()
+        assert finished, "the run waited on a pool whose workers have all retired, with nothing submitted"
+        return finished, {future for future in futures if future not in finished}
+
+    monkeypatch.setattr(run, "ProcessPoolExecutor", build)
+    monkeypatch.setattr(run, "wait", waitFor)
+    monkeypatch.setattr(run, "runPartition", lambda source: 1)
+    sources = [(i, f"{i}.parquet") for i in range(20)]
+    total, failed = run.fitPartitions(sources, workers=WORKERS, chunk=CHUNK, initargs=())
+
+    assert (total, failed) == (20, 0), "the run did not fit every partition"
+    assert pools[-1].ran == 20 and not pools[-1].queued
+    assert pools[-1].peak <= run.WINDOW * WORKERS, f"{pools[-1].peak} partitions were in the pool at once"
+    assert pools[-1].peak > WORKERS, "a worker had nothing waiting for it while the run had work left"
+
+
 def test_a_prepared_catalog_with_no_extinction_column_is_refused_before_the_pool(run):
     """A column that is only missed inside a worker arrives as a crashed pool instead of a sentence."""
     prepared = run.FIT_COLUMNS + ["Ar_SFD"]

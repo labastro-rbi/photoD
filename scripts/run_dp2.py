@@ -33,7 +33,7 @@ import os
 import shutil
 import sys
 import tempfile
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from pathlib import Path
 
 # XLA's autotuner compiles and times dozens of variants of every kernel the first time it meets one, which
@@ -73,6 +73,7 @@ FIT_COLUMNS = ["objectId", "ra", "dec", "rmag"] + [c + s for c in COLORS for s i
 INPUT_COLUMNS = RAW_COLUMNS  # kept for anything importing the old name
 PRIOR_DECADES = 8.0  # how far below its own peak a compact prior map is kept, for a file that says nothing
 FAILURES_REPORTED = 20  # failed partitions named one by one, after which only the count is kept
+WINDOW = 2  # partitions in the pool per worker, so that a worker always has the next one waiting
 RUN_FILE = "photod_run.json"  # what the run was configured with, beside the answers it wrote
 PARTIAL = ".partial"  # where a partition is written before it is renamed into the dataset
 # ProcessPoolExecutor learned to replace a worker in Python 3.11, and the package supports 3.10 as well.
@@ -736,24 +737,45 @@ def fitPartitions(sources, workers, chunk, initargs):
     that, so a failure costs its own partition, is counted, and leaves the exit status of the run saying that
     some of the sky is missing. The pool comes from concurrent.futures because a worker that dies there
     breaks the pool and raises, where multiprocessing.Pool waits for an answer that can no longer come.
+
+    Only WINDOW partitions are in the pool at a time, the rest handed to it as answers come back. That is
+    not for the memory of the queue, which is a path and a pixel per partition: a pool that replaces its
+    workers only starts the replacements when something is submitted to it, so a run that hands it every
+    partition at once stops dead the moment the last of the first workers reaches its chunk, with the pool
+    idle, the queue full and nothing to wake it. It cost a survey run of 8840 partitions 72 minutes of
+    nothing at partition 2400, which is 6 workers times a chunk of 400, before it was killed.
     """
-    total, failed = 0, 0
+    total, failed, done = 0, 0, 0
+    remaining, inflight = iter(sources), {}
     with ProcessPoolExecutor(
         max_workers=workers,
         initializer=startWorker,
         initargs=initargs,
         **poolOptions(chunk),
     ) as pool:
-        futures = {pool.submit(runPartition, source): source for source in sources}
-        for done, future in enumerate(as_completed(futures), start=1):
-            try:
-                total += future.result()
-            except Exception as error:  # the partition, or the pool the worker of it took with it
-                failed += 1
-                if failed <= FAILURES_REPORTED:
-                    print(f"  {futures[future][1]}: {type(error).__name__}: {error}", flush=True)
-            if done % 200 == 0 or done == len(sources):
-                print(f"  {done}/{len(sources)} partitions, {total} stars, {failed} failed", flush=True)
+
+        def fill():
+            while len(inflight) < WINDOW * max(workers, 1):
+                source = next(remaining, None)
+                if source is None:
+                    return
+                inflight[pool.submit(runPartition, source)] = source
+
+        fill()
+        while inflight:
+            finished, _ = wait(list(inflight), return_when=FIRST_COMPLETED)
+            for future in finished:
+                source = inflight.pop(future)
+                done += 1
+                try:
+                    total += future.result()
+                except Exception as error:  # the partition, or the pool the worker of it took with it
+                    failed += 1
+                    if failed <= FAILURES_REPORTED:
+                        print(f"  {source[1]}: {type(error).__name__}: {error}", flush=True)
+                if done % 200 == 0 or done == len(sources):
+                    print(f"  {done}/{len(sources)} partitions, {total} stars, {failed} failed", flush=True)
+            fill()
     return total, failed
 
 
