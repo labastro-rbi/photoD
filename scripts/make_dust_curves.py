@@ -15,9 +15,13 @@ No single map covers the sky, so they are tried in order and the first one with 
   bayestar   three quarters of the sky, dec > -30, to 60 kpc
   edenhofer  all sky but only to 2 kpc, so it is used above |b| = 10 where the dust is all nearby
 
-The deep maps come first because a curve has to reach past the stars: a map that stops short would put the
-last of the extinction at its own edge rather than where the dust is. That is why the shallow all-sky map is
-kept out of the plane, where sightlines carry dust well beyond its range.
+The maps come in order of reach because a curve has to reach past the stars: a map that stops short puts the
+last of the extinction at its own edge rather than where the dust is. That is why the shallowest all-sky map
+is kept out of the plane, where sightlines carry dust well beyond its range.
+
+Reach also decides which maps have their total column written. The run takes that total as a hard bound on
+the extinction of a star, so only a map that reaches past the far side of the disc may write one: a shorter
+map measures a part of the column and would bound the distant stars of the sightline below the truth.
 """
 
 import argparse
@@ -31,10 +35,13 @@ MU = np.arange(4.0, 16.01, 0.25)
 # name: (highest |b| it is used at, lowest |b| it is used at, A_r per unit of the map, reaches past the disc)
 # The conversion matters only for the total column, which is written out so that a run can bound a star's
 # extinction by a measured column instead of by the whole Galaxy. A map that stops short of the far side of
-# the disc cannot bound anything, so its total is not written.
+# the disc cannot bound anything, so its total is not written and the conversion of such a map is only kept
+# here on record. Its shape is still used, and normalised by its own last sample it says that all of the dust
+# of the sightline lies in front of that sample: a star behind the edge of the map is then given the whole
+# column the map measured rather than more, which is the flat end of the curve.
 MAPS = {
-    "marshall": (10.0, 0.0, 7.21, True),  # A_r / A_Ks for R_V = 3.1
-    "chen2018": (12.0, 0.0, 1.0, True),  # already an r band extinction
+    "marshall": (10.0, 0.0, 7.21, False),  # A_r / A_Ks for R_V = 3.1; stops at 10 kpc, inside the disc
+    "chen2018": (12.0, 0.0, 1.0, False),  # already an r band extinction; stops at 6 kpc, inside the disc
     "bayestar": (90.0, 0.0, 2.483, True),  # A_r / E, Green et al. (2019)
     "edenhofer": (90.0, 10.0, 2.35, False),  # A_r / E of Zhang, Green and Rix (2023); stops at 2 kpc
 }
@@ -102,7 +109,8 @@ def curveShapes(query, coords, mu=MU, chunk=2000):
 
     The map is queried for every sightline and distance at once, which is what makes an all-sky grid
     affordable. A curve is kept when the map has at least two finite samples and any extinction at all; it is
-    forced to increase with distance, because a cumulative column cannot fall.
+    forced to increase with distance, because a cumulative column cannot fall. A chunk the map refuses is
+    retried sightline by sightline, so that one coordinate it will not answer for costs one curve.
     """
     distance = 10 ** (mu / 5 - 2)  # kpc
     galactic = coords.galactic
@@ -120,8 +128,21 @@ def curveShapes(query, coords, mu=MU, chunk=2000):
         )
         try:
             values = np.atleast_1d(query(grid)).astype(float).reshape(n, mu.size)
-        except Exception:
-            continue
+        except Exception as error:
+            # Some maps raise rather than return a NaN for a coordinate they hold nothing for, and one such
+            # coordinate must not cost the whole chunk: it is retried one sightline at a time, which is a
+            # call per sightline of the chunk, and only the ones that still raise are left without a curve.
+            values = np.full((n, mu.size), np.nan)
+            dropped = 0
+            for i in range(n):
+                try:
+                    values[i] = np.atleast_1d(query(grid[i * mu.size : (i + 1) * mu.size])).astype(float)
+                except Exception:
+                    dropped += 1
+            print(
+                f"{'':>10}  sightlines {start} to {stop} raised {type(error).__name__}, "
+                f"{dropped} of them one by one too"
+            )
         for i, row in enumerate(values):
             good = np.isfinite(row)
             if good.sum() < 2 or not np.any(row[good] > 0):
@@ -149,6 +170,15 @@ def main():
     ap.add_argument("--out", default="dust_curves.npz")
     args = ap.parse_args()
 
+    names = [n.strip() for n in args.maps.split(",") if n.strip()]
+    unknown = [n for n in names if n not in MAPS]
+    if unknown:
+        raise SystemExit(f"no such map {', '.join(unknown)}; --maps takes {', '.join(MAPS)}")
+    # the run reads the grid back with int(np.log2(nside)), which silently puts every star in the wrong
+    # pixel for an nside that is not a power of two
+    if args.nside < 1 or args.nside & (args.nside - 1):
+        raise SystemExit(f"--nside has to be a power of two, not {args.nside}")
+
     if args.data_dir:
         from dustmaps.config import config
 
@@ -164,16 +194,19 @@ def main():
     shapes = np.zeros((pixels.size, MU.size), dtype=np.float32)
     total = np.zeros(pixels.size, dtype=np.float32)
     source = np.zeros(pixels.size, dtype=np.int8) - 1
-    names = [n.strip() for n in args.maps.split(",") if n.strip()]
+    failed = []
     for number, name in enumerate(names):
-        high, low, perUnit, deep = MAPS.get(name, (90.0, 0.0, 1.0, False))
+        high, low, perUnit, deep = MAPS[name]
         todo = np.where((source < 0) & (latitude <= high) & (latitude >= low))[0]
         if not todo.size:
             continue
         try:
             query = mapQuery(name)
-        except Exception as error:  # a map whose data is not on this machine simply does not contribute
-            print(f"{name:>10}: unavailable ({type(error).__name__})")
+        except Exception as error:
+            # A map whose data is not on this machine cannot contribute; whether that leaves the file usable
+            # depends on what the others cover, so the failure is carried to the end rather than decided here
+            failed.append((name, error))
+            print(f"{name:>10}: unavailable ({type(error).__name__}: {error})")
             continue
         found, columns = curveShapes(query, coords[todo])
         covered = found[:, -1] > 0
@@ -188,6 +221,17 @@ def main():
         )
 
     covered = source >= 0
+    if not covered.any():
+        # A file of no curves is structurally valid and useless: the run reads it, finds every star's
+        # sightline unindexed and dies inside the dust lookup, a long way from the cause. Say it here.
+        raise SystemExit(
+            "no sightline was covered, so there is nothing to write; "
+            + (
+                "; ".join(f"{name} failed with {type(error).__name__}: {error}" for name, error in failed)
+                if failed
+                else f"none of {', '.join(names)} has data for these {pixels.size} sightlines"
+            )
+        )
     index = np.full(12 * args.nside**2, -1, dtype=np.int32)
     index[pixels[covered]] = np.arange(int(covered.sum()), dtype=np.int32)
     np.savez_compressed(
@@ -210,6 +254,8 @@ def main():
         f"{args.out}: {int(covered.sum())} of {pixels.size} sightlines covered "
         f"({100 * covered.mean():.1f} %, {covered.sum() * area:.0f} deg2)"
     )
+    for name, error in failed:
+        print(f"{name:>10}: contributed nothing ({type(error).__name__}: {error})")
 
 
 if __name__ == "__main__":

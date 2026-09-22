@@ -11,6 +11,8 @@ Two things are wrong with the original locus on DP2 photometry, both measured on
   (a signal-to-noise cut keeps the stars whose parallax scattered high and biases the result). The fit takes
   Mr = tLoc on the main sequence, so the correction moves the colours of each tLoc row rather than the Mr
   column: the row that carried the colours of a star now sits at a tLoc fainter or brighter by the offset.
+  Half a magnitude of that at the red end reaches past the last row of the original tLoc grid, so the grid
+  grows at the faint end rather than the reddest colours being cut off it.
 
   python scripts/make_locus.py                        # writes data/LSSTlocus_10Gyr_DP2.txt
   python scripts/make_locus.py --measure stars.parquet estimates.parquet
@@ -32,7 +34,11 @@ UG_FEH = np.array([-2.5, -2.25, -2.0, -1.75, -1.5, -1.25, -1.0, -0.75, -0.5, -0.
 UG_OFFSET = np.array(
     [0.026, 0.026, 0.026, 0.026, 0.015, -0.043, -0.079, -0.110, -0.145, -0.155, -0.161, -0.161, -0.161]
 )
-# Mr offset versus dereddened g-i (Gaia DR3 parallaxes, five DP2 fields); positive = the locus is too bright
+# Mr offset versus dereddened g-i (Gaia DR3 parallaxes, five DP2 fields); positive = the locus is too bright.
+# One entry per bin of measureMrOffsets, at the centre of the bin, so that a re-measurement prints this table
+# row by row; the bins it prints are read back off GI, which keeps the two from drifting apart. The last
+# entries sit at the clip of measureMrOffsets rather than at a measurement, and the redder colours of the
+# locus take the same value, the interpolation holding the last entry.
 GI = np.array([0.3, 0.5, 0.7, 0.9, 1.1, 1.3, 1.5, 1.7, 1.9, 2.1, 2.3, 2.5, 2.7, 2.9, 3.1])
 MR_OFFSET = np.array(
     [0.040, -0.052, -0.177, -0.264, 0.025, 0.142, 0.132, 0.260, 0.292, 0.275, 0.358, 0.471, 0.5, 0.5, 0.5]
@@ -60,19 +66,60 @@ def writeLocus(locus, path, comment):
             )
 
 
+def shiftedTLoc(track):
+    """The tLoc that each row of one main-sequence track belongs at, given the measured offsets.
+
+    A row the parallaxes find too bright by dMr carries the colours of a star of tLoc + dMr. Forced to
+    increase with tLoc, because the sequence has to stay one: the offsets are measured in bins of colour and
+    a bin whose offset drops by more than the bin is wide would otherwise fold the sequence back on itself.
+    """
+    return np.maximum.accumulate(track.tLoc.to_numpy() + np.interp(track.gr + track.ri, GI, MR_OFFSET))
+
+
+def extendFaintEnd(locus, tMax):
+    """The locus with its tLoc grid continued at the faint end, up to tMax, in rows of main sequence.
+
+    The reddest dwarfs move half a magnitude fainter, past the last row of the original grid, and a colour
+    with no row to land on is one the fit can no longer reach: red M dwarfs then pile up on the last row of
+    the grid with a large chi2 instead of fitting. The grid is the same for every [Fe/H], so all of the
+    tracks are extended by the same rows, carrying Mr = tLoc like the faint end they continue and the
+    colours of the row they follow until the resampling overwrites them. The prior maps are interpolated
+    onto whatever grid the locus has and their own grid reaches tLoc = 17, so there is room to grow.
+    """
+    t = np.unique(locus.tLoc)
+    step = round(float(t[-1] - t[-2]), 2)
+    nRows = int(np.floor((tMax - t[-1]) / step + 1e-9))
+    if nRows < 1:
+        return locus
+    extra = np.round(t[-1] + step * np.arange(1, nRows + 1), 2)
+    blocks = []
+    for _, track in locus.groupby("FeH", sort=False):
+        rows = track.iloc[[-1] * nRows].reset_index(drop=True)
+        rows["tLoc"] = extra
+        rows["Mr"] = extra
+        blocks += [track, rows]
+    return pd.concat(blocks, ignore_index=True)
+
+
 def buildLocus(locus):
-    """Apply both corrections; returns a new table on the same (FeH, tLoc) grid."""
+    """Apply both corrections; returns a new table, on the (FeH, tLoc) grid extended at the faint end."""
     locus = locus.copy()
     locus["ug"] += np.interp(locus.FeH, UG_FEH, UG_OFFSET)
     colors = ["ug", "gr", "ri", "iz", "zy"]
     mainSequence = np.abs(locus.Mr - locus.tLoc) < 1e-3
-    for _, track in locus[mainSequence].groupby("FeH"):
+    tracks = {}
+    for feH, track in locus[mainSequence].groupby("FeH"):
         track = track.sort_values("tLoc")
-        t = track.tLoc.to_numpy()
-        shifted = np.maximum.accumulate(t + np.interp(track.gr + track.ri, GI, MR_OFFSET))
-        inside = (t >= shifted[0]) & (t <= shifted[-1])
+        tracks[feH] = (shiftedTLoc(track), {c: track[c].to_numpy() for c in colors})
+    locus = extendFaintEnd(locus, max(shifted[-1] for shifted, _ in tracks.values()))
+    mainSequence = (np.abs(locus.Mr - locus.tLoc) < 1e-3).to_numpy()
+    for feH, (shifted, track) in tracks.items():
+        rows = mainSequence & (locus.FeH.to_numpy() == feH)
+        # Outside the shifted sequence np.interp holds its end values, which is what the handful of rows
+        # above its blue end need: the correction moves that end fainter and the main sequence has nothing
+        # brighter than it to resample from, the turnoff branch above carrying those magnitudes instead.
         for c in colors:
-            locus.loc[track.index[inside], c] = np.interp(t[inside], shifted, track[c].to_numpy())
+            locus.loc[rows, c] = np.interp(locus.tLoc.to_numpy()[rows], shifted, track[c])
     return locus
 
 
@@ -80,10 +127,12 @@ def measureMrOffsets(stars, estimates, binEdges=None, minStars=300, nDraws=300):
     """The Mr table from a catalog with Gaia parallaxes (parallax, parallaxErr) and the fit estimates for it.
 
     stars needs rmag, gr, ri, parallax and, if the colours are to be dereddened, Ar; estimates needs the
-    Mr_true and Ar quantiles of the fit, in the same row order. Every star with a parallax enters.
+    Mr_true and Ar quantiles of the fit, in the same row order. Every star with a parallax enters. The bins
+    are the bins of GI unless given, so that the table printed is the table MR_OFFSET holds.
     """
     if binEdges is None:
-        binEdges = np.arange(0.2, 3.41, 0.2)
+        half = (GI[1] - GI[0]) / 2
+        binEdges = np.append(GI - half, GI[-1] + half)
     plx = stars.parallax.to_numpy(float) + 0.017
     mu = {
         q: stars.rmag.to_numpy()

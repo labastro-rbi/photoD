@@ -9,10 +9,19 @@ stars of a pixel are read from a cone of the same area at its centre and placed 
 the fit will use, which is what makes the maps and the fit comparable.
 
 Only pixels of the footprint are built. The footprint comes from the sky map of the object catalog, either a
-sparse table of PIXEL and VALUE or a full HEALPix array; without one the whole sky is built.
+sparse table of PIXEL and VALUE or a full HEALPix array; without one the whole sky is built. A pixel of the
+footprint that ends up with no maps is a hole the run drops the stars of, so the build reports every one of
+them and fails unless --allow-missing says a partial file is wanted.
+
+The maps here leave out the model stars of TRILEGAL label 9, the white dwarfs and post-AGB stars, while
+photod.priors.dumpPriorMaps_testing keeps every label. The difference is deliberate: a white dwarf has no
+place on the locus the fit uses, so assigning it a tLoc puts it wherever the nearest segment of the locus
+happens to be, which at faint r is enough of them to leave a ridge in the prior that no fitted star belongs
+on. The in-package function is kept as it is because the published maps were made with it.
 """
 
 import argparse
+import json
 import multiprocessing as mp
 from pathlib import Path
 from types import SimpleNamespace
@@ -30,10 +39,22 @@ LOCUS = Path(__file__).resolve().parents[1] / "data" / "LSSTlocus_10Gyr_DP2.txt"
 COLORS = ("ug", "gr", "ri", "iz", "zy")
 MODEL_COLUMNS = ["ra", "dec", "glon", "glat", "DM", "Av", "rmag", "FeH", "Mr", "label"]
 MIN_STARS = 2000
+MAX_REPORTED = 20  # pixels a report lists one by one before it only counts them
 WORKER = {}
 
 
 PRIOR_DECADES = 8.0  # how far below its own peak a compact map is kept
+
+
+def keptPoints(n):
+    """Which of n grid points a compact map keeps: every other one, and the last whatever the parity.
+
+    The last point cannot be dropped along with the rest. It is the end of the axis, and the fit fills
+    anything outside a map with zero, so half a grid step of [Fe/H] would stop carrying a prior at all
+    rather than be interpolated.
+    """
+    kept = np.arange(0, n, 2)
+    return kept if kept[-1] == n - 1 else np.append(kept, n - 1)
 
 
 def compact(cube):
@@ -43,7 +64,7 @@ def compact(cube):
     locus anyway, so half the points carry them. Storing the log relative to each map's own peak costs about
     0.008 dex where the prior has weight and takes the file from gigabytes to tens of megabytes.
     """
-    cube = cube[:, :, ::2, ::2]
+    cube = cube[:, :, keptPoints(cube.shape[2])][:, :, :, keptPoints(cube.shape[3])]
     flat = cube.reshape(cube.shape[0] * cube.shape[1], -1)
     top = flat.max(axis=1, keepdims=True)
     rel = np.log10(np.maximum(flat / np.where(top > 0, top, 1.0), 10**-PRIOR_DECADES))
@@ -53,23 +74,36 @@ def compact(cube):
 
 
 def writePriors(out, cube, rGrid, xGrid, yGrid, index, order, small):
-    """The maps in one file, compact enough to keep beside the code when asked for."""
+    """The maps in one file, compact enough to keep beside the code when asked for.
+
+    The constants the maps were built on go in beside them. The grid of getBayesConstants() says what the two
+    axes of a map mean and the decades say how the bytes of a compact one decode, neither is recoverable from
+    the arrays, and a reader that assumes its own copy of either mis-places every star of every sightline
+    without anything looking wrong.
+    """
+    shared = dict(
+        rmag=rGrid,
+        index=index,
+        order=order,
+        decades=PRIOR_DECADES,
+        constants=json.dumps(getBayesConstants()),
+    )
     if small:
         q, scale = compact(cube)
         np.savez_compressed(
             out,
             kde=q,
             kdeScale=scale,
-            rmag=rGrid,
-            xGrid=xGrid[::2],
-            yGrid=yGrid[::2],
-            index=index,
-            order=order,
+            xGrid=xGrid[keptPoints(xGrid.size)],
+            yGrid=yGrid[keptPoints(yGrid.size)],
+            **shared,
         )
+        written = q.shape
     else:
-        np.savez_compressed(out, kde=cube, rmag=rGrid, xGrid=xGrid, yGrid=yGrid, index=index, order=order)
+        np.savez_compressed(out, kde=cube, xGrid=xGrid, yGrid=yGrid, **shared)
+        written = cube.shape
     size = Path(out).stat().st_size / 2**20
-    print(f"{out}: {len(cube)} pixels of order {order}, maps {cube.shape}, {size:.1f} MB on disk")
+    print(f"{out}: {len(cube)} pixels of order {order}, maps {written}, {size:.1f} MB on disk")
 
 
 def fromCatalog(url, out, small):
@@ -151,7 +185,8 @@ def locusAxes():
 def pixelMaps(pixel, order, catalog, radius, maxStars, feH, segments, mrMin, mrMax):
     """The prior maps of one pixel: model stars of a cone at its centre, binned in r and smoothed.
 
-    Returns an empty list when the cone holds no usable model stars, leaving the pixel out of the catalog.
+    Returns the maps and their two axes, or None when the cone holds no usable model stars, which leaves the
+    pixel out of the file and the stars of that sightline out of the run.
     """
     lon, lat = cdshealpix.nested.healpix_to_lonlat(np.array([pixel]), order)
     ra, dec = float(lon.deg[0]), float(lat.deg[0])
@@ -213,9 +248,9 @@ def pixelMaps(pixel, order, catalog, radius, maxStars, feH, segments, mrMin, mrM
     if maps is None:
         return None
     # an r bin with no model stars borrows the nearest one that has them, so that every bin has a map
-    order = np.argsort(np.abs(np.arange(rGrid.size)[:, None] - np.where(made)[0][None, :]), axis=1)[:, 0]
-    maps = maps[np.where(made)[0][order]]
-    return int(pixel), maps, xGrid[0], yGrid[:, 0] if yGrid.ndim > 1 else yGrid
+    nearest = np.argsort(np.abs(np.arange(rGrid.size)[:, None] - np.where(made)[0][None, :]), axis=1)[:, 0]
+    maps = maps[np.where(made)[0][nearest]]
+    return maps, xGrid[0], yGrid[:, 0] if yGrid.ndim > 1 else yGrid
 
 
 def startWorker(order, catalog, radius, maxStars):
@@ -231,9 +266,15 @@ def startWorker(order, catalog, radius, maxStars):
 
 
 def buildPixel(pixel):
-    """Pool entry point: the maps of one pixel, or None if the model catalog cannot serve it."""
+    """Pool entry point: one pixel with its maps, None if the catalog cannot serve it, or what it raised.
+
+    A pixel that raises must not take a build of thousands of them down, and must not disappear either: the
+    run drops every star of a sightline that has no maps, so the failure is handed back to be reported. It
+    goes back as text because it has to survive being pickled out of the worker, which not every exception
+    of a catalog reader does.
+    """
     try:
-        return pixelMaps(
+        return int(pixel), pixelMaps(
             int(pixel),
             WORKER["order"],
             WORKER["catalog"],
@@ -241,8 +282,34 @@ def buildPixel(pixel):
             WORKER["maxStars"],
             *WORKER["axes"],
         )
-    except Exception:  # a pixel the model catalog cannot serve must not take the whole build down
-        return None
+    except Exception as error:
+        return int(pixel), f"{type(error).__name__}: {error}"
+
+
+def reportHoles(failed, empty, allowMissing):
+    """List the pixels of the footprint that ended up with no maps, and stop unless a hole was intended.
+
+    The run looks a star's sightline up in the index of the file and drops the stars of a pixel that is not
+    in it without a word, so a hole here is stars missing from the results rather than a rougher prior. The
+    file is written first either way: a build of thousands of pixels is hours of catalog reading and the
+    partial file is worth keeping while the cause of the holes is found.
+    """
+    if failed:
+        print(f"{len(failed)} pixels raised and have no maps:")
+        for pixel, failure in failed[:MAX_REPORTED]:
+            print(f"  {pixel}: {failure}")
+        if len(failed) > MAX_REPORTED:
+            print(f"  and {len(failed) - MAX_REPORTED} more")
+    if empty:
+        listed = ", ".join(str(pixel) for pixel in empty[:MAX_REPORTED])
+        more = f" and {len(empty) - MAX_REPORTED} more" if len(empty) > MAX_REPORTED else ""
+        print(f"{len(empty)} pixels had too few model stars, even in the widened cone: {listed}{more}")
+    if (failed or empty) and not allowMissing:
+        raise SystemExit(
+            f"{len(failed) + len(empty)} pixels of the footprint have no maps in the file just written, and "
+            "the run drops every star of a sightline that has none; find the cause or pass --allow-missing "
+            "to take the file as it stands"
+        )
 
 
 def main():
@@ -282,6 +349,12 @@ def main():
         default=8,
         help="pixels a worker builds before it is replaced, which keeps the catalog reader from growing",
     )
+    ap.add_argument(
+        "--allow-missing",
+        action="store_true",
+        help="write the file even though some pixels of the footprint have no maps, which is a build meant "
+        "to be partial; without it such a build reports them and exits non-zero",
+    )
     args = ap.parse_args()
 
     if args.from_catalog:
@@ -295,28 +368,39 @@ def main():
     radius = args.radius or float(np.sqrt(area / np.pi))
     print(f"{pixels.size} pixels of order {args.order} ({area:.2f} deg2), cone radius {radius:.2f} deg")
 
-    built, maps, axes = [], [], None
+    built, maps, axes, failed, empty = [], [], None, [], []
     with mp.Pool(
         args.processes,
         initializer=startWorker,
         initargs=(args.order, args.trilegal, radius, args.max_stars),
         maxtasksperchild=args.max_tasks,
     ) as pool:
-        for done, result in enumerate(pool.imap_unordered(buildPixel, pixels, chunksize=1), start=1):
-            if result is not None:
-                pixel, cube, xGrid, yGrid = result
+        for done, (pixel, result) in enumerate(pool.imap_unordered(buildPixel, pixels, chunksize=1), start=1):
+            if isinstance(result, str):
+                failed.append((pixel, result))
+            elif result is None:
+                empty.append(pixel)
+            else:
+                cube, xGrid, yGrid = result
                 built.append(pixel)
                 maps.append(cube)
-                axes = (xGrid, yGrid)
+                if axes is None:
+                    # the axes are the grid of getBayesConstants() and are the same for every pixel, so the
+                    # first pixel to arrive sets them rather than whichever one happens to arrive last
+                    axes = (xGrid, yGrid)
             if done % 100 == 0 or done == pixels.size:
-                print(f"  {done}/{pixels.size} pixels, {len(built)} built", flush=True)
+                print(
+                    f"  {done}/{pixels.size} pixels, {len(built)} built, {len(empty)} without model stars, "
+                    f"{len(failed)} failed",
+                    flush=True,
+                )
     if not built:
         raise SystemExit("no prior maps were built: check the footprint and the model catalog")
 
-    order = np.argsort(built)
-    cube = np.stack([maps[i] for i in order]).astype(np.float32)
+    byPixel = np.argsort(built)
+    cube = np.stack([maps[i] for i in byPixel]).astype(np.float32)
     index = np.full(12 * 4**args.order, -1, dtype=np.int32)
-    index[np.asarray(built)[order]] = np.arange(len(built), dtype=np.int32)
+    index[np.asarray(built)[byPixel]] = np.arange(len(built), dtype=np.int32)
     bc = getBayesConstants()
     writePriors(
         args.out,
@@ -328,6 +412,7 @@ def main():
         args.order,
         args.compact,
     )
+    reportHoles(failed, empty, args.allow_missing)
 
 
 if __name__ == "__main__":

@@ -16,29 +16,62 @@ def load(name):
     )
 
 
-def test_dp2_locus_keeps_the_grid_of_the_original():
-    """Same (FeH, tLoc) grid and Mr as the original; only the colours differ, by at most the corrections."""
+def loadPair():
+    """The original locus, the DP2 one, and the rows of the DP2 table that lie on the original grid.
+
+    The Mr correction moves the reddest dwarfs half a magnitude fainter than the last row of the original
+    grid, so the DP2 table continues the grid there; everything the two have in common is the rest of it, in
+    the same order, because both tables run over [Fe/H] and then over tLoc.
+    """
     original, dp2 = load("LSSTlocus_10Gyr_fix.txt"), load("LSSTlocus_10Gyr_DP2.txt")
-    assert len(dp2) == len(original)
+    onGrid = np.array(dp2["tLoc"]) <= np.array(original["tLoc"]).max() + 1e-9
+    assert int(onGrid.sum()) == len(original)
+    return original, dp2, onGrid
+
+
+def test_dp2_locus_keeps_the_grid_of_the_original_and_extends_the_faint_end():
+    """The shared part of the grid, and Mr on it, are the original's; the new rows only go fainter."""
+    original, dp2, onGrid = loadPair()
+    tOriginal, tDp2 = np.unique(original["tLoc"]), np.unique(dp2["tLoc"])
+    assert_allclose(tDp2[: tOriginal.size], tOriginal)
+    assert tDp2.size > tOriginal.size and tDp2[tOriginal.size] > tOriginal[-1]
+    assert_allclose(np.unique(dp2["FeH"]), np.unique(original["FeH"]))
+    assert len(dp2) == np.unique(dp2["FeH"]).size * tDp2.size
     for c in ("tLoc", "Mr", "FeH"):
-        assert_allclose(np.array(dp2[c]), np.array(original[c]))
+        assert_allclose(np.array(dp2[c])[onGrid], np.array(original[c]))
     for c in ("ug", "gr", "ri", "iz", "zy"):
-        diff = np.abs(np.array(dp2[c]) - np.array(original[c]))
         assert np.all(np.isfinite(np.array(dp2[c])))
-        assert diff.max() < 0.6
+        assert np.abs(np.array(dp2[c])[onGrid] - np.array(original[c])).max() < 0.6
     giants = np.array(original["Mr"]) != np.array(original["tLoc"])
     for c in ("gr", "ri", "iz", "zy"):
-        assert_allclose(np.array(dp2[c])[giants], np.array(original[c])[giants])
+        assert_allclose(np.array(dp2[c])[onGrid][giants], np.array(original[c])[giants])
+    assert np.all(np.array(dp2["Mr"])[~onGrid] == np.array(dp2["tLoc"])[~onGrid])
 
 
 def test_dp2_locus_moves_the_main_sequence_the_measured_way():
     """G and K dwarfs (0.6 < g-i < 1.0) are redder at fixed tLoc, the red end (g-i > 1.8) bluer."""
-    original, dp2 = load("LSSTlocus_10Gyr_fix.txt"), load("LSSTlocus_10Gyr_DP2.txt")
+    original, dp2, onGrid = loadPair()
     ms = np.abs(np.array(original["Mr"]) - np.array(original["tLoc"])) < 1e-3
     gi0 = np.array(original["gr"]) + np.array(original["ri"])
-    delta = np.array(dp2["gr"]) + np.array(dp2["ri"]) - gi0
+    delta = (np.array(dp2["gr"]) + np.array(dp2["ri"]))[onGrid] - gi0
     assert np.median(delta[ms & (gi0 > 0.6) & (gi0 < 1.0)]) > 0.02
     assert np.median(delta[ms & (gi0 > 1.8) & (gi0 < 2.6)]) < -0.02
+
+
+def test_dp2_locus_keeps_the_reddest_main_sequence_colour():
+    """The red end is moved, not cut: the reddest dwarf of the original is still on the grid, fainter.
+
+    Half a magnitude of Mr offset at the red end used to fall off the faint end of the grid, which left the
+    reddest colour of the locus 0.3 mag bluer than the model it came from and gave red M dwarfs nothing to
+    fit but the last row of the grid.
+    """
+    original, dp2, _ = loadPair()
+    for locus in (original, dp2):
+        ms = np.abs(np.array(locus["Mr"]) - np.array(locus["tLoc"])) < 1e-3
+        locus["reddest"] = np.where(ms, np.array(locus["gi"]), -np.inf)
+    assert_allclose(np.max(dp2["reddest"]), np.max(original["reddest"]), atol=0.01)
+    faintest = np.array(dp2["tLoc"])[np.argmax(dp2["reddest"])]
+    assert faintest > np.array(original["tLoc"]).max() + 0.4
 
 
 def test_color_error_floor_is_added_in_quadrature():
