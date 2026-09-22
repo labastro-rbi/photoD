@@ -11,6 +11,10 @@ is replaced, --floor for the colour-error floor (0.03 mag), --no-dust-map to run
 Galactic latitude, and --ar-max for the top of the A_r grid, which has to be above the extinction of the
 field.
 
+A partition whose answers are already written is left alone, so a run that stopped part way is finished by
+repeating the command; --overwrite starts the result again from nothing. A partition that fails takes only
+itself down, and the run ends with a non-zero status saying how much of the sky is missing.
+
 Input columns (DP2 object table): coord_ra, coord_dec, objectId, <band>_psfFlux and _psfFluxErr for ugrizy,
 refExtendedness, ebv. Point sources are refExtendedness == 0 with r between 16.5 and 23.5 and S/N > 10 in r,
 > 3 in g and i. A colour whose bands are not both at S/N > 3 is set to 0 with error 9.99 and carries no
@@ -20,10 +24,12 @@ which matters towards the bulge, where the 2D map integrates to infinity and rea
 """
 
 import argparse
+import json
 import multiprocessing as mp
 import os
 import shutil
 import tempfile
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 # XLA's autotuner compiles and times dozens of variants of every kernel the first time it meets one, which
@@ -40,10 +46,15 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import pyarrow.parquet as pq  # noqa: E402
 
-from photod.bayes import getEstimatesMeta, makeBayesEstimates3d  # noqa: E402
+from photod.bayes import (  # noqa: E402
+    FLAG_NO_PRIOR,
+    getEstimatesMeta,
+    makeBayesEstimates3d,
+    unfittedEstimates,
+)
 from photod.locus import LSSTsimsLocus, get3DmodelList, make3DlocusList, subsampleLocusData  # noqa: E402
 from photod.parameters import GlobalParams  # noqa: E402
-from photod.priors import priorGridFromMaps  # noqa: E402
+from photod.priors import getBayesConstants, priorGridFromMaps  # noqa: E402
 
 DATA = Path(__file__).resolve().parents[1] / "data"
 LOCUS = DATA / "LSSTlocus_10Gyr_DP2.txt"
@@ -56,7 +67,8 @@ RAW_COLUMNS = ["objectId", "coord_ra", "coord_dec", "refExtendedness", "ebv"] + 
 ]
 FIT_COLUMNS = ["objectId", "ra", "dec", "rmag"] + [c + s for c in COLORS for s in ("", "Err")]
 INPUT_COLUMNS = RAW_COLUMNS  # kept for anything importing the old name
-PRIOR_DECADES = 8.0  # how far below its own peak a compact prior map is kept
+PRIOR_DECADES = 8.0  # how far below its own peak a compact prior map is kept, for a file that says nothing
+FAILURES_REPORTED = 20  # failed partitions named one by one, after which only the count is kept
 PRIORS = {}
 PARAMS = {}
 CURVES = {}
@@ -73,9 +85,19 @@ def catalogColumns(url):
 
 
 def inputColumns(available, arColumn):
-    """What to read from the catalog: one that already carries colours needs none of the fluxes."""
+    """What to read from the catalog: one that already carries colours needs none of the fluxes.
+
+    Everything the run needs of the catalog is settled here, in the parent process. A column that is only
+    missed once the pool is running arrives as a worker that crashed, over and over, instead of a sentence.
+    """
     if set(FIT_COLUMNS) <= set(available):
-        return FIT_COLUMNS + ([arColumn] if arColumn in available else [])
+        extinction = [c for c in (arColumn, "ebv") if c in available]
+        if not extinction:
+            raise SystemExit(
+                f"the prepared catalog carries no extinction column: it has neither {arColumn} nor ebv, "
+                "so name the one it does have with --ar-column"
+            )
+        return FIT_COLUMNS + extinction[:1]
     missing = [c for c in RAW_COLUMNS if c not in available]
     if missing:
         raise SystemExit(
@@ -84,7 +106,7 @@ def inputColumns(available, arColumn):
     return RAW_COLUMNS
 
 
-def prepareStars(df, dustIndex=None, nside=0, arTotal=None, arColumn=""):
+def prepareStars(df, curves=None, arColumn=""):
     """The stars of one partition with the columns the fit reads.
 
     A catalog prepared beforehand already carries the colours and their errors, and is passed through; one
@@ -100,7 +122,7 @@ def prepareStars(df, dustIndex=None, nside=0, arTotal=None, arColumn=""):
             raise SystemExit("the prepared catalog carries no extinction column: name it with --ar-column")
     else:
         out = starsFromFluxes(df)
-    return withDust(out, dustIndex, nside, arTotal)
+    return withDust(out, curves)
 
 
 def starsFromFluxes(df):
@@ -135,28 +157,46 @@ def starsFromFluxes(df):
     return out
 
 
-def withDust(out, dustIndex, nside, arTotal):
+def withDust(out, curves=None):
     """The sightline each star sits on in the 3D dust map, and the bound its column puts on the extinction."""
-    if dustIndex is None:
+    if not curves:
         out["dustIndex"] = np.zeros(len(out), dtype=np.int32)
-    else:
-        import cdshealpix
-        from astropy.coordinates import Latitude, Longitude
+        return npd.NestedFrame(out)
+    import cdshealpix
+    from astropy.coordinates import Latitude, Longitude
 
-        pixel = cdshealpix.nested.lonlat_to_healpix(
-            Longitude(out.ra.to_numpy(), unit="deg"),
-            Latitude(out.dec.to_numpy(), unit="deg"),
-            int(np.log2(nside)),
-        )
-        row = dustIndex[np.asarray(pixel)]
-        out["dustIndex"] = np.maximum(row, 0).astype(np.int32)
-        if arTotal is not None:
-            # The 2D map integrates the dust to infinity, which towards the bulge is tens of magnitudes and
-            # says nothing about a star in front of it. Where a 3D map has measured the column out past the
-            # far side of the disc, that measurement is the bound, and the larger 2D value is dropped.
-            measured = np.where(row >= 0, arTotal[np.maximum(row, 0)], 0.0)
-            out["Ar"] = np.where(measured > 0, np.minimum(out["Ar"].to_numpy(), measured), out["Ar"])
+    pixel = cdshealpix.nested.lonlat_to_healpix(
+        Longitude(out.ra.to_numpy(), unit="deg"),
+        Latitude(out.dec.to_numpy(), unit="deg"),
+        int(curves["order"]),
+    )
+    # The index of the file holds -1 where no 3D map has data, and readCurves keeps a flat sightline at the
+    # end of the table for exactly those stars. Clipping the index to zero instead sends them to row 0,
+    # which is a real line of sight somewhere else entirely, and they never see the flat prior they are due.
+    row = np.asarray(curves["index"])[np.asarray(pixel)]
+    index = np.where(row >= 0, row, len(curves["shapes"]) - 1).astype(np.int32)
+    out["dustIndex"] = index
+    total = curves.get("total")
+    if total is not None:
+        # The 2D map integrates the dust to infinity, which towards the bulge is tens of magnitudes and
+        # says nothing about a star in front of it. Where a 3D map has measured the column out past the far
+        # side of the disc, that measurement is the bound, and the larger 2D value is dropped. The flat
+        # sightline carries a column of zero, so a star it covers keeps the bound it came with.
+        measured = np.asarray(total)[index]
+        out["Ar"] = np.where(measured > 0, np.minimum(out["Ar"].to_numpy(), measured), out["Ar"])
     return npd.NestedFrame(out)
+
+
+def healpixOrder(nside):
+    """The order of a HEALPix grid of the given nside, which the nested numbering needs a power of two.
+
+    Rounding the logarithm of anything else quietly renumbers every pixel of the grid, so it is an error
+    rather than something to make the best of.
+    """
+    order = int(round(np.log2(nside))) if nside > 0 else 0
+    if nside <= 0 or 1 << order != int(nside):
+        raise SystemExit(f"nside {nside} is not a power of two, so it is not a HEALPix grid")
+    return order
 
 
 def globalParameters(floor, useDustMap, curves=None, arMax=5.0):
@@ -199,10 +239,32 @@ def priorPixels(ra, dec, order):
     )
 
 
+def readCurves(path):
+    """The 3D dust curves of a run, with a flat sightline added for the sky no 3D map covers.
+
+    The index of the file holds -1 there, and those stars are meant to keep the flat A_r prior. One row of
+    zeros at the end of the table and the -1 sent to it is what arranges that, with no special case anywhere
+    else: the fit drops the Gaussian prior for a curve that ends at zero (photod.bayes.starPosterior tests
+    the end of the curve), and a total column of zero leaves the extinction bounded by the 2D map alone.
+    """
+    if not path:
+        return {}
+    with np.load(path) as data:
+        curves = {name: data[name] for name in data.files}
+    shapes = np.asarray(curves["shapes"])
+    curves["shapes"] = np.vstack([shapes, np.zeros((1, shapes.shape[1]), dtype=shapes.dtype)])
+    if "total" in curves:
+        total = np.asarray(curves["total"])
+        curves["total"] = np.concatenate([total, np.zeros(1, dtype=total.dtype)])
+    # the grid is checked here rather than where the pixels are looked up, which is inside a worker process
+    curves["order"] = healpixOrder(int(curves["nside"]))
+    return curves
+
+
 def loadCurves(path):
     """The dust curves, read once per worker process."""
     if path not in CURVES:
-        CURVES[path] = dict(np.load(path)) if path else {}
+        CURVES[path] = readCurves(path)
     return CURVES[path]
 
 
@@ -216,20 +278,69 @@ def mapFile(path):
     return Path(tempfile.gettempdir()) / f"photod-{Path(path).stem}-{stamp}.kde.npy"
 
 
+def priorDecades(data):
+    """How far below its own peak a compact prior map was kept, as the file carrying it says.
+
+    The number is one end of the quantisation and scripts/make_priors.py holds the other, so a file is
+    decoded with the value it was written with rather than with a copy of that value kept here, which would
+    decode every shipped map wrong the day the other end moves. Files written before it was recorded all
+    used eight decades.
+    """
+    return float(data["decades"]) if "decades" in data else PRIOR_DECADES
+
+
+def priorConstants(data):
+    """The grid constants a prior file records, as a dictionary; empty for a file that records none.
+
+    scripts/make_priors.py writes getBayesConstants() beside the maps as JSON, which is one string and needs
+    no pickle to read back. A table of name and value is read as well: what has to be agreed on is the file,
+    not the shape one version of that script happened to store the numbers in.
+    """
+    if "constants" not in data:
+        return {}
+    stored = np.asarray(data["constants"])
+    if stored.ndim == 2 and stored.shape[1] == 2:
+        return {str(name): float(value) for name, value in stored}
+    if stored.dtype.kind == "U" and stored.size == 1:
+        return {str(name): float(value) for name, value in json.loads(str(stored.item())).items()}
+    raise SystemExit(f"the prior file records its constants as {stored.dtype} of shape {stored.shape}")
+
+
 def priorMaps(data):
     """The maps as densities, undoing the quantisation a compact file stores them with.
 
-    A compact file keeps the log of each map relative to its own peak, to a byte over eight decades, on every
-    other point of the grid. The maps are smoothed densities, so that loses about 0.008 dex where the prior
-    has any weight, against a chi2 that runs to hundreds.
+    A compact file keeps the log of each map relative to its own peak, to a byte over the decades the file
+    records, on every other point of the grid. The maps are smoothed densities, so that loses about 0.008 dex
+    where the prior has any weight, against a chi2 that runs to hundreds.
     """
     kde = data["kde"]
     if kde.dtype != np.uint8:
         return kde
+    decades = priorDecades(data)
     levels = float(np.iinfo(np.uint8).max)
-    out = 10 ** (kde.astype(np.float32) / levels * PRIOR_DECADES - PRIOR_DECADES)
+    out = 10 ** (kde.astype(np.float32) / levels * decades - decades)
     out *= data["kdeScale"][:, :, None, None]
     return np.where(kde == 0, 0.0, out).astype(np.float32)
+
+
+def checkPriorFile(path):
+    """Check a prior file against the code that is about to read it, before the pool starts.
+
+    The maps are tabulated on the grid of photod.priors.getBayesConstants() and read back on it, so a file
+    built with another grid comes out wrong everywhere rather than obviously; a file that records the grid it
+    was built with says so here instead. An older file records nothing and is taken as it comes.
+    """
+    with np.load(path) as data:
+        decades, constants = priorDecades(data), priorConstants(data)
+    wanted = getBayesConstants()
+    wrong = {name: value for name, value in constants.items() if float(wanted.get(name, value)) != value}
+    if wrong:
+        said = ", ".join(f"{name} = {value:g} rather than {wanted[name]:g}" for name, value in wrong.items())
+        raise SystemExit(
+            f"the maps in {path} were built with {said}: rebuild them, or fit with the code they came with"
+        )
+    grid = "built on the grid this code reads" if constants else "built on a grid the file does not record"
+    print(f"prior maps from {path}: {grid}, {decades:g} decades of log in a compact file")
 
 
 def unpackPriors(path):
@@ -243,7 +354,26 @@ def unpackPriors(path):
     if cache.exists():
         return
     with np.load(path) as data:
-        np.save(cache, priorMaps(data))
+        maps = priorMaps(data)
+    writeAtomically(cache, lambda name: np.save(name, maps))
+
+
+def writeAtomically(path, write):
+    """Put a file in place in one step: written under a temporary name in the same directory, then renamed.
+
+    A truncated file is worse than a missing one, because nothing downstream can tell: a resumed run counts
+    whatever partition file it finds as done, and a half-written copy of the unpacked prior maps fails every
+    worker of every run that follows. A rename inside one directory is atomic, so the file is either whole or
+    not there, however the run is killed and however many runs are writing it at once.
+    """
+    path = Path(str(path))
+    handle, temporary = tempfile.mkstemp(dir=path.parent, prefix=f"{path.stem}-", suffix=path.suffix)
+    os.close(handle)
+    try:
+        write(temporary)
+        os.replace(temporary, path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
 
 
 def loadPriors(path):
@@ -273,7 +403,9 @@ def loadParams(setup):
     """
     if setup not in PARAMS:
         floor, useDustMap, curvePath, arMax = setup
-        PARAMS[setup] = globalParameters(floor, useDustMap, np.load(curvePath) if curvePath else None, arMax)
+        # the same curves the sightlines were looked up in, flat row and all, so that the index of a star
+        # whose sky no 3D map covers points at that row here as well
+        PARAMS[setup] = globalParameters(floor, useDustMap, loadCurves(curvePath) or None, arMax)
     return PARAMS[setup]
 
 
@@ -296,14 +428,7 @@ def fitAndWrite(source, pixel, base, priorPath, curvePath, setup, batchSize, con
     from hats.pixel_math import HealpixPixel
 
     frame = pq.read_table(source, columns=columns).to_pandas()
-    curves = loadCurves(curvePath)
-    stars = prepareStars(
-        frame,
-        dustIndex=curves.get("index"),
-        nside=int(curves["nside"]) if curves else 0,
-        arTotal=curves.get("total"),
-        arColumn=arColumn,
-    )
+    stars = prepareStars(frame, loadCurves(curvePath), arColumn)
     del frame
     if cone is not None and len(stars):
         ra, dec, radius = cone
@@ -311,10 +436,24 @@ def fitAndWrite(source, pixel, base, priorPath, curvePath, setup, batchSize, con
     estimates = fitPartition(stars, priorPath, setup, batchSize)
     if not len(estimates):
         return 0
-    path = pixel_catalog_file(base, HealpixPixel(pixel.order, pixel.pixel))
+    path = Path(str(pixel_catalog_file(base, HealpixPixel(pixel.order, pixel.pixel))))
     path.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(estimates).to_parquet(path, index=False)
+    answers = withSpatialIndex(pd.DataFrame(estimates))
+    writeAtomically(path, lambda name: answers.to_parquet(name, index=True))
     return len(estimates)
+
+
+def withSpatialIndex(estimates):
+    """The answers as a HATS partition: each row indexed by the order 29 HEALPix cell it falls in, sorted.
+
+    That index is what makes the result a catalog rather than a heap of parquet files. A reader uses it to
+    find the rows of a partition that lie in a region without reading the positions, and expects the rows in
+    its order.
+    """
+    from hats.pixel_math.spatial_index import SPATIAL_INDEX_COLUMN, compute_spatial_index
+
+    index = compute_spatial_index(estimates["ra"].to_numpy(), estimates["dec"].to_numpy())
+    return estimates.set_index(pd.Index(index, name=SPATIAL_INDEX_COLUMN)).sort_index()
 
 
 def fitPartition(partition, priorPath, setup, batchSize):
@@ -322,6 +461,12 @@ def fitPartition(partition, priorPath, setup, batchSize):
 
     Looking the sightline up beats joining against a catalog of maps: a join is between two pixel trees of
     different depth and quietly keeps only one of the star partitions that share a map.
+
+    A star whose sky pixel has no map at all keeps its row, empty and flagged. The maps are built for a
+    footprint, and a footprint never lines up exactly with the survey that produced the stars: the DP2 maps
+    that ship here are missing three of the pixels their own dust file covers. Dropping those stars leaves a
+    catalog that holds fewer stars than the selection it came from, and such a catalog cannot count stars,
+    which is most of what these catalogs are for. The rows come back in no particular order.
     """
     empty = npd.NestedFrame(getEstimatesMeta(computeMrTrue=True).reset_index(drop=True))
     if not len(partition):
@@ -332,6 +477,8 @@ def fitPartition(partition, priorPath, setup, batchSize):
     row = index[priorPixels(partition["ra"].to_numpy(), partition["dec"].to_numpy(), order)]
     device = jax.devices()[workerDevice(len(jax.devices()))]
     pieces = []
+    if (row < 0).any():
+        pieces.append(unfittedEstimates(partition[row < 0], globalParams, FLAG_NO_PRIOR))
     for value in np.unique(row[row >= 0]):
         stars = partition[row == value]
         grid = priorGridFromMaps(
@@ -384,6 +531,71 @@ def partitionFiles(catalog):
 
     root = catalog.hc_structure.catalog_base_dir
     return [(pixel, pixel_catalog_file(root, pixel)) for pixel in catalog.hc_structure.get_healpix_pixels()]
+
+
+def writtenRows(path):
+    """Stars already written for a partition, or -1 when there is no answer there worth keeping.
+
+    A file that will not read is not counted as done: the answers are written atomically, so a half-written
+    one came from something else, and fitting that partition again costs far less than a hole in the catalog.
+    """
+    path = Path(str(path))
+    if not path.exists():
+        return -1
+    try:
+        return pq.ParquetFile(path).metadata.num_rows
+    except Exception:  # not a parquet file this run can count on, so it is refitted
+        return -1
+
+
+def partitionsToFit(base, sources):
+    """The partitions still to fit, and the stars the ones already written hold.
+
+    A partition whose answers are there is left alone, so that a survey run killed in the middle is finished
+    by repeating the command rather than started again, and the stars of those partitions are counted for the
+    catalog metadata. A partition that held no stars the fit could use has nothing to find and is read again,
+    which costs one parquet file.
+    """
+    todo, rows = [], 0
+    for pixel, path in sources:
+        written = writtenRows(pixelFile(base, pixel))
+        if written < 0:
+            todo.append((pixel, path))
+        else:
+            rows += written
+    return todo, rows
+
+
+def fitPartitions(sources, workers, chunk, initargs):
+    """Every partition of the run, fitted in a pool of processes, a failure reported rather than fatal.
+
+    A partition can fail on its own account: a parquet file that will not read, or a worker the kernel kills
+    for the memory it asked for. A survey run is hours long and the rest of the sky is unaffected by any of
+    that, so a failure costs its own partition, is counted, and leaves the exit status of the run saying that
+    some of the sky is missing. The pool comes from concurrent.futures because a worker that dies there
+    breaks the pool and raises, where multiprocessing.Pool waits for an answer that can no longer come.
+    """
+    total, failed = 0, 0
+    with ProcessPoolExecutor(
+        max_workers=workers,
+        initializer=startWorker,
+        initargs=initargs,
+        # a worker is replaced to bound the memory of a survey-wide run, which the pool only does with
+        # processes it starts itself rather than forks
+        mp_context=mp.get_context("spawn"),
+        max_tasks_per_child=chunk if chunk > 0 else None,
+    ) as pool:
+        futures = {pool.submit(runPartition, source): source for source in sources}
+        for done, future in enumerate(as_completed(futures), start=1):
+            try:
+                total += future.result()
+            except Exception as error:  # the partition, or the pool the worker of it took with it
+                failed += 1
+                if failed <= FAILURES_REPORTED:
+                    print(f"  {futures[future][1]}: {type(error).__name__}: {error}", flush=True)
+            if done % 200 == 0 or done == len(sources):
+                print(f"  {done}/{len(sources)} partitions, {total} stars, {failed} failed", flush=True)
+    return total, failed
 
 
 def writeCatalogMetadata(base, name, pixels, total):
@@ -452,7 +664,11 @@ def main():
         default=400,
         help="partitions a worker fits before it is replaced, which bounds the memory of a survey-wide run",
     )
-    ap.add_argument("--overwrite", action="store_true", help="replace an existing result of the same name")
+    ap.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="fit a result of the same name again from nothing, instead of keeping the partitions it holds",
+    )
     ap.add_argument(
         "--batch-size",
         type=int,
@@ -473,35 +689,37 @@ def main():
     cone = tuple(args.cone) if args.cone else None
     setup = (args.floor, not args.no_dust_map, args.dust_curves, args.ar_max)
     if args.dust_curves:
-        curves = np.load(args.dust_curves)
-        bounded = int((curves["total"] > 0).sum()) if "total" in curves.files else 0
+        curves = readCurves(args.dust_curves)
+        total = curves.get("total")
+        bounded = int((total > 0).sum()) if total is not None else 0
         print(
-            f"3D dust prior from {args.dust_curves}: {len(curves['shapes'])} sightlines, "
-            f"{bounded} of them with a measured total column to bound the extinction"
+            f"3D dust prior from {args.dust_curves}: {len(curves['shapes']) - 1} sightlines, "
+            f"{bounded} of them with a measured total column to bound the extinction; "
+            "a star the maps do not reach keeps the flat A_r prior"
         )
 
+    checkPriorFile(args.priors)
     unpackPriors(args.priors)
     base = Path(args.out) / args.name
     if base.exists() and args.overwrite:
         shutil.rmtree(base)
     base.mkdir(parents=True, exist_ok=True)
-    print(f"{len(sources)} partitions to fit", flush=True)
 
-    total, done = 0, 0
-    with mp.Pool(
-        args.workers,
-        initializer=startWorker,
-        initargs=(base, args.priors, args.dust_curves, setup, args.batch_size, cone, args.ar_column, columns),
-        maxtasksperchild=args.chunk,
-    ) as pool:
-        for count in pool.imap_unordered(runPartition, sources, chunksize=1):
-            total += count
-            done += 1
-            if done % 200 == 0 or done == len(sources):
-                print(f"  {done}/{len(sources)} partitions, {total} stars", flush=True)
+    todo, total = partitionsToFit(base, sources)
+    kept = len(sources) - len(todo)
+    print(
+        f"{len(todo)} of {len(sources)} partitions to fit"
+        + (f", {kept} already written with {total} stars; --overwrite to fit them again" if kept else ""),
+        flush=True,
+    )
 
+    initargs = (base, args.priors, args.dust_curves, setup, args.batch_size, cone, args.ar_column, columns)
+    fitted, failed = fitPartitions(todo, args.workers, args.chunk, initargs)
+    total += fitted
     writeCatalogMetadata(base, args.name, [p for p, _ in sources], total)
     print(f"written {base}: {total} stars")
+    if failed:
+        raise SystemExit(f"{failed} of {len(todo)} partitions failed; run the same command again for them")
 
 
 if __name__ == "__main__":
