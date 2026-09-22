@@ -16,7 +16,7 @@ classifiers = [
 ]
 dynamic = ["version"]
 requires-python = ">=3.10"
-dependencies = ["lsdb", "jax"]
+dependencies = ["lsdb", "jax", "astropy", "scipy"]
 
 [project.urls]
 "Source Code" = "https://github.com/labastro-rbi/photod"
@@ -28,6 +28,9 @@ dev = [
     "pre-commit", # Used to run checks before finalizing a git commit
     "pytest",
     "pytest-cov", # Used to report total code coverage
+]
+dust = [
+    "dustmaps", # Only scripts/make_dust_curves.py, which also needs the map data it fetches
 ]
 
 [build-system]
