@@ -21,6 +21,17 @@ from photod.priors import getBayesConstants
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "run_dp2.py"
 DATA = Path(__file__).resolve().parents[2] / "data"
+# the command line of a run, as far as what it asks of the fit is concerned
+SETTINGS = dict(
+    catalog="/data/dp2",
+    priors="/data/priors.npz",
+    floor=0.03,
+    ar_column="Ar",
+    ar_max=8.0,
+    no_dust_map=False,
+    dust_curves="/data/dust.npz",
+    cone=None,
+)
 
 
 @pytest.fixture(scope="module")
@@ -396,18 +407,13 @@ def test_a_resume_that_asks_for_another_fit_is_refused(run, tmp_path):
     partitions outside itself, and inside the ones it keeps it is a filter on single stars, so resuming a
     wider run with a narrower cone leaves partitions full of stars the narrower run would never have kept.
     """
+    from hats.pixel_math import HealpixPixel
+
     base = tmp_path / "photod"
-    base.mkdir()
-    settings = dict(
-        catalog="/data/dp2",
-        priors="/data/priors.npz",
-        floor=0.03,
-        ar_column="Ar",
-        ar_max=8.0,
-        no_dust_map=False,
-        dust_curves="/data/dust.npz",
-        cone=None,
-    )
+    # what the refusal protects is the answers already written, so the catalog holds one
+    frame = estimatesFrame(*zip(*[pixelCentre(p, 5) for p in (7, 8)], strict=True))
+    run.writePartition(base, HealpixPixel(5, 1), frame)
+    settings = SETTINGS
     wanted = run.runConfiguration(SimpleNamespace(**settings))
     run.recordConfiguration(base, wanted)
     assert json.loads((base / run.RUN_FILE).read_text()) == wanted, "the run recorded something else"
@@ -436,6 +442,30 @@ def test_a_resume_that_asks_for_another_fit_is_refused(run, tmp_path):
     flat = run.runConfiguration(SimpleNamespace(**(settings | {"no_dust_map": True})))
     bare = run.runConfiguration(SimpleNamespace(**(settings | {"no_dust_map": True, "dust_curves": ""})))
     assert flat == bare and flat["dustCurves"] == "" and flat["arColumn"] is None
+
+
+def test_a_directory_with_no_answers_in_it_takes_the_settings_it_is_given(run, tmp_path, capsys):
+    """What the refusal protects is the answers, and a run can exit before it has written any.
+
+    A prior file it cannot read or a column the catalog has not got ends a run after it has recorded itself,
+    and the corrected command would then be refused by the empty directory the first one left.
+    """
+    from hats.pixel_math import HealpixPixel
+
+    base = tmp_path / "photod"
+    base.mkdir()
+    first = run.runConfiguration(SimpleNamespace(**(SETTINGS | {"priors": "/data/mistyped.npz"})))
+    run.recordConfiguration(base, first)
+    wanted = run.runConfiguration(SimpleNamespace(**SETTINGS))
+    run.recordConfiguration(base, wanted)
+    assert json.loads((base / run.RUN_FILE).read_text()) == wanted, "the corrected command was not recorded"
+    assert capsys.readouterr().out == "", "an empty directory was reported as holding answers"
+
+    # and once there are answers the settings they were made with are what a resume has to agree with
+    frame = estimatesFrame(*zip(*[pixelCentre(p, 5) for p in (7, 8)], strict=True))
+    run.writePartition(base, HealpixPixel(5, 1), frame)
+    with pytest.raises(SystemExit, match="--overwrite"):
+        run.recordConfiguration(base, first)
 
 
 def test_a_result_with_no_record_of_its_settings_is_taken_as_it_comes(run, tmp_path, capsys):

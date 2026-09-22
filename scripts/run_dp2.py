@@ -681,9 +681,15 @@ def recordConfiguration(base, configuration):
     An answer already written is kept whatever this run was asked for, so two settings inside one catalog
     are not something a reader can see, let alone undo. A result written before this was recorded says
     nothing about itself and is taken as it comes, which is the one case where there is nothing to compare.
+
+    What is protected is the answers, so a directory that holds none takes the settings it is given. A run
+    that stopped before its first partition, on a prior file it could not read or a catalog column it could
+    not find, recorded itself all the same, and the corrected command would otherwise be refused by the
+    empty directory the first one left.
     """
     path = Path(str(base)) / RUN_FILE
-    if path.exists():
+    answers = any(Path(str(base)).glob("dataset/Norder=*/Dir=*/Npix=*.parquet"))
+    if path.exists() and answers:
         found = json.loads(path.read_text())
         differs = {
             name: (found.get(name), value)
@@ -697,7 +703,7 @@ def recordConfiguration(base, configuration):
                 "would leave two fits inside one catalog. Fit it again with --overwrite, or write this one "
                 "under another --name"
             )
-    elif any(Path(str(base)).glob("dataset/Norder=*/Dir=*/Npix=*.parquet")):
+    elif answers and not path.exists():
         print(f"{base} holds answers but no record of what made them, so they are taken as this run's")
     path.write_text(json.dumps(configuration, indent=2, sort_keys=True) + "\n")
 
