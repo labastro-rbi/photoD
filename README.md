@@ -29,9 +29,14 @@ The `lovorka` branch (tLoc parametrization of the locus) with these changes:
 Scripts written for the `lovorka` branch run unchanged. The only new option is the dust-map A_r prior: pass the
 name of the catalog column with A_r from the dust map as `GlobalParams(..., ArMapColumn="...")`.
 
+`tLoc/` holds the scripts and the notebook the tLoc parametrization was worked out with, kept for reference.
+Nothing in the package reads them; `src/photod` is the code that runs.
+
 ### Installing
 
-The package needs `lsdb`, `jax`, `astropy` and `scipy`, which `pip install -e .` brings in. Install it from a
+The package needs `lsdb`, `jax`, `astropy` and `scipy`, and imports `numpy`, `pandas`, `nested-pandas`,
+`mocpy` and `pyyaml` itself rather than leaving them to those; `pip install -e .` brings in all of them.
+Install it from a
 clone rather than as a wheel: the locus tables, the prior maps and the dust curves live in `data/` of the
 repository rather than inside the package, and that is where the defaults look for them. `[dust]` adds
 `dustmaps`, which only `scripts/make_dust_curves.py` needs, and which fetches gigabytes of map data of its own.
@@ -60,10 +65,12 @@ they are on the full grid rather than on every other point of it, and the run un
 scratch first. `scripts/make_priors.py` builds either kind for another footprint, with `--compact` for the
 small form; it records the grid it built them on in the file, and the run refuses a file built on another.
 
-Two things about the file that ships here, both from the build that made it: it records no grid, so it is
-taken as it comes, and three of the order 5 pixels its dust file covers (4821, 4910, 4962, about 10 deg2) have
-no maps. Stars of those sightlines come back with bit 64 set and no estimate rather than missing from the
-catalog.
+Three things about the file that ships here, all from the build that made it: it records no grid, so it is
+taken as it comes; three of the order 5 pixels its dust file covers (4821, 4910, 4962, about 10 deg2) have no
+maps, and stars of those sightlines come back with bit 64 set and no estimate rather than missing from the
+catalog; and its [Fe/H] axis stops at 0.9 instead of 1.0, because the compact writer used to drop the last
+point of an axis. The last of those changes nothing, the locus stopping at [Fe/H] = +0.5, and a file built
+now carries the whole axis.
 
 `--cone RA DEC RADIUS` runs a piece of sky, `--workers` sets the processes, which share whatever GPUs are
 there, `--chunk` how many partitions a process handles before it is replaced, `--floor` the colour-error floor,
@@ -76,9 +83,16 @@ left alone, and `--overwrite` starts the result again from nothing. Each file is
 killed run leaves whole answers or none, never half of one. A partition that fails takes only itself down, and
 the run ends with a non-zero status naming how many are missing; repeating the command fits those.
 
+What the run was configured with is written beside the answers as `photod_run.json`, and a resume that asks
+for another fit — another catalog, prior file, error floor, A_r grid, dust prior or cone — is refused, because
+the partitions already written are kept whatever this run asks for and nothing in a HATS catalog could later
+say which of its stars came from which of the two fits. How the work is divided up is not part of that, so a
+run started on a machine with two GPUs is free to finish on a laptop with none.
+
 A batch of stars is also bounded in memory rather than in stars: the posterior of a batch is the locus by the
 star's A_r grid, which for the full DP2 locus on a grid to 8 mag is tens of gigabytes at a few hundred stars,
-so `--batch-size` is an upper bound and `photod.bayes.BATCH_BYTES` the limit that applies.
+so `--batch-size` is an upper bound and `--batch-bytes`, 2 GiB by default, the limit that applies. It is the
+budget of one batch of one worker, so a pool of six asks for six times as much at once.
 
 The prior maps are built once for a footprint by `scripts/make_priors.py`, one map per r bin and HEALPix
 pixel, on the tLoc axis of the locus the fit uses.

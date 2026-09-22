@@ -16,7 +16,7 @@ classifiers = [
 ]
 dynamic = ["version"]
 requires-python = ">=3.10"
-dependencies = ["lsdb", "jax", "astropy", "scipy"]
+dependencies = ["lsdb", "jax", "astropy", "scipy", "numpy", "pandas", "nested-pandas", "mocpy", "pyyaml"]
 
 [project.urls]
 "Source Code" = "https://github.com/labastro-rbi/photod"
