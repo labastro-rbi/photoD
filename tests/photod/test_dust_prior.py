@@ -90,13 +90,13 @@ def brutePosterior(star, params, shape, arMapColumn="Ar"):
 
 
 def bruteQuantiles(post, params):
-    """The 14th, 50th and 86th percentiles of A_r, [Fe/H] and the true Mr of a posterior cube."""
+    """The 16th, 50th and 84th percentiles of A_r, [Fe/H] and the true Mr of a posterior cube."""
 
     def quantiles(values, weights):
         order = np.argsort(values)
         values, weights = np.asarray(values)[order], np.asarray(weights)[order]
         cdf = (np.cumsum(weights) - 0.5 * weights) / weights.sum()
-        return np.interp([0.14, 0.5, 0.86], cdf, values)
+        return np.interp([0.16, 0.5, 0.84], cdf, values)
 
     MrTrue = np.zeros(np.asarray(params.MrTrueGrid).size)
     np.add.at(MrTrue, np.asarray(params.MrTrueIndices), post.sum(axis=2))

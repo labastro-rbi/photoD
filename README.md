@@ -125,7 +125,7 @@ the standard maps.
 
 ### What the fit writes
 
-Per star, beside `objectId`, `ra`, `dec` and `rmag`: the 14th, 50th and 86th percentiles of the fitted
+Per star, beside `objectId`, `ra`, `dec` and `rmag`: the 16th, 50th and 84th percentiles of the fitted
 absolute magnitude, the metallicity `FeH`, the extinction `Ar`, the reddened absolute magnitude
 `Qr = Mr + Ar` and the distance modulus `DM`, the entropy the data took out of the prior for the first three,
 `chi2min`, and `flags`.

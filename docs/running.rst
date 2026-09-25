@@ -13,7 +13,7 @@ in ``data/``, and writes the answers as a HATS catalog.
 ``notebooks/run_dp2.ipynb`` walks through the same run on one field first, with the checks worth making on
 the answer, and then over the survey.
 
-Per star the result carries the 14th, 50th and 86th percentiles of the fitted absolute magnitude, the
+Per star the result carries the 16th, 50th and 84th percentiles of the fitted absolute magnitude, the
 metallicity, the extinction, the reddened absolute magnitude ``Qr`` and the distance modulus ``DM``, the
 entropy the colours took out of the prior, ``chi2min``, and a ``flags`` column with one bit per thing worth
 knowing about the answer. The fit is parametrised by tLoc, the coordinate along the locus, so

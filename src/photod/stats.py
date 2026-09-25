@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 import numpy as np
 
-QUANTILES = (0.14, 0.5, 0.86)
+QUANTILES = (0.16, 0.5, 0.84)
 
 
 def pnorm(pdf, dx):
@@ -45,7 +45,7 @@ def getStats(x, pdf):
 
 
 def getPosteriorQuantiles(x, pdf):
-    """The 14th, 50th and 86th percentile of a distribution sampled at the sorted values x.
+    """The 16th, 50th and 84th percentile of a distribution sampled at the sorted values x.
 
     The cumulative distribution is taken at the bin centers and interpolated linearly, as with jnp.interp.
     The interval is found by counting cdf values <= q, which for a non-decreasing cdf is what jnp.interp's

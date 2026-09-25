@@ -89,7 +89,7 @@ def makeBayesEstimates3d(
     Returns
     -------
     estimatesDf : DataFrame
-        chi2min, the 14th/50th/86th percentiles of Mr, [Fe/H], A_r and Qr (and of the true Mr when
+        chi2min, the 16th/50th/84th percentiles of Mr, [Fe/H], A_r and Qr (and of the true Mr when
         globalParams.computeMrTrue), and the entropy drop from prior to posterior for Mr, [Fe/H] and A_r.
     results : BayesResults
     """

@@ -94,7 +94,7 @@ def brute_force(star, params, priorGrid):
 
     def quantiles(x, p):
         cdf = (np.cumsum(p) - 0.5 * p) / p.sum()
-        return np.interp([0.14, 0.5, 0.86], cdf, x)
+        return np.interp([0.16, 0.5, 0.84], cdf, x)
 
     def histogram(values, weights):
         grid, index = np.unique(np.round(values, 3), return_inverse=True)
