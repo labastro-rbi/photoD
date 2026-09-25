@@ -268,3 +268,63 @@ def test_a_lopsided_posterior_is_flagged():
     flagged = (estimates[bayes.cc.quality_flags].to_numpy() & FLAG_TWO_BRANCHES) > 0
     assert np.all(flagged[np.isfinite(ratio) & (ratio > 3.0)])
     assert not np.any(flagged[np.isfinite(ratio) & (ratio > 0.5) & (ratio < 2.0)])
+
+
+def test_the_r_error_widens_the_distance_modulus():
+    """DM = r - Qr, so the distance is less certain than Qr by the error on r; the median does not move."""
+    catalog, priorGrid, params = setup(n=8)
+    exact, _ = makeBayesEstimates3d(catalog, priorGrid, params, batchSize=8)
+    noisy = catalog.copy()
+    noisy["rmagErr"] = 0.2
+    widened, _ = makeBayesEstimates3d(noisy, priorGrid, params, batchSize=8)
+    for end in ("lo", "hi"):
+        narrow = np.abs(
+            exact[f"{bayes.cc.distance_modulus}_quantile_{end}"].to_numpy(float)
+            - exact[f"{bayes.cc.distance_modulus}_quantile_median"].to_numpy(float)
+        )
+        wide = np.abs(
+            widened[f"{bayes.cc.distance_modulus}_quantile_{end}"].to_numpy(float)
+            - widened[f"{bayes.cc.distance_modulus}_quantile_median"].to_numpy(float)
+        )
+        assert_allclose(wide, np.hypot(narrow, 0.2), rtol=1e-5)
+    assert_allclose(
+        exact[f"{bayes.cc.distance_modulus}_quantile_median"].to_numpy(float),
+        widened[f"{bayes.cc.distance_modulus}_quantile_median"].to_numpy(float),
+        rtol=1e-6,
+    )
+    # Qr itself is untouched: only the distance modulus knows about the magnitude error
+    assert_allclose(
+        exact[f"{bayes.cc.abs_mag_ext_r}_quantile_hi"].to_numpy(float),
+        widened[f"{bayes.cc.abs_mag_ext_r}_quantile_hi"].to_numpy(float),
+        rtol=1e-6,
+    )
+    # and a catalogue without the column is fitted as it was before the column was read
+    assert "rmagErr" not in catalog.columns
+    assert_allclose(bayes.magnitudeError(catalog), 0.0)
+
+
+def test_a_collapsed_posterior_is_flagged():
+    """A posterior inside a single grid cell looks like the best answer in the catalogue and is the worst."""
+    catalog, priorGrid, params = setup(n=6)
+    estimates, _ = makeBayesEstimates3d(catalog, priorGrid, params, batchSize=6)
+    statistics = {
+        name: estimates[name].to_numpy(float)
+        for name in estimates.columns
+        if name.endswith(("_lo", "_median", "_hi"))
+    }
+    # Widths are set here rather than taken from the fit: this locus is a handful of grid points and the
+    # colour errors are 0.02, so its posteriors are narrower than any real star's and would all be flagged.
+    statistics[f"{bayes.cc.abs_mag_ext_r}_quantile_lo"][:] = 5.0 - 2 * bayes.COLLAPSED_WIDTH
+    statistics[f"{bayes.cc.abs_mag_ext_r}_quantile_hi"][:] = 5.0 + 2 * bayes.COLLAPSED_WIDTH
+    statistics[f"{bayes.cc.abs_mag_ext_r}_quantile_lo"][::2] = 5.00
+    statistics[f"{bayes.cc.abs_mag_ext_r}_quantile_hi"][::2] = 5.01
+    flags = bayes._qualityFlags(
+        np.full(6, 1.0),
+        statistics,
+        np.full((6, len(params.fitColors)), 0.02),
+        np.full(6, 8.0),
+        np.zeros(6, dtype=bool),
+        params,
+    )
+    assert np.all((flags[::2] & bayes.FLAG_COLLAPSED) > 0), "a collapsed posterior was not flagged"
+    assert not np.any(flags[1::2] & bayes.FLAG_COLLAPSED), "a normal posterior was flagged"

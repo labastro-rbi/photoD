@@ -105,15 +105,18 @@ def inputColumns(available, arColumn):
     prepared catalog is then not asked for a column nothing will look at.
     """
     if set(FIT_COLUMNS) <= set(available):
+        # the r error widens the distance modulus, and a catalogue that carries it should have it used; one
+        # that does not is fitted exactly as before, with r taken as exact
+        extra = ["rmagErr"] if "rmagErr" in available else []
         if arColumn is None:
-            return list(FIT_COLUMNS)
+            return list(FIT_COLUMNS) + extra
         extinction = [c for c in (arColumn, "ebv") if c in available]
         if not extinction:
             raise SystemExit(
                 f"the prepared catalog carries no extinction column: it has neither {arColumn} nor ebv, "
                 "so name the one it does have with --ar-column"
             )
-        return FIT_COLUMNS + extinction[:1]
+        return FIT_COLUMNS + extinction[:1] + extra
     missing = [c for c in RAW_COLUMNS if c not in available]
     if missing:
         raise SystemExit(
@@ -132,6 +135,8 @@ def prepareStars(df, curves=None, arColumn=""):
     """
     if set(FIT_COLUMNS) <= set(df.columns):
         out = pd.DataFrame({c: df[c].to_numpy() for c in FIT_COLUMNS})
+        if "rmagErr" in df.columns:
+            out["rmagErr"] = df["rmagErr"].to_numpy(dtype=float)
         if arColumn is not None:
             if arColumn in df.columns:
                 out["Ar"] = df[arColumn].to_numpy(dtype=float)
@@ -167,6 +172,7 @@ def starsFromFluxes(df):
             "ra": df["coord_ra"].to_numpy(dtype=float)[keep],
             "dec": df["coord_dec"].to_numpy(dtype=float)[keep],
             "rmag": mag["r"][keep],
+            "rmagErr": magErr["r"][keep],
             "Ar": 2.37 * df["ebv"].to_numpy(dtype=float, na_value=np.nan)[keep],
         }
     )

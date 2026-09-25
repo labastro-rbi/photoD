@@ -50,8 +50,10 @@ FLAG_AR_EDGE = 8  # A_r is against the top of its grid, and the distance goes wr
 FLAG_COLOR_MISSING = 16  # at least one colour had no measurement and carried no weight in the fit
 FLAG_NO_MAGNITUDE = 32  # no r magnitude, so neither a prior map nor a distance: the row carries no estimate
 FLAG_NO_PRIOR = 64  # no prior map for this part of the sky, so the fit was never run: no estimate either
+FLAG_COLLAPSED = 128  # the posterior fell into a single grid cell: precise-looking and not to be trusted
 CHI2_POOR = 100.0
 ASYMMETRY_POOR = 3.0
+COLLAPSED_WIDTH = 0.1  # half-width of the Qr interval below which an answer is collapsed, not precise
 MISSING_COLOR_ERR = 1.0  # a colour whose error is above this is effectively unmeasured: the fit weighs it
 # by 1 / err^2 like any other, which against a well measured colour is a ten-thousandth of the weight or less
 
@@ -148,6 +150,17 @@ def makeBayesEstimates3d(
         statistics[f"{cc.distance_modulus}_quantile_{name}"] = (
             rmag - statistics[f"{cc.abs_mag_ext_r}_quantile_{source}"]
         )
+    # r is measured, not known, and DM = r - Qr, so the distance modulus is less certain than Qr by that
+    # error. It is symmetric, so the median does not move and each end moves out in quadrature. On DP2 this
+    # is worth a few thousandths of a magnitude for a bright star and about 5 % of the interval at r = 23.
+    rmagErr = magnitudeError(starsData)
+    if np.any(rmagErr > 0):
+        median = statistics[f"{cc.distance_modulus}_quantile_median"]
+        for name, direction in (("lo", -1.0), ("hi", 1.0)):
+            half = np.abs(statistics[f"{cc.distance_modulus}_quantile_{name}"] - median)
+            statistics[f"{cc.distance_modulus}_quantile_{name}"] = median + direction * np.hypot(
+                half, rmagErr
+            )
     # a star with no r magnitude has neither a prior map nor a distance modulus, and an answer read off the
     # brightest map would look like any other: it keeps its row, empty, and the flag says why
     noMagnitude = ~np.isfinite(rmag)
@@ -242,6 +255,19 @@ def getColorsAndPriorIndices(catalog, params):
     else:
         curveIndex = catalog[params.ArCurveIndexColumn].to_numpy(dtype=np.int32)
     return colors, colorsErr, priorIndices, arMax, rmag, curveIndex, arMap
+
+
+def magnitudeError(catalog):
+    """The error on r, where the catalog carries one: the distance modulus is r - Qr, so it belongs there.
+
+    A catalog without the column is answered with zeros, which is what the fit did before it was read: the
+    distance modulus then carries only the width of the Qr posterior, as if r were exact.
+    """
+    name = f"{cc.observed_mag_r}Err"
+    if name not in getattr(catalog, "columns", ()):
+        return np.zeros(len(catalog))
+    error = catalog[name].to_numpy(dtype=np.float64)
+    return np.where(np.isfinite(error) & (error > 0), error, 0.0)
 
 
 def getEstimatesMeta(computeMrTrue: bool = False):
@@ -464,6 +490,18 @@ def _qualityFlags(chi2min, statistics, colorsErr, arMax, noMagnitude, globalPara
         ar = statistics[f"{cc.extinction_r}_quantile_median"]
         limit = np.minimum(arMax, globalParams.Ar1d[-1]) - globalParams.dAr
         flags |= np.where(ar >= limit, FLAG_AR_EDGE, 0)
+
+    # A posterior narrower than this is not a precise answer but a collapsed one: the weight has landed in a
+    # single cell of the grid. Measured on the DP2 run against Gaia parallaxes, over unflagged stars with a
+    # parallax good to ten per cent, the half-width where this happens is sharp. Above 0.1 mag the answers
+    # behave: 0.3 to 5 per cent have [Fe/H] pinned at an end of its grid and the median distance is off by
+    # 0.41 to 0.47 mag. Below it they do not: 40 per cent are pinned, and between 0.02 and 0.05 mag the
+    # median distance is off by 9.5 magnitudes. That is 1.3 per cent of unflagged stars, and the row says so
+    # rather than looking like the most precise answer in the catalog.
+    width = 0.5 * (
+        statistics[f"{cc.abs_mag_ext_r}_quantile_hi"] - statistics[f"{cc.abs_mag_ext_r}_quantile_lo"]
+    )
+    flags |= np.where(np.isfinite(width) & (width < COLLAPSED_WIDTH), FLAG_COLLAPSED, 0)
 
     flags |= np.where((colorsErr > MISSING_COLOR_ERR).any(axis=1), FLAG_COLOR_MISSING, 0)
     flags |= np.where(noMagnitude, FLAG_NO_MAGNITUDE, 0)

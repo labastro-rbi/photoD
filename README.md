@@ -161,16 +161,39 @@ stays and says so, empty if the fit could not be run at all.
 | 16 | a colour was effectively unmeasured: its error is above a magnitude and it carries no weight worth the name | 56.2 % |
 | 32 | no r magnitude, so neither a prior map nor a distance: the row carries no estimate | 0 |
 | 64 | no prior map for this part of the sky, so the fit was never run: no estimate either | 0 |
+| 128 | the posterior collapsed into one cell of the grid: precise-looking and not to be trusted | 1.3 % |
 
 The fractions are of the 93,688,843 stars of the whole DP2 run, of which 40.2 % carry no flag at all and
 94.2 % are usable. Neither of the last two bits is set by a single star of it: every point source has an r
 magnitude, and the three sky pixels the prior file that ships here has no maps for hold none of them.
 
-The first two are the ones that mean the answer is suspect rather than merely uncertain: against Gaia
-parallaxes the stars with bit 1 scatter five to twenty five times their quoted uncertainty, where the rest
-scatter 1.09 times it. Bit 4 marks a limit rather than a failure. Bit 16 is about the input and is normal:
-it is nearly all the u band, which is the shallowest, and more than half of DP2 has no usable u-g. So the cut
-to reach for is `flags & 3 == 0`, not `flags == 0`.
+The first two are the ones that mean the answer is suspect rather than merely uncertain. All of the following
+is measured against Gaia DR3 over the whole of the run above: 48.4 million of its stars have a counterpart
+within an arcsecond, 1.5 million of those a parallax of signal-to-noise ten or better, and the uncertainty a
+star quotes is taken as half its 14th-to-86th percentile range.
+
+The distance scale of an unflagged star is right. Binning on the fit's own parallax and averaging Gaia's,
+which is the way round that no parallax cut can bias, the two agree to 0.02 mas at every distance out to five
+kiloparsecs, a few per cent, and inside Gaia's own systematic floor. What is not right is the uncertainty:
+it is too small by a factor of 1.7, so multiply it by that before using it, and the tails are worse than a
+Gaussian's, one unflagged star in six lying beyond three of its own sigma.
+
+A star with bit 1 set is off by seven magnitudes in the median, and its quoted uncertainty says nothing at
+all: the median is 0.03 mag on a distance wrong by a factor of thirty. What is wrong with those stars is the
+DP2 photometry rather than the fit, their r magnitude differing from Gaia's G by more than a magnitude for
+two fifths of them, so the fit is being asked to place a star that is not there. Bit 2 is wrong in both
+directions and about half of those stars pick the wrong branch. Bit 4 marks a limit rather than a failure,
+and four fifths of the stars carrying it carry bit 1 as well. Bit 16 is about the input and is normal: it is
+nearly all the u band, which is the shallowest, and more than half of DP2 has no usable u-g; those stars are
+no worse placed than the rest, and marginally better calibrated, their wider intervals being more honest.
+
+So the cut to reach for is `flags & 131 == 0`: bits 1, 2 and 128, the three that mean the answer is wrong
+rather than uncertain. Bit 128 is the last of those, and it is there because a narrow posterior is not
+always a precise one. Measured against Gaia parallaxes over unflagged stars whose parallax is good to ten per
+cent, the half-width of the Qr interval separates the two cleanly: above 0.1 mag, 0.3 to 5 % of stars have
+[Fe/H] pinned at an end of its grid and the median distance is off by 0.41 to 0.47 mag; below it, 40 % are
+pinned, and between 0.02 and 0.05 mag the median distance is off by 9.5 magnitudes. The fit sets bit 128 on
+those, 1.3 % of the stars that would otherwise look like the most precise in the catalog.
 
 ### A 3D dust map as the A_r prior
 
