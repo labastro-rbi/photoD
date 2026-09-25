@@ -14,11 +14,18 @@ On a machine with several GPUs the survey can be split between processes, each p
 given the same ``--out`` and ``--name``::
 
     for i in 0 1 2 3; do
-        CUDA_VISIBLE_DEVICES=$i python scripts/run_dp2.py --catalog <...> --out <dir> --workers 12 --shard $i/4 &
+        CUDA_VISIBLE_DEVICES=$i python scripts/run_dp2.py --catalog <...> --out <dir> --workers 3 --shard $i/4 &
     done; wait
 
 Each fits every fourth partition, and whichever finishes last writes the catalog metadata for all of them.
 ``--overwrite`` is refused with ``--shard``: remove the directory once before starting the shards.
+
+Two or three workers per GPU is the whole of it. One process already keeps a GPU at four fifths of its
+utilisation and reaches the throughput of a shard fitting the survey, because the fit is the run: reading
+the partition, building the colours, interpolating the prior maps and writing the answers together take
+one per cent of the time. Twelve per GPU on four H100s fitted 110 million stars at 11,760 stars a second
+per GPU, which is the rate a single process reaches on the same partitions, so the other eleven bought
+nothing and cost forty-eight processes of memory instead of four.
 
 ``notebooks/run_dp2.ipynb`` walks through the same run on one field first, with the checks worth making on
 the answer, and then over the survey.

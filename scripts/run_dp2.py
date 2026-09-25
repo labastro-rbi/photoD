@@ -907,7 +907,13 @@ def main():
         help="3D dust map as the A_r prior, which is what matters at low Galactic latitude; "
         'the curves for the DP2 footprint come with the repository, and "" turns it off',
     )
-    ap.add_argument("--workers", type=int, default=1, help="processes, which share the GPUs between them")
+    ap.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="processes, which share the GPUs between them; two or three per GPU is enough, since one "
+        "saturates it and the rest only cover the reading and writing between batches",
+    )
     ap.add_argument(
         "--shard",
         default="",
