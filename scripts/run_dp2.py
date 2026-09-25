@@ -76,6 +76,7 @@ FAILURES_REPORTED = 20  # failed partitions named one by one, after which only t
 WINDOW = 2  # partitions in the pool per worker, so that a worker always has the next one waiting
 RUN_FILE = "photod_run.json"  # what the run was configured with, beside the answers it wrote
 PARTIAL = ".partial"  # where a partition is written before it is renamed into the dataset
+SHARDS = ".shards"  # where each process of a --shard run marks itself finished
 # ProcessPoolExecutor learned to replace a worker in Python 3.11, and the package supports 3.10 as well.
 # Checked here rather than at the call so that both paths can be exercised without another interpreter.
 WORKERS_REPLACED = sys.version_info >= (3, 11)
@@ -806,6 +807,61 @@ def writeCatalogMetadata(base, name, pixels, total):
         return False
 
 
+def parseShard(text):
+    """--shard i/n as the pair (i, n), or None when the run is not split."""
+    if not text:
+        return None
+    try:
+        i, n = (int(v) for v in text.split("/"))
+    except ValueError:
+        raise SystemExit(f"--shard {text!r}: expected i/n, such as 0/4") from None
+    if not 0 <= i < n:
+        raise SystemExit(f"--shard {text!r}: i must be at least 0 and less than n")
+    return i, n
+
+
+def startShard(base, shard):
+    """Clear what a previous run of this shard left, so that its metadata is written again when it finishes.
+
+    The claim goes too: a resume of any one shard has to be able to rewrite the metadata of the whole survey,
+    because the partitions it adds are not in what was written before.
+    """
+    i, n = shard
+    marks = Path(str(base)) / SHARDS
+    marks.mkdir(parents=True, exist_ok=True)
+    (marks / f"{i}-of-{n}.done").unlink(missing_ok=True)
+    (marks / f"metadata-{n}.claim").unlink(missing_ok=True)
+
+
+def finishShard(base, name, shard, everything):
+    """The catalog metadata of a run split with --shard, written once every shard is finished.
+
+    Each shard fits every n-th partition, but the partition list, the row count and the parquet index describe
+    the whole catalog, so no shard can write them from its own share: they would say that the survey is the
+    quarter that finished last, and the parquet index would hold whatever the others had written by then.
+    A shard marks itself finished; the one that finds every other shard finished writes the metadata of the
+    whole survey from the files that are there. Two that finish together both see the others' marks, and
+    creating the claim file is atomic, so only one of them writes.
+
+    None when this shard is not the one to write it, which is not a failure; otherwise what
+    writeCatalogMetadata returns.
+    """
+    i, n = shard
+    marks = Path(str(base)) / SHARDS
+    marks.mkdir(parents=True, exist_ok=True)
+    (marks / f"{i}-of-{n}.done").touch()
+    if not all((marks / f"{k}-of-{n}.done").exists() for k in range(n)):
+        return None
+    try:
+        os.close(os.open(marks / f"metadata-{n}.claim", os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+    except FileExistsError:
+        return None
+    total = sum(max(writtenRows(pixelFile(base, pixel)), 0) for pixel, _ in everything)
+    indexed = writeCatalogMetadata(base, name, [pixel for pixel, _ in everything], total)
+    print(f"every shard is finished: written {base}: {total} stars")
+    return indexed
+
+
 def pixelFile(base, pixel):
     """Where one HEALPix pixel's parquet file goes."""
     from hats.io.paths import pixel_catalog_file
@@ -853,6 +909,13 @@ def main():
     )
     ap.add_argument("--workers", type=int, default=1, help="processes, which share the GPUs between them")
     ap.add_argument(
+        "--shard",
+        default="",
+        help="fit every n-th partition, starting at the i-th, as i/n: n processes with 0/n .. n-1/n and the "
+        "same --out and --name, each pinned to its own GPU, cover the survey between them, and the last to "
+        "finish writes the catalog metadata",
+    )
+    ap.add_argument(
         "--chunk",
         type=int,
         default=400,
@@ -876,6 +939,12 @@ def main():
         help="memory one batch of the fit may take, per worker: a pool of several asks for that much each",
     )
     args = ap.parse_args()
+    shard = parseShard(args.shard)
+    if shard and args.overwrite:
+        raise SystemExit(
+            "--overwrite with --shard would have each shard delete what the others are writing: remove the "
+            "directory once, then start the shards without it"
+        )
 
     # what the fit reads, which is not quite what was asked for: the flat A_r prior reads no extinction and
     # no 3D curves, so the run is configured, resumed and reported as the fit it actually is
@@ -888,7 +957,10 @@ def main():
     )
     columns = inputColumns(catalogColumns(args.catalog), arColumn)
     objects = lsdb.open_catalog(args.catalog, columns=columns, search_filter=search)
-    sources = [(pixel, str(path)) for pixel, path in partitionFiles(objects)]
+    everything = [(pixel, str(path)) for pixel, path in partitionFiles(objects)]
+    sources = everything[shard[0] :: shard[1]] if shard else everything
+    if shard:
+        print(f"shard {shard[0]} of {shard[1]}: {len(sources)} of {len(everything)} partitions")
     print(f"reading {'prepared colours' if 'ug' in columns else 'PSF fluxes'} from {args.catalog}")
     cone = tuple(args.cone) if args.cone else None
     setup = (args.floor, not args.no_dust_map, curvePath, args.ar_max)
@@ -912,6 +984,8 @@ def main():
         shutil.rmtree(base)
     base.mkdir(parents=True, exist_ok=True)
     recordConfiguration(base, configuration)
+    if shard:
+        startShard(base, shard)
     sweepOrphans(base)
     checkPriorFile(args.priors)
     unpackPriors(args.priors)
@@ -937,11 +1011,18 @@ def main():
     )
     fitted, failed = fitPartitions(todo, args.workers, args.chunk, initargs)
     total += fitted
-    indexed = writeCatalogMetadata(base, args.name, [p for p, _ in sources], total)
-    print(f"written {base}: {total} stars")
+    if shard:
+        indexed = finishShard(base, args.name, shard, everything)
+        print(
+            f"shard {shard[0]} of {shard[1]}: {total} stars in its partitions"
+            + ("; the catalog metadata is left to the last shard to finish" if indexed is None else "")
+        )
+    else:
+        indexed = writeCatalogMetadata(base, args.name, [p for p, _ in sources], total)
+        print(f"written {base}: {total} stars")
     if failed:
         raise SystemExit(f"{failed} of {len(todo)} partitions failed; run the same command again for them")
-    if not indexed:
+    if indexed is False:
         raise SystemExit(f"{base} does not read back as a catalog until its parquet metadata is written")
 
 

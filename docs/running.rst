@@ -10,6 +10,16 @@ in ``data/``, and writes the answers as a HATS catalog.
 
     python scripts/run_dp2.py --catalog <rubin_dp2/object_collection> --out <dir> --name dp2_photod --workers 6
 
+On a machine with several GPUs the survey can be split between processes, each pinned to its own GPU and
+given the same ``--out`` and ``--name``::
+
+    for i in 0 1 2 3; do
+        CUDA_VISIBLE_DEVICES=$i python scripts/run_dp2.py --catalog <...> --out <dir> --workers 12 --shard $i/4 &
+    done; wait
+
+Each fits every fourth partition, and whichever finishes last writes the catalog metadata for all of them.
+``--overwrite`` is refused with ``--shard``: remove the directory once before starting the shards.
+
 ``notebooks/run_dp2.ipynb`` walks through the same run on one field first, with the checks worth making on
 the answer, and then over the survey.
 

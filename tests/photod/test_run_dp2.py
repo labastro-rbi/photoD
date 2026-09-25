@@ -290,6 +290,67 @@ def test_the_answers_read_back_as_a_catalog(run, tmp_path):
     assert list(answers.columns) == list(getEstimatesMeta(computeMrTrue=True).columns)
 
 
+def test_a_shard_leaves_the_catalog_metadata_to_the_last_one_to_finish(run, tmp_path):
+    """Shards split the partitions; the catalog they write together must read back as the whole survey."""
+    import lsdb
+    from hats.pixel_math import HealpixPixel
+
+    base = tmp_path / "photod"
+    pixels = [HealpixPixel(3, 0), HealpixPixel(3, 5), HealpixPixel(3, 9), HealpixPixel(3, 40)]
+    everything = [(pixel, f"partition-{pixel.pixel}.parquet") for pixel in pixels]
+    shards = [(0, 2), (1, 2)]
+    for shard in shards:
+        run.startShard(base, shard)
+
+    def fit(shard):
+        for pixel, _ in everything[shard[0] :: shard[1]]:
+            inside = [pixelCentre(pixel.pixel * 4 + corner, 4) for corner in range(4)]
+            run.writePartition(base, pixel, estimatesFrame(*zip(*inside, strict=True)))
+
+    fit(shards[0])
+    assert run.finishShard(base, "photod", shards[0], everything) is None, "wrote the metadata before shard 1"
+    assert not (base / "partition_info.csv").exists()
+    fit(shards[1])
+    assert run.finishShard(base, "photod", shards[1], everything) is True
+    catalog = lsdb.open_catalog(base)
+    assert len(catalog.get_healpix_pixels()) == 4, "the partition list is not the whole survey"
+    assert catalog.hc_structure.catalog_info.total_rows == 16, "the row count is not the whole survey"
+    assert len(catalog.compute()) == 16
+    # a shard finishing again after the metadata is written does not write it a second time
+    assert run.finishShard(base, "photod", shards[0], everything) is None
+
+
+def test_a_resumed_shard_writes_the_metadata_again(run, tmp_path):
+    """Partitions a resume adds are not in the metadata written before, so the claim is cleared on start."""
+    from hats.pixel_math import HealpixPixel
+
+    base = tmp_path / "photod"
+    pixels = [HealpixPixel(3, 0), HealpixPixel(3, 5)]
+    everything = [(pixel, f"partition-{pixel.pixel}.parquet") for pixel in pixels]
+    for shard in [(0, 2), (1, 2)]:
+        run.startShard(base, shard)
+    inside = [pixelCentre(pixels[0].pixel * 4 + corner, 4) for corner in range(4)]
+    run.writePartition(base, pixels[0], estimatesFrame(*zip(*inside, strict=True)))
+    assert run.finishShard(base, "photod", (0, 2), everything) is None
+    assert run.finishShard(base, "photod", (1, 2), everything) is True   # shard 1's partition failed
+    run.startShard(base, (1, 2))                                            # its resume
+    inside = [pixelCentre(pixels[1].pixel * 4 + corner, 4) for corner in range(4)]
+    run.writePartition(base, pixels[1], estimatesFrame(*zip(*inside, strict=True)))
+    assert run.finishShard(base, "photod", (1, 2), everything) is True
+    assert (base / "partition_info.csv").read_text().count("\n") == 3, "the resumed partition is not listed"
+
+
+@pytest.mark.parametrize("text", ["4/4", "-1/4", "1", "a/b"])
+def test_a_shard_that_is_not_one_of_n_is_refused(run, text):
+    with pytest.raises(SystemExit):
+        run.parseShard(text)
+
+
+def test_a_shard_is_read_as_a_pair(run):
+    assert run.parseShard("") is None
+    assert run.parseShard("2/4") == (2, 4)
+
+
 def test_a_reader_can_ask_a_written_catalog_for_columns_and_a_cone(run, tmp_path):
     """The two readers that matter, on a catalog written the way a run writes one.
 
