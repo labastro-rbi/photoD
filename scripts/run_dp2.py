@@ -9,8 +9,9 @@ between them), --batch-size and --batch-bytes for the JAX setup, the second of t
 batch of one worker, --chunk for how many partitions a process handles before it is replaced, --floor for the
 colour-error floor (0.03 mag), --no-dust-map to run the flat A_r prior, which reads no extinction column
 at all, --dust-curves to shape that prior with a 3D dust map (scripts/make_dust_curves.py), which is off
-by default and matters at low Galactic latitude, and --ar-max for the top of the A_r grid, which has to be
-above the extinction of the field.
+by default and matters at low Galactic latitude, --ar-scale to put an extinction column built with another
+A_r/E(B-V) coefficient on this code's scale, and --ar-max for the top of the A_r grid, which has to be above
+the extinction of the field.
 
 A partition whose answers are already written is left alone, so a run that stopped part way is finished by
 repeating the command; --overwrite starts the result again from nothing. What the run was configured with is
@@ -21,9 +22,10 @@ status saying how much of the sky is missing.
 Input columns (DP2 object table): coord_ra, coord_dec, objectId, <band>_psfFlux and _psfFluxErr for ugrizy,
 refExtendedness, ebv. Point sources are refExtendedness == 0 with r between 16.5 and 23.5 and S/N > 10 in r,
 > 3 in g and i. A colour whose bands are not both at S/N > 3 is set to 0 with error 9.99 and carries no
-weight. The dust-map A_r is 2.37 ebv (SFD with the Schlafly & Finkbeiner 2011 recalibration) and bounds the
-A_r prior; where the 3D map has measured the column through the disc, the smaller of the two is the bound,
-which matters towards the bulge, where the 2D map integrates to infinity and reaches tens of magnitudes.
+weight. The dust-map A_r is AR_PER_EBV ebv, the LSST r ratio with the Schlafly & Finkbeiner 2011
+recalibration of the map folded in, and it bounds the A_r prior; where the 3D map has measured the column
+through the disc, the smaller of the two is the bound, which matters towards the bulge, where the 2D map
+integrates to infinity and reaches tens of magnitudes.
 """
 
 import argparse
@@ -71,6 +73,13 @@ PRIOR_FILE = DATA / "priors_dp2.npz"
 DUST_FILE = DATA / "dust_dp2.npz"
 BANDS = "ugrizy"
 COLORS = ("ug", "gr", "ri", "iz", "zy")
+# A_r per unit of the object table's ebv, which is the SFD map as it was published. Two things go into it: the
+# ratio A_r/E(B-V) for the LSST r band, 2.701 for an R_V = 3.1 curve, and the 0.86 by which Schlafly &
+# Finkbeiner (2011) found the published map overestimates the true colour excess. The ratio is defined against
+# a true excess, so a coefficient used on this column has to carry the 0.86 itself: 2.701 * 0.86. One number
+# cannot do better than about a tenth of this, since the r-band ratio falls 8-9 per cent between E(B-V) 0
+# and 0.5, and the extinction it gives only bounds the A_r prior rather than being the answer.
+AR_PER_EBV = 2.323
 RAW_COLUMNS = ["objectId", "coord_ra", "coord_dec", "refExtendedness", "ebv"] + [
     f"{b}_{c}" for b in BANDS for c in ("psfFlux", "psfFluxErr")
 ]
@@ -130,13 +139,15 @@ def inputColumns(available, arColumn):
     return RAW_COLUMNS
 
 
-def prepareStars(df, curves=None, arColumn=""):
+def prepareStars(df, curves=None, arColumn="", arScale=1.0):
     """The stars of one partition with the columns the fit reads.
 
     A catalog prepared beforehand already carries the colours and their errors, and is passed through; one
     straight from the survey has its point sources selected and its colours built out of the PSF fluxes.
 
     arColumn is None where the fit reads no extinction, as inputColumns describes, and no A_r is made.
+    arScale puts a named column on this code's scale, as --ar-scale describes; an extinction made here from
+    ebv already carries AR_PER_EBV and is left alone.
     """
     if set(FIT_COLUMNS) <= set(df.columns):
         out = pd.DataFrame({c: df[c].to_numpy() for c in FIT_COLUMNS})
@@ -144,9 +155,9 @@ def prepareStars(df, curves=None, arColumn=""):
             out["rmagErr"] = df["rmagErr"].to_numpy(dtype=float)
         if arColumn is not None:
             if arColumn in df.columns:
-                out["Ar"] = df[arColumn].to_numpy(dtype=float)
+                out["Ar"] = arScale * df[arColumn].to_numpy(dtype=float)
             elif "ebv" in df.columns:
-                out["Ar"] = 2.37 * df["ebv"].to_numpy(dtype=float)
+                out["Ar"] = AR_PER_EBV * df["ebv"].to_numpy(dtype=float)
             else:
                 raise SystemExit(
                     "the prepared catalog carries no extinction column: name it with --ar-column"
@@ -178,7 +189,7 @@ def starsFromFluxes(df):
             "dec": df["coord_dec"].to_numpy(dtype=float)[keep],
             "rmag": mag["r"][keep],
             "rmagErr": magErr["r"][keep],
-            "Ar": 2.37 * df["ebv"].to_numpy(dtype=float, na_value=np.nan)[keep],
+            "Ar": AR_PER_EBV * df["ebv"].to_numpy(dtype=float, na_value=np.nan)[keep],
         }
     )
     for c in COLORS:
@@ -493,7 +504,8 @@ def separation(ra, dec, ra0, dec0):
 
 
 def fitAndWrite(
-    source, pixel, base, priorPath, curvePath, setup, batchSize, batchBytes, cone, arColumn, columns
+    source, pixel, base, priorPath, curvePath, setup, batchSize, batchBytes, cone, arColumn, arScale,
+    columns,
 ):
     """Read one partition file, fit its stars and write them where the partition's HEALPix pixel belongs.
 
@@ -503,7 +515,7 @@ def fitAndWrite(
     for a separate writing step holds the survey in memory as well.
     """
     frame = pq.read_table(source, columns=columns).to_pandas()
-    stars = prepareStars(frame, loadCurves(curvePath), arColumn)
+    stars = prepareStars(frame, loadCurves(curvePath), arColumn, arScale)
     del frame
     if cone is not None and len(stars):
         ra, dec, radius = cone
@@ -593,7 +605,7 @@ def fitPartition(partition, priorPath, setup, batchSize, batchBytes=None):
     return npd.NestedFrame(pd.concat(pieces, ignore_index=True))
 
 
-def startWorker(base, priorPath, curvePath, setup, batchSize, batchBytes, cone, arColumn, columns):
+def startWorker(base, priorPath, curvePath, setup, batchSize, batchBytes, cone, arColumn, arScale, columns):
     """What every partition of this run needs, held once per worker process."""
     WORK.update(
         base=base,
@@ -604,6 +616,7 @@ def startWorker(base, priorPath, curvePath, setup, batchSize, batchBytes, cone, 
         batchBytes=batchBytes,
         cone=cone,
         arColumn=arColumn,
+        arScale=arScale,
         columns=columns,
     )
 
@@ -622,6 +635,7 @@ def runPartition(source):
         WORK["batchBytes"],
         WORK["cone"],
         WORK["arColumn"],
+        WORK["arScale"],
         WORK["columns"],
     )
 
@@ -678,7 +692,7 @@ def runConfiguration(args):
     because none of it changes an answer and a run must be free to finish on a smaller machine than it
     started on.
     """
-    return {
+    configuration = {
         # a directory completed by the shell carries a trailing slash and the same command typed again may
         # not, which is the same catalog and must not read as another fit
         "catalog": str(args.catalog).rstrip("/"),
@@ -692,6 +706,11 @@ def runConfiguration(args):
         "dustCurves": str(args.dust_curves) if not args.no_dust_map else "",
         "cone": [float(x) for x in args.cone] if args.cone else None,
     }
+    # an unscaled column is what every run made before this option existed, so the default stays out of the
+    # record and a catalog fitted then still resumes; a scaled one is written down and cannot be mixed with it
+    if not args.no_dust_map and float(args.ar_scale) != 1.0:
+        configuration["arScale"] = float(args.ar_scale)
+    return configuration
 
 
 def recordConfiguration(base, configuration):
@@ -906,6 +925,13 @@ def main():
         help="extinction column of a catalog prepared beforehand; from ebv when the fluxes are read instead",
     )
     ap.add_argument(
+        "--ar-scale",
+        type=float,
+        default=1.0,
+        help="multiply --ar-column by this, for a prepared catalog whose extinction column was built with "
+        "another A_r/E(B-V) coefficient than AR_PER_EBV; an A_r made here from ebv needs no scale",
+    )
+    ap.add_argument(
         "--ar-max",
         type=float,
         default=8.0,
@@ -975,6 +1001,7 @@ def main():
     # no 3D curves, so the run is configured, resumed and reported as the fit it actually is
     configuration = runConfiguration(args)
     arColumn, curvePath = configuration["arColumn"], configuration["dustCurves"]
+    arScale = configuration.get("arScale", 1.0)
     search = (
         lsdb.ConeSearch(ra=args.cone[0], dec=args.cone[1], radius_arcsec=3600 * args.cone[2])
         if args.cone
@@ -1032,6 +1059,7 @@ def main():
         args.batch_bytes,
         cone,
         arColumn,
+        arScale,
         columns,
     )
     fitted, failed = fitPartitions(todo, args.workers, args.chunk, initargs)

@@ -27,6 +27,7 @@ SETTINGS = dict(
     priors="/data/priors.npz",
     floor=0.03,
     ar_column="Ar",
+    ar_scale=1.0,
     ar_max=8.0,
     no_dust_map=False,
     dust_curves="/data/dust.npz",
@@ -530,6 +531,37 @@ def test_a_catalog_is_asked_for_extinction_only_where_the_fit_reads_it(run):
         run.prepareStars(frame, {}, "Ar")
 
 
+def test_an_extinction_column_built_with_another_coefficient_is_put_on_this_scale(run):
+    """A prepared catalog carries whatever A_r/E(B-V) its maker chose, which need not be AR_PER_EBV.
+
+    The scale belongs to the column, so it is applied to a named one and not to an A_r this run makes out of
+    ebv, which already carries AR_PER_EBV. Left at 1 a named column is passed through exactly as before.
+    """
+    frame = pd.DataFrame({c: np.zeros(3) for c in run.FIT_COLUMNS})
+    frame["Ar_SFD"] = [0.0, 2.7010, 5.4020]
+    scaled = run.prepareStars(frame, {}, "Ar_SFD", run.AR_PER_EBV / 2.7010)
+    assert np.allclose(scaled["Ar"], [0.0, run.AR_PER_EBV, 2 * run.AR_PER_EBV])
+    assert np.allclose(run.prepareStars(frame, {}, "Ar_SFD")["Ar"], [0.0, 2.7010, 5.4020])
+
+    fromEbv = pd.DataFrame({c: np.zeros(2) for c in run.FIT_COLUMNS})
+    fromEbv["ebv"] = [0.0, 1.0]
+    made = run.prepareStars(fromEbv, {}, "Ar_SFD", 0.5)
+    assert np.allclose(made["Ar"], [0.0, run.AR_PER_EBV]), "a column's scale was applied to ebv as well"
+
+
+def test_an_unscaled_run_records_no_scale_so_a_catalog_fitted_before_it_resumes(run):
+    """The option is new, and every answer already written was made without it.
+
+    Recording the default would make each of those catalogs differ from the command that wrote them, and a
+    resume compares every setting it finds, so the default is left out and only a real scale written down.
+    """
+    assert "arScale" not in run.runConfiguration(SimpleNamespace(**SETTINGS))
+    scaled = run.runConfiguration(SimpleNamespace(**(SETTINGS | {"ar_scale": 0.86})))
+    assert scaled["arScale"] == 0.86
+    flat = run.runConfiguration(SimpleNamespace(**(SETTINGS | {"ar_scale": 0.86, "no_dust_map": True})))
+    assert "arScale" not in flat, "a fit that reads no extinction recorded a scale for one"
+
+
 def test_a_resume_that_asks_for_another_fit_is_refused(run, tmp_path):
     """A partition already written is kept whatever this run asked for, so the two have to agree.
 
@@ -557,6 +589,7 @@ def test_a_resume_that_asks_for_another_fit_is_refused(run, tmp_path):
         ("dust_curves", "/data/other.npz"),
         ("cone", [30.0, 15.0, 1.0]),
         ("catalog", "/data/dp3"),
+        ("ar_scale", 0.86),
     ):
         other = run.runConfiguration(SimpleNamespace(**(settings | {name: value})))
         with pytest.raises(SystemExit, match="--overwrite"):
