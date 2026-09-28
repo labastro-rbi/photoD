@@ -1,4 +1,4 @@
-"""Run photoD on Rubin DP2: point sources from the object catalog, the DP2 locus, TRILEGAL prior maps, a
+"""Run photoD on Rubin DP2: point sources from the object catalog, the locus, TRILEGAL prior maps, a
 pool of processes over the partition files, results written as a HATS catalog.
 
   python scripts/run_dp2.py --catalog /path/to/rubin_dp2/object_collection --priors /path/to/priors.npz \\
@@ -7,10 +7,10 @@ pool of processes over the partition files, results written as a HATS catalog.
 Options: --cone RA DEC RADIUS_DEG to run a piece of sky, --workers for the processes (they share the GPUs
 between them), --batch-size and --batch-bytes for the JAX setup, the second of them a memory budget for one
 batch of one worker, --chunk for how many partitions a process handles before it is replaced, --floor for the
-colour-error floor (0.03 mag), --no-dust-map to run the flat A_r prior, which reads no extinction and no 3D
-curves at all, --dust-curves to use a 3D dust map as the A_r prior (scripts/make_dust_curves.py), which
-matters at low Galactic latitude, and --ar-max for the top of the A_r grid, which has to be above the
-extinction of the field.
+colour-error floor (0.03 mag), --no-dust-map to run the flat A_r prior, which reads no extinction column
+at all, --dust-curves to shape that prior with a 3D dust map (scripts/make_dust_curves.py), which is off
+by default and matters at low Galactic latitude, and --ar-max for the top of the A_r grid, which has to be
+above the extinction of the field.
 
 A partition whose answers are already written is left alone, so a run that stopped part way is finished by
 repeating the command; --overwrite starts the result again from nothing. What the run was configured with is
@@ -56,12 +56,17 @@ from photod.bayes import (  # noqa: E402
     makeBayesEstimates3d,
     unfittedEstimates,
 )
-from photod.locus import LSSTsimsLocus, get3DmodelList, make3DlocusList, subsampleLocusData  # noqa: E402
+from photod.locus import (  # noqa: E402
+    RUN_LOCUS_FILE,
+    LSSTsimsLocus,
+    get3DmodelList,
+    make3DlocusList,
+    subsampleLocusData,
+)
 from photod.parameters import GlobalParams  # noqa: E402
 from photod.priors import getBayesConstants, priorGridFromMaps  # noqa: E402
 
 DATA = Path(__file__).resolve().parents[1] / "data"
-LOCUS = DATA / "LSSTlocus_10Gyr_DP2.txt"
 PRIOR_FILE = DATA / "priors_dp2.npz"
 DUST_FILE = DATA / "dust_dp2.npz"
 BANDS = "ugrizy"
@@ -227,12 +232,18 @@ def healpixOrder(nside):
 
 
 def globalParameters(floor, useDustMap, curves=None, arMax=5.0):
-    """The fit setup: the DP2 locus on the tLoc grid, the colour-error floor, the A_r prior.
+    """The fit setup: the locus on the tLoc grid, the colour-error floor, the A_r prior.
+
+    The locus is RUN_LOCUS_FILE, read without the two corrections scripts/make_locus.py measures on DP2:
+    both were fitted to the output of this fit and then written into the locus it is measured against, so
+    read that script before applying them again.
 
     The A_r grid has to reach the extinction of the field: the standard "ArLarge" grid stops at 2.5 mag, and a
     star whose A_r is above the top of the grid has it pinned there, which throws its distance out with it.
     """
-    locus = LSSTsimsLocus(fixForStripe82=False, datafile=str(LOCUS), colnames=["tLoc", "Mr", "FeH", *COLORS])
+    locus = LSSTsimsLocus(
+        fixForStripe82=False, datafile=str(RUN_LOCUS_FILE), colnames=["tLoc", "Mr", "FeH", *COLORS]
+    )
     locusData = subsampleLocusData(locus, kMr=1, kFeH=1, yLabel="tLoc")
     ArGridList, locus3DList = get3DmodelList(locusData, COLORS, yLabel="tLoc")
     ArGridList["ArLarge"] = np.arange(0, arMax + 1e-9, 0.02)
@@ -909,9 +920,11 @@ def main():
     )
     ap.add_argument(
         "--dust-curves",
-        default=str(DUST_FILE),
-        help="3D dust map as the A_r prior, which is what matters at low Galactic latitude; "
-        'the curves for the DP2 footprint come with the repository, and "" turns it off',
+        default="",
+        help="3D dust map to shape the A_r prior with, which is what matters at low Galactic latitude. Off "
+        f"by default: the curves for the DP2 footprint ship as data/{DUST_FILE.name} and naming them turns "
+        "them on. Without them the A_r prior is still bounded by the extinction column, which comes from the "
+        "2D map and not the 3D one",
     )
     ap.add_argument(
         "--workers",

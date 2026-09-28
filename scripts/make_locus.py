@@ -1,6 +1,14 @@
-"""Build data/LSSTlocus_10Gyr_DP2.txt, the locus for Rubin DP2, from LSSTlocus_10Gyr_fix.txt.
+"""Build data/LSSTlocus_10Gyr_DP2.txt from LSSTlocus_10Gyr_fix.txt.
 
-Two things are wrong with the original locus on DP2 photometry, both measured on DP2 stars:
+Not in the pipeline: a run reads photod.locus.RUN_LOCUS_FILE, the uncorrected LSSTlocus_10Gyr_fix.txt.
+Both corrections below were measured by comparing this fit's output against external data and then written
+into the locus the fit is measured against, which is the one place an error cannot be diagnosed afterwards.
+The Mr table in particular was measured in fields where half the stars of the g-i bin it corrects most are
+giants, and a giant read as a dwarf carries a parallax several times too large through the mean the table is
+built from. The script and its output are kept as the record of those measurements and to re-measure the
+table on another catalog.
+
+Two corrections measured on DP2 stars:
 
 * u-g. At fixed spectroscopic [Fe/H] (DESI DR1) the observed u-g is offset from the locus by +0.03 mag for
   [Fe/H] < -1.5 and -0.16 mag at solar metallicity, the same in two fields. The offset is added to the

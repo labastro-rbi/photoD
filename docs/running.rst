@@ -3,8 +3,9 @@ Run the fit on a survey
 
 ``scripts/run_dp2.py`` is the entry point for a whole survey: it reads point sources from the object
 catalog partition by partition, builds the colours and their errors from the PSF fluxes, fits them against
-the locus in ``data/LSSTlocus_10Gyr_DP2.txt`` with the TRILEGAL prior maps and the 3D dust curves that ship
-in ``data/``, and writes the answers as a HATS catalog.
+the locus in ``data/LSSTlocus_10Gyr_fix.txt`` with the TRILEGAL prior maps that ship in ``data/``, and
+writes the answers as a HATS catalog. The A_r prior is bounded by the extinction column and is not shaped by
+the 3D dust curves unless ``--dust-curves`` names them.
 
 .. code-block:: bash
 

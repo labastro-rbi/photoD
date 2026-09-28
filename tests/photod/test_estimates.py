@@ -27,7 +27,7 @@ def setup(n=16, **columns):
     """A small tLoc locus, a flat prior grid and a handful of stars."""
     locus = lt.LSSTsimsLocus(
         fixForStripe82=False,
-        datafile=lt.DEFAULT_LOCUS_FILE.parent / "LSSTlocus_10Gyr_DP2.txt",
+        datafile=lt.RUN_LOCUS_FILE,
         colnames=["tLoc", "Mr", "FeH", "ug", "gr", "ri", "iz", "zy"],
     )
     locusData = lt.subsampleLocusData(locus, 20, 3, yLabel="tLoc")

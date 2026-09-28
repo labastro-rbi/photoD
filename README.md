@@ -97,22 +97,18 @@ budget of one batch of one worker, so a pool of six asks for six times as much a
 The prior maps are built once for a footprint by `scripts/make_priors.py`, one map per r bin and HEALPix
 pixel, on the tLoc axis of the locus the fit uses.
 
-Two things differ from a run with `LSSTlocus_10Gyr_fix.txt` and the catalog errors as they are, and both were
-measured on DP2 stars with Gaia parallaxes and DESI spectra:
+Three things to know about what a run is set up with:
 
-- `data/LSSTlocus_10Gyr_DP2.txt` is the locus to use. Its u-g is corrected by the offset between DP2 and the
-  locus at fixed spectroscopic [Fe/H] (+0.03 mag for [Fe/H] < -1.5 to -0.16 mag at solar metallicity, the same
-  in two fields), which removes a -0.35 dex bias of the photometric [Fe/H] and halves its scatter. Its main
-  sequence is corrected in Mr as a function of g-i, from the mean parallax residual of 331,000 Gaia stars in
-  five fields (too faint by 0.05-0.26 mag for G and K dwarfs, too bright by 0.14-0.5 mag at the red end),
-  measured over all stars with a parallax and no signal-to-noise cut. Half a magnitude of that correction at
-  the red end reaches past the last row of the original tLoc grid, so the grid is continued to tLoc = 16.49
-  rather than the reddest colours being cut off it, which would leave red M dwarfs with nothing to fit.
-  `scripts/make_locus.py` builds the file and re-measures the Mr table for another catalog.
+- `data/LSSTlocus_10Gyr_fix.txt` is the locus a run fits against, named once as
+  `photod.locus.RUN_LOCUS_FILE` so that the run, the prior maps and the tests use the same table: the maps are
+  indexed by its tLoc, so they have to agree. The two corrections `scripts/make_locus.py` measures on DP2 are
+  not applied; that script says why, and it and `data/LSSTlocus_10Gyr_DP2.txt` are kept as the record of those
+  measurements.
 - `GlobalParams(colorErrFloor=0.03)` adds 0.03 mag in quadrature to every colour error. The locus is not exact,
   and without the floor the 68 % intervals of bright stars contain the Gaia parallax 46 % of the time.
-- `--dust-curves` uses a 3D dust map as the A_r prior instead of the flat one. It is what matters at low
-  Galactic latitude; see below.
+- `--dust-curves` shapes the A_r prior with a 3D dust map. It is off by default: the prior is bounded by the
+  extinction column, which is the 2D map, and is flat within that bound. It is what matters at low Galactic
+  latitude; see below.
 
 On 127,000 DP2 stars with Gaia parallaxes at l = 14, b = -14, none of which entered the calibration, the median
 probability integral transform of the observed parallax under the posterior goes from 0.406 to 0.502 (0.500 is

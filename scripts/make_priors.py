@@ -35,7 +35,7 @@ from astropy.io import fits
 import photod.locus as lt
 from photod.priors import get2Dmap, getBayesConstants
 
-LOCUS = Path(__file__).resolve().parents[1] / "data" / "LSSTlocus_10Gyr_DP2.txt"
+LOCUS = lt.RUN_LOCUS_FILE  # the maps are indexed by its tLoc, so it must be the locus the run fits
 COLORS = ("ug", "gr", "ri", "iz", "zy")
 MODEL_COLUMNS = ["ra", "dec", "glon", "glat", "DM", "Av", "rmag", "FeH", "Mr", "label"]
 MIN_STARS = 2000

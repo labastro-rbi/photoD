@@ -8,6 +8,12 @@ from scipy.spatial import KDTree
 
 DEFAULT_LOCUS_FILE = Path(__file__).resolve().parents[2] / "data" / "MSandRGBcolors_v1.3.txt"
 
+# The locus a run fits against, and the one scripts/make_priors.py tabulates the prior maps on. It is
+# the SDSS locus with DSED giants, calibrated to LSST and parametrised in tLoc, so it is read without
+# the Stripe 82 fixes that DEFAULT_LOCUS_FILE above needs. Naming it once keeps the run, the priors and
+# the tests on the same table: they have to agree, because the maps are indexed by its tLoc.
+RUN_LOCUS_FILE = DEFAULT_LOCUS_FILE.parent / "LSSTlocus_10Gyr_fix.txt"
+
 # For LSSTlocus_10Gyr_fix.txt: which TRILEGAL evolutionary labels (0 PMS, 1 MS, 2 SGB, 3 RGB, 4-6 CHeB,
 # 7 EAGB, 8 TPAGB, 9 PAGB/WD) belong to each monotonic segment of Mr(tLoc) below the turn-off, per [Fe/H] row.
 # Segments are numbered from the smallest tLoc.
