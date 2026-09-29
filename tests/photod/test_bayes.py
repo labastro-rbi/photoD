@@ -311,8 +311,8 @@ def test_binned_kde_matches_gaussian_kde():
     assert np.max(np.abs(Z - reference)) < 0.01 * reference.max()
 
 
-def test_calls_of_the_lovorka_branch():
-    """Calls written for the lovorka branch still work: DSED is accepted and tLoc is added in place."""
+def test_calls_of_the_tLoc_parametrization():
+    """Calls written for the tLoc parametrization still work: DSED is accepted, tLoc is added in place."""
     locus = make_locus(True)
     ArGridList, locus3DList = lt.get3DmodelList(locus, COLORS, DSED=True, xLabel="FeH", yLabel="tLoc")
     params = GlobalParams(COLORS, locus, ArGridList, locus3DList, "FeH", "tLoc", "tLoc", "Small", True)

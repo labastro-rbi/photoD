@@ -39,7 +39,7 @@ The key call is to function getMrFromFeHtLoc from LocusTools-tLoc.py
 That function is a most horrible despicable hack but it works, look for section title 
 "correct for tLoc vs. Mr mapping" and plots after it. 
 
-It would be great if Lovorka could reproduce these steps on an example with simulated stars
+It would be great to reproduce these steps on an example with simulated stars
 from TRILEGAL, where we know the correct answers... Then these two ugly hacks of overwriting 
 Mr by tLoc, and especially getMrFromFeHtLoc should be reimplemented in a better way. 
  

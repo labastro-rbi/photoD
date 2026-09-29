@@ -12,7 +12,7 @@ This fully Bayesian procedure also produces estimates of stellar parameters such
 
 ## This branch
 
-The `lovorka` branch (tLoc parametrization of the locus) with these changes:
+The tLoc parametrization of the locus, with these changes:
 - reddening is added to each fitted color by name; before, the 3D model reddened the wrong columns for loci with
   tLoc in the first column (and failed without the z-y color)
 - the A_r prior is flat between 0 and 1.3 A_r(dust map) + 0.1 when `GlobalParams(ArMapColumn=...)` is given,
@@ -22,11 +22,11 @@ The `lovorka` branch (tLoc parametrization of the locus) with these changes:
 - `fixForStripe82` is off by default (it is only meant for the SDSS locus)
 - locus points that only pad an isochrone to the rectangular grid get no prior weight
 - the per-star fit uses the fact that chi2 is quadratic in A_r; per core it is about 14 times faster than the
-  `lovorka` branch with the dust-map A_r prior (2.6 times with the flat prior: 7.0 and 37 ms per star against
+  tLoc parametrization with the dust-map A_r prior (2.6 times with the flat prior: 7.0 and 37 ms per star against
   98, on one core of the same machine). The posterior is scaled to its maximum, so bright stars with large
   chi2 no longer give NaN
 
-Scripts written for the `lovorka` branch run unchanged. The only new option is the dust-map A_r prior: pass the
+Scripts written for the tLoc parametrization run unchanged. The only new option is the dust-map A_r prior: pass the
 name of the catalog column with A_r from the dust map as `GlobalParams(..., ArMapColumn="...")`.
 
 `tLoc/` holds the scripts and the notebook the tLoc parametrization was worked out with, kept for reference.
