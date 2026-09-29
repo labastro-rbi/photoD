@@ -531,6 +531,39 @@ def test_a_catalog_is_asked_for_extinction_only_where_the_fit_reads_it(run):
         run.prepareStars(frame, {}, "Ar")
 
 
+def test_the_r_error_is_read_under_either_spelling(run):
+    """The fit reads rmagErr; a catalog prepared elsewhere may call it rErr, and both must reach the fit.
+
+    Renaming it here rather than in the fit keeps one place that knows about catalog spellings, so the frame
+    handed to the fit always carries rmagErr whichever name it arrived under.
+    """
+    canonical = run.FIT_COLUMNS + ["rmagErr"]
+    assert run.rmagErrorColumn(canonical) == "rmagErr"
+    assert run.rmagErrorColumn(run.FIT_COLUMNS + ["rErr"]) == "rErr"
+    assert run.rmagErrorColumn(run.FIT_COLUMNS) is None, "a catalog with no r error is still allowed"
+    assert run.inputColumns(run.FIT_COLUMNS + ["rErr", "Ar"], "Ar") == run.FIT_COLUMNS + ["Ar", "rErr"]
+
+    for name in ("rmagErr", "rErr"):
+        frame = pd.DataFrame({c: np.zeros(2) for c in run.FIT_COLUMNS})
+        frame[name] = [0.01, 0.02]
+        stars = run.prepareStars(frame, {}, None)
+        assert "rmagErr" in stars.columns, f"{name} did not reach the fit"
+        assert np.allclose(stars["rmagErr"], [0.01, 0.02])
+
+
+def test_an_r_error_the_fit_would_not_read_is_refused_rather_than_dropped(run):
+    """Dropped, it fits r as exact and every distance interval comes out too narrow, silently.
+
+    The colour errors are known columns, so riErr must not be mistaken for the r magnitude error, and a
+    catalog that carries a readable spelling is not refused for also carrying something else.
+    """
+    for odd in ("rPsfMagErr", "r_err", "rMagErr"):
+        with pytest.raises(SystemExit, match="does not read"):
+            run.rmagErrorColumn(run.FIT_COLUMNS + [odd])
+    assert run.rmagErrorColumn(run.FIT_COLUMNS) is None, "riErr was taken for the r magnitude error"
+    assert run.rmagErrorColumn(run.FIT_COLUMNS + ["rErr", "rPsfMagErr"]) == "rErr"
+
+
 def test_an_extinction_column_built_with_another_coefficient_is_put_on_this_scale(run):
     """A prepared catalog carries whatever A_r/E(B-V) its maker chose, which need not be AR_PER_EBV.
 

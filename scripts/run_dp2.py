@@ -22,10 +22,12 @@ status saying how much of the sky is missing.
 Input columns (DP2 object table): coord_ra, coord_dec, objectId, <band>_psfFlux and _psfFluxErr for ugrizy,
 refExtendedness, ebv. Point sources are refExtendedness == 0 with r between 16.5 and 23.5 and S/N > 10 in r,
 > 3 in g and i. A colour whose bands are not both at S/N > 3 is set to 0 with error 9.99 and carries no
-weight. The dust-map A_r is AR_PER_EBV ebv, the LSST r ratio with the Schlafly & Finkbeiner 2011
-recalibration of the map folded in, and it bounds the A_r prior; where the 3D map has measured the column
-through the disc, the smaller of the two is the bound, which matters towards the bulge, where the 2D map
-integrates to infinity and reaches tens of magnitudes.
+weight. The error on r, which widens the distance modulus, is read from rmagErr or rErr, and a catalog that
+carries one under another name is refused rather than fitted with r taken as exact. The dust-map A_r is
+AR_PER_EBV ebv, the LSST r ratio with the Schlafly & Finkbeiner 2011 recalibration of the map folded in, and
+it bounds the A_r prior; where the 3D map has measured the column through the disc, the smaller of the two is
+the bound, which matters towards the bulge, where the 2D map integrates to infinity and reaches tens of
+magnitudes.
 """
 
 import argparse
@@ -84,6 +86,10 @@ RAW_COLUMNS = ["objectId", "coord_ra", "coord_dec", "refExtendedness", "ebv"] + 
     f"{b}_{c}" for b in BANDS for c in ("psfFlux", "psfFluxErr")
 ]
 FIT_COLUMNS = ["objectId", "ra", "dec", "rmag"] + [c + s for c in COLORS for s in ("", "Err")]
+# The error on r, under the names a prepared catalog is known to spell it with. The fit reads the first of
+# them; another catalog's spelling is renamed to it rather than passed over, because passed over it fits r as
+# exact and the distance interval comes out too narrow with nothing in the output to say that it happened.
+RMAG_ERROR_NAMES = ("rmagErr", "rErr")
 INPUT_COLUMNS = RAW_COLUMNS  # kept for anything importing the old name
 PRIOR_DECADES = 8.0  # how far below its own peak a compact prior map is kept, for a file that says nothing
 FAILURES_REPORTED = 20  # failed partitions named one by one, after which only the count is kept
@@ -109,6 +115,36 @@ def catalogColumns(url):
         return list(lsdb.open_catalog(url).columns)
 
 
+def rmagErrorColumn(available):
+    """Which column carries the error on r, or None where the catalog has none.
+
+    A catalog with no r error at all is fitted as it was before the error was read, with r taken as exact, so
+    absence is allowed. What is refused is a catalog that carries one under a name the fit would not read:
+    that is the case that silently narrows every distance interval, and it is worth a sentence rather than a
+    quietly different answer. The colour errors are known columns, so riErr is not mistaken for this one.
+    """
+    for name in RMAG_ERROR_NAMES:
+        if name in available:
+            return name
+    known = set(FIT_COLUMNS) | set(RMAG_ERROR_NAMES)
+    unread = [
+        c
+        for c in available
+        if c not in known
+        and c.lower().startswith("r")
+        and not c.lower().startswith("ri")
+        and c.lower().endswith("err")
+    ]
+    if unread:
+        raise SystemExit(
+            f"the catalog carries {', '.join(sorted(unread))}, which looks like the error on r under a name "
+            f"the fit does not read. It reads {' or '.join(RMAG_ERROR_NAMES)}, so rename the column to one "
+            "of those. Left as it is the fit would take r as exact and every distance interval would come "
+            "out too narrow with nothing to show it"
+        )
+    return None
+
+
 def inputColumns(available, arColumn):
     """What to read from the catalog: one that already carries colours needs none of the fluxes.
 
@@ -121,7 +157,8 @@ def inputColumns(available, arColumn):
     if set(FIT_COLUMNS) <= set(available):
         # the r error widens the distance modulus, and a catalogue that carries it should have it used; one
         # that does not is fitted exactly as before, with r taken as exact
-        extra = ["rmagErr"] if "rmagErr" in available else []
+        found = rmagErrorColumn(available)
+        extra = [found] if found else []
         if arColumn is None:
             return list(FIT_COLUMNS) + extra
         extinction = [c for c in (arColumn, "ebv") if c in available]
@@ -151,8 +188,9 @@ def prepareStars(df, curves=None, arColumn="", arScale=1.0):
     """
     if set(FIT_COLUMNS) <= set(df.columns):
         out = pd.DataFrame({c: df[c].to_numpy() for c in FIT_COLUMNS})
-        if "rmagErr" in df.columns:
-            out["rmagErr"] = df["rmagErr"].to_numpy(dtype=float)
+        found = rmagErrorColumn(df.columns)
+        if found:
+            out[RMAG_ERROR_NAMES[0]] = df[found].to_numpy(dtype=float)
         if arColumn is not None:
             if arColumn in df.columns:
                 out["Ar"] = arScale * df[arColumn].to_numpy(dtype=float)
