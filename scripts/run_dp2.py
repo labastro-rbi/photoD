@@ -34,6 +34,7 @@ import argparse
 import json
 import multiprocessing as mp
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -115,6 +116,32 @@ def catalogColumns(url):
         return list(lsdb.open_catalog(url).columns)
 
 
+# An error on something in the r band that is not its magnitude. The survey measures many: the flux it came
+# from, the shape moments, the centroid. None of them is what the distance modulus wants, so a catalog that
+# carries them alongside the colours is fitted, not refused.
+NOT_A_MAGNITUDE = r"flux|ixx|iyy|ixy|_ra|_dec|radius|rms|moment|centroid|apcorr"
+
+
+def _namesTheErrorOnR(column):
+    """Whether a column name reads as the error on the r magnitude, under any convention seen in the wild.
+
+    Three things have to hold: it says error, it says r, and it is not about something else of the r band.
+    The middle one wants the r to stand on its own or to sit against mag, which is what keeps the colour
+    errors out, since riErr and grErr say error but their r is against another band letter. Written wide on
+    purpose for the first part, because the point is to catch the spelling nobody here thought of: err_r and
+    e_rmag from SDSS and VizieR, the _error suffix Gaia and most csv exports use, and Rubin's own Err.
+    """
+    low = column.lower()
+    # VizieR writes the error as an e_ prefix, which says error without containing the word
+    if not (re.search(r"err|sigma|unc", low) or low.startswith("e_")):
+        return False
+    if re.search(NOT_A_MAGNITUDE, low):
+        return False
+    # a leading r before a capital is the band standing on its own in camel case, where lowercasing the
+    # name would have hidden the boundary: rPsfMagErr is the error on r, riErr is a colour's
+    return bool(re.match(r"r[A-Z]", column) or re.search(r"(^|[^a-z])r($|[^a-z])|rmag|magr", low))
+
+
 def rmagErrorColumn(available):
     """Which column carries the error on r, or None where the catalog has none.
 
@@ -126,15 +153,8 @@ def rmagErrorColumn(available):
     for name in RMAG_ERROR_NAMES:
         if name in available:
             return name
-    known = set(FIT_COLUMNS) | set(RMAG_ERROR_NAMES)
-    unread = [
-        c
-        for c in available
-        if c not in known
-        and c.lower().startswith("r")
-        and not c.lower().startswith("ri")
-        and c.lower().endswith("err")
-    ]
+    known = set(FIT_COLUMNS) | set(RAW_COLUMNS) | set(RMAG_ERROR_NAMES)
+    unread = [c for c in available if c not in known and _namesTheErrorOnR(c)]
     if unread:
         raise SystemExit(
             f"the catalog carries {', '.join(sorted(unread))}, which looks like the error on r under a name "

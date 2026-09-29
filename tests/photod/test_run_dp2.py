@@ -557,10 +557,27 @@ def test_an_r_error_the_fit_would_not_read_is_refused_rather_than_dropped(run):
     The colour errors are known columns, so riErr must not be mistaken for the r magnitude error, and a
     catalog that carries a readable spelling is not refused for also carrying something else.
     """
-    for odd in ("rPsfMagErr", "r_err", "rMagErr"):
+    # every convention an outside catalogue has been seen to use: Rubin's Err, Gaia's and csv's _error,
+    # SDSS's err_r, VizieR's e_rmag, and sigma. Each carries a real r error, so each must stop the run
+    for odd in ("rPsfMagErr", "r_err", "rMagErr", "rmag_error", "r_error", "rMagError", "err_r",
+                "e_rmag", "sigma_rmag", "rmagSigma", "rmagErrPsf", "r_psfMagErr", "rmagUncertainty",
+                "rSigma", "rErrTotal", "r_cModelMagErr"):
         with pytest.raises(SystemExit, match="does not read"):
             run.rmagErrorColumn(run.FIT_COLUMNS + [odd])
-    assert run.rmagErrorColumn(run.FIT_COLUMNS) is None, "riErr was taken for the r magnitude error"
+
+    # and nothing that merely mentions an error may stop it: the colour errors say error but their r sits
+    # against another band letter, and these others are not about r at all
+    # and nothing that merely mentions an error may stop it. The survey measures errors on plenty of r-band
+    # quantities that are not its magnitude, and a wide catalogue carrying them alongside the colours used to
+    # fit, so it still has to
+    for safe in ("rzErr", "riErrTotal", "parallax_error", "ra_error", "dec_error", "mjd_err",
+                 "g_psfMagErr", "i_psfMagErr", "e_gmag", "ebv",
+                 "r_psfFluxErr", "r_cModelFluxErr", "r_gaapFluxErr", "r_kronFluxErr", "r_calibFluxErr",
+                 "r_ixxErr", "r_iyyErr", "r_raErr", "r_decErr"):
+        assert run.rmagErrorColumn(run.FIT_COLUMNS + [safe]) is None, f"{safe} was taken for the r error"
+    # the script's own raw columns are the sharpest case: a catalogue carrying both shapes must still fit
+    assert run.rmagErrorColumn(run.FIT_COLUMNS + run.RAW_COLUMNS) is None, "the raw columns stopped the run"
+    assert run.rmagErrorColumn(run.FIT_COLUMNS) is None, "a colour error was taken for the r error"
     assert run.rmagErrorColumn(run.FIT_COLUMNS + ["rErr", "rPsfMagErr"]) == "rErr"
 
 
