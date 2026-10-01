@@ -13,11 +13,11 @@ sparse table of PIXEL and VALUE or a full HEALPix array; without one the whole s
 footprint that ends up with no maps is a hole the run drops the stars of, so the build reports every one of
 them and fails unless --allow-missing says a partial file is wanted.
 
-The maps here leave out the model stars of TRILEGAL label 9, the white dwarfs and post-AGB stars, while
-photod.priors.dumpPriorMaps_testing keeps every label. The difference is deliberate: a white dwarf has no
-place on the locus the fit uses, so assigning it a tLoc puts it wherever the nearest segment of the locus
-happens to be, which at faint r is enough of them to leave a ridge in the prior that no fitted star belongs
-on. The in-package function is kept as it is because the published maps were made with it.
+EXPERIMENT: the maps here KEEP the model stars of TRILEGAL label 9, the white dwarfs and post-AGB stars.
+The published maps leave them out, and rightly so: on a locus with no white dwarf branch, assigning one a
+tLoc puts it wherever the nearest segment happens to be, which at faint r leaves a ridge in the prior that no
+fitted star belongs on. This locus has such a branch, so they now have a place of their own and carry their
+own prior weight.
 """
 
 import argparse
@@ -206,7 +206,7 @@ def pixelMaps(pixel, order, catalog, radius, maxStars, feH, segments, mrMin, mrM
         {c: stars[c].to_numpy(dtype=np.int32 if c == "label" else float) for c in MODEL_COLUMNS}
     )
     model = stars[
-        (stars["label"] != 9) & stars["FeH"].between(feH[0], feH[-1]) & stars["Mr"].between(mrMin, mrMax)
+        stars["FeH"].between(feH[0], feH[-1]) & stars["Mr"].between(mrMin, mrMax)
     ].copy()
     del stars
     if len(model) < 3:
@@ -362,6 +362,12 @@ def main():
         help="write the file even though some pixels of the footprint have no maps, which is a build meant "
         "to be partial; without it such a build reports them and exits non-zero",
     )
+    ap.add_argument(
+        "--pixels",
+        default="",
+        help="comma separated HEALPix pixel numbers at --order to build instead of the whole footprint, "
+        "for a patch-sized build",
+    )
     args = ap.parse_args()
 
     if args.from_catalog:
@@ -370,7 +376,10 @@ def main():
     if not args.trilegal:
         raise SystemExit("give either --trilegal to build the maps or --from-catalog to convert them")
 
-    pixels = footprintPixels(args.footprint, args.order)
+    if args.pixels:
+        pixels = np.asarray([int(p) for p in args.pixels.split(",") if p.strip()], dtype=np.int64)
+    else:
+        pixels = footprintPixels(args.footprint, args.order)
     area = 4 * np.pi * (180 / np.pi) ** 2 / (12 * 4**args.order)
     radius = args.radius or float(np.sqrt(area / np.pi))
     print(f"{pixels.size} pixels of order {args.order} ({area:.2f} deg2), cone radius {radius:.2f} deg")

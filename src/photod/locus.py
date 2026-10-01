@@ -12,14 +12,29 @@ DEFAULT_LOCUS_FILE = Path(__file__).resolve().parents[2] / "data" / "MSandRGBcol
 # the SDSS locus with DSED giants, calibrated to LSST and parametrised in tLoc, so it is read without
 # the Stripe 82 fixes that DEFAULT_LOCUS_FILE above needs. Naming it once keeps the run, the priors and
 # the tests on the same table: they have to agree, because the maps are indexed by its tLoc.
-RUN_LOCUS_FILE = DEFAULT_LOCUS_FILE.parent / "LSSTlocus_10Gyr_fix.txt"
+# EXPERIMENT: the 10 Gyr locus with a hydrogen white dwarf segment appended at the unused low end of
+# the tLoc axis (tLoc -2.000..-0.500, Mr 8.50-14.50). Same rectangular (FeH, tLoc) grid, every
+# existing tLoc value unchanged, so the fit needs no other change than the three below.
+RUN_LOCUS_FILE = DEFAULT_LOCUS_FILE.parent / "LSSTlocus_10Gyr_WD1.txt"
 
 # For LSSTlocus_10Gyr_fix.txt: which TRILEGAL evolutionary labels (0 PMS, 1 MS, 2 SGB, 3 RGB, 4-6 CHeB,
 # 7 EAGB, 8 TPAGB, 9 PAGB/WD) belong to each monotonic segment of Mr(tLoc) below the turn-off, per [Fe/H] row.
 # Segments are numbered from the smallest tLoc.
 _ALL_LABELS = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
 _EVOLVED = {3, 4, 5, 6, 7, 9}
-SEGMENT_LABEL_MAP = {
+WHITE_DWARF_LABEL = 9
+
+
+def _withWhiteDwarfSegment(labelMap):
+    """The same map with a white dwarf segment in front: it is the lowest in tLoc, so it is segment 0 and
+    every segment that was there shifts up by one. Label 9 goes only on it."""
+    return {
+        feh: {0: {WHITE_DWARF_LABEL}, **{k + 1: set(v) - {WHITE_DWARF_LABEL} for k, v in segments.items()}}
+        for feh, segments in labelMap.items()
+    }
+
+
+_SEGMENT_LABEL_MAP_NO_WD = {
     **{round(feh, 1): {0: _ALL_LABELS} for feh in np.arange(-2.5, -0.75, 0.1)},
     -0.7: {2: {0, 1, 2}, 1: _EVOLVED, 0: {8}},
     -0.6: {2: {0, 1, 2}, 1: _EVOLVED, 0: {8}},
@@ -35,6 +50,8 @@ SEGMENT_LABEL_MAP = {
     0.4: {5: {0, 1}, 4: {2}, 3: _EVOLVED, 2: {8}},
     0.5: {5: {0, 1}, 4: {2}, 3: _EVOLVED, 2: {8}},
 }
+
+SEGMENT_LABEL_MAP = _withWhiteDwarfSegment(_SEGMENT_LABEL_MAP_NO_WD)
 
 
 def LSSTsimsLocus(fixForStripe82=False, datafile=None, colnames=("Mr", "FeH", "ug", "gr", "ri", "iz", "zy")):
@@ -192,21 +209,35 @@ def getLSSTm5err(mags, depth="coadd"):
     return {b: np.interp(mags[b], magGrid, errGrid[b]) for b in "ugrizy"}
 
 
-def splitMonotonicSegments(tLocVals, MrTrueVals, minSegmentLen=4):
+def splitMonotonicSegments(tLocVals, MrTrueVals, minSegmentLen=4, jump=1.0):
     """Split Mr(tLoc) at one [Fe/H] into monotonic runs, as (start, end) index pairs ordered by tLoc.
 
     Runs shorter than minSegmentLen points (numerical noise) are merged into the preceding run.
+
+    A step in Mr larger than jump is a branch boundary rather than noise: where two branches meet on one
+    tLoc axis, Mr jumps, and that single step would otherwise form a run of one point which the merge rule
+    folds into the branch before it, giving that branch a range spanning the empty Mr between them. So the
+    points are first cut into blocks at such steps and each block is split on its own. With no step this
+    large there is one block and the result is what it always was, which is why adding a white dwarf branch
+    changes nothing for a locus that has none.
     """
-    signs = np.sign(np.diff(MrTrueVals))
-    signs[signs == 0] = signs[signs != 0][0] if np.any(signs != 0) else 1
-    breaks = [0, *(i for i in range(1, signs.size) if signs[i] != signs[i - 1]), len(tLocVals) - 1]
-    merged = []
-    for start, end in zip(breaks[:-1], breaks[1:], strict=True):
-        if merged and end - start < minSegmentLen:
-            merged[-1][1] = end
-        else:
-            merged.append([start, end])
-    return [tuple(s) for s in merged]
+    diffs = np.diff(MrTrueVals)
+    blocks = [0, *(int(i) + 1 for i in np.where(np.abs(diffs) > jump)[0]), len(tLocVals)]
+    out = []
+    for first, stop in zip(blocks[:-1], blocks[1:], strict=True):
+        if stop - first < 2:
+            continue
+        signs = np.sign(np.diff(MrTrueVals[first:stop]))
+        signs[signs == 0] = signs[signs != 0][0] if np.any(signs != 0) else 1
+        breaks = [0, *(i for i in range(1, signs.size) if signs[i] != signs[i - 1]), stop - first - 1]
+        merged = []
+        for start, end in zip(breaks[:-1], breaks[1:], strict=True):
+            if merged and end - start < minSegmentLen:
+                merged[-1][1] = end
+            else:
+                merged.append([start, end])
+        out.extend((first + s, first + e) for s, e in merged)
+    return out
 
 
 def buildSegmentData(globalParams, segmentLabelMap=None, turnoffTLoc=4.0):
@@ -258,11 +289,15 @@ def assignTLocPartition(
     starFeH = df[starFeHCol].to_numpy()
     starMr = df[starMrCol].to_numpy()
     starLabel = np.clip(df[starLabelCol].to_numpy().astype(int), 0, 9)
-    tLoc = np.where(starMr > turnoffTLoc, starMr, np.nan)
+    # Above the turn-off tLoc is Mr, but only for a star that belongs on the main sequence. A white dwarf
+    # (label 9) is faint without being on it, so taking tLoc = Mr would put it among the M dwarfs; it is
+    # routed through the segments like the evolved stars instead.
+    isWhiteDwarf = starLabel == WHITE_DWARF_LABEL
+    tLoc = np.where((starMr > turnoffTLoc) & ~isWhiteDwarf, starMr, np.nan)
 
     idx = np.clip(np.searchsorted(FeH1d, starFeH), 1, len(FeH1d) - 1)
     nearestFeH = np.where(np.abs(starFeH - FeH1d[idx - 1]) <= np.abs(starFeH - FeH1d[idx]), idx - 1, idx)
-    below = starMr <= turnoffTLoc
+    below = (starMr <= turnoffTLoc) | isWhiteDwarf
     for i in np.unique(nearestFeH[below]):
         data = segmentData[i]
         stars = np.where(below & (nearestFeH == i))[0]
