@@ -21,7 +21,7 @@ from photod.priors import getBayesConstants
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "run_dp2.py"
 DATA = Path(__file__).resolve().parents[2] / "data"
-PRIORS = DATA / "priors_dp2.npz"
+PRIORS = DATA / "priors_dp2_wd.npz"
 needsPriors = pytest.mark.skipif(not PRIORS.exists(), reason="the prior maps do not ship here")
 # the command line of a run, as far as what it asks of the fit is concerned
 SETTINGS = dict(

@@ -72,7 +72,7 @@ from photod.parameters import GlobalParams  # noqa: E402
 from photod.priors import getBayesConstants, priorGridFromMaps  # noqa: E402
 
 DATA = Path(__file__).resolve().parents[1] / "data"
-PRIOR_FILE = DATA / "priors_dp2.npz"
+PRIOR_FILE = DATA / "priors_dp2_wd.npz"
 BANDS = "ugrizy"
 COLORS = ("ug", "gr", "ri", "iz", "zy")
 # A_r per unit of the object table's ebv, which is the SFD map as it was published. Two things go into it: the
