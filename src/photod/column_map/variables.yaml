@@ -6,8 +6,8 @@
 - column_id: dec
   description: declination
   variable: declination
-- column_id: Mr
-  description: absolute magnitude in r band
+- column_id: tLoc
+  description: position along the locus, which is the absolute magnitude only below the turn-off
   variable: abs_mag_r
 - column_id: MrEst
   description: estimate of absolute magnitude in r band
@@ -69,7 +69,7 @@
 - column_id: DM
   description: distance modulus
   variable: distance_modulus
-- column_id: flags
+- column_id: fit_flags
   description: what the fit has to say about itself, one bit per warning
   variable: quality_flags
 - column_id: gr

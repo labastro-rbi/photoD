@@ -15,7 +15,7 @@ from photod.column_map.base import mapper_from_glossary
 from photod.parameters import GlobalParams
 from photod.priors import getPriorMapIndex, initializePriorGrid
 from photod.results import BayesResults
-from photod.stats import entropies, getMargDistr3D, getPosteriorQuantiles, pnorm
+from photod.stats import entropies, getMargDistr3D, getPosteriorQuantiles, getStats, pnorm
 
 cc = None
 
@@ -153,8 +153,12 @@ def makeBayesEstimates3d(
     # r is measured, not known, and DM = r - Qr, so the distance modulus is less certain than Qr by that
     # error. It is symmetric, so the median does not move and each end moves out in quadrature. On DP2 this
     # is worth a few thousandths of a magnitude for a bright star and about 5 % of the interval at r = 23.
+    statistics[f"{cc.distance_modulus}_std"] = statistics[f"{cc.abs_mag_ext_r}_std"]
     rmagErr = magnitudeError(starsData)
     if np.any(rmagErr > 0):
+        statistics[f"{cc.distance_modulus}_std"] = np.hypot(
+            statistics[f"{cc.distance_modulus}_std"], rmagErr
+        )
         median = statistics[f"{cc.distance_modulus}_quantile_median"]
         for name, direction in (("lo", -1.0), ("hi", 1.0)):
             half = np.abs(statistics[f"{cc.distance_modulus}_quantile_{name}"] - median)
@@ -272,11 +276,13 @@ def magnitudeError(catalog):
 
 def getEstimatesMeta(computeMrTrue: bool = False):
     """Empty frame with the columns and types of the estimates, as lsdb meta."""
-    names = [cc.abs_mag_r, cc.metallicity, cc.extinction_r, cc.abs_mag_ext_r, cc.distance_modulus] + (
-        ["Mr_true"] if computeMrTrue else []
+    # Qr and the entropy drops are computed but not written: Qr is Mr + A_r, which the two of them
+    # already give, and the entropy drops were only ever a diagnostic of the fit against its own prior.
+    names = [cc.abs_mag_r, cc.metallicity, cc.extinction_r, cc.distance_modulus] + (
+        ["Mr"] if computeMrTrue else []
     )
     quantileCols = [f"{name}_quantile_{q}" for name in names for q in QUANTILE_NAMES]
-    entropyCols = [cc.abs_mag_r_entropy_drop, cc.metallicity_entropy_drop, cc.extinction_r_entropy_drop]
+    stdCols = [f"{name}_std" for name in names]
     colNames = [
         cc.object_id,
         cc.right_ascension,
@@ -284,7 +290,7 @@ def getEstimatesMeta(computeMrTrue: bool = False):
         cc.observed_mag_r,
         cc.chi_sq_min,
         cc.quality_flags,
-        *sorted(quantileCols + entropyCols),
+        *sorted(quantileCols + stdCols),
     ]
     # the positions and the magnitude are carried over from the catalog rather than fitted, and float32
     # would round a position by a tenth of an arcsecond
@@ -379,10 +385,13 @@ def starPosterior(star, logPriorGrid, priorEntropy, args, computeMrTrue=False, r
         MrTrueWeights = (
             jnp.zeros_like(args["MrTrueGrid"], dtype=post.dtype).at[args["MrTrueIndices"]].add(postFeHMr)
         )
-        pdfs.append((args["MrTrueGrid"], MrTrueWeights, "Mr_true"))
+        pdfs.append((args["MrTrueGrid"], MrTrueWeights, "Mr"))
     for values, pdf, name in pdfs:
         for q, value in zip(QUANTILE_NAMES, getPosteriorQuantiles(values, pdf), strict=True):
             statistics[f"{name}_quantile_{q}"] = value
+        # the second moment of the same sampled density. It says something the quantiles do not for a
+        # posterior with two branches, where the spread is wide while the 16-84 interval can be narrow.
+        statistics[f"{name}_std"] = getStats(values, pdf)[1]
     # the entropies are of sampled densities, so each carries the width of its own bin and comes out in bits
     HMr, HFeH, HAr, HAr0 = entropies([margMr, margFeH, margAr, pnorm(allowed * 1.0, args["dAr"])])
     statistics[cc.abs_mag_r_entropy_drop] = HMr * args["dMr"] - priorEntropy[priorIndex, 0]
@@ -466,7 +475,7 @@ def _qualityFlags(chi2min, statistics, colorsErr, arMax, noMagnitude, globalPara
     flags = np.zeros(chi2min.size, dtype=np.int32)
     # the absolute magnitude itself when the locus is parametrised by tLoc, since that is where a giant and a
     # dwarf solution sit far apart
-    name = "Mr_true" if "Mr_true_quantile_median" in statistics else cc.abs_mag_r
+    name = "Mr" if "Mr_quantile_median" in statistics else cc.abs_mag_r
     low, median, high = (statistics[f"{name}_quantile_{q}"] for q in QUANTILE_NAMES)
     # a star the fit could not place at all must not come out looking like one it placed well
     flags |= np.where((chi2min > CHI2_POOR) | ~np.isfinite(median), FLAG_POOR_FIT, 0)

@@ -103,7 +103,7 @@ def bruteQuantiles(post, params):
     return {
         "Ar": quantiles(params.Ar1d, post.sum(axis=(0, 1))),
         "FeH": quantiles(params.FeH1d, post.sum(axis=(1, 2))),
-        "Mr_true": quantiles(params.MrTrueGrid, MrTrue),
+        "Mr": quantiles(params.MrTrueGrid, MrTrue),
     }
 
 
@@ -215,7 +215,7 @@ def test_the_prior_does_not_change_the_cost():
     estimates, _ = makeBayesEstimates3d(catalog, priorGrid, withCurves, batchSize=12)
     assert list(estimates.columns) == list(reference.columns)
     assert len(estimates) == len(catalog)
-    assert np.all(np.isfinite(estimates.Mr_true_quantile_median.to_numpy()))
+    assert np.all(np.isfinite(estimates.Mr_quantile_median.to_numpy()))
 
 
 def test_extinction_above_the_grid_is_pinned_to_its_top():
@@ -236,4 +236,4 @@ def test_extinction_above_the_grid_is_pinned_to_its_top():
     bad, _ = makeBayesEstimates3d(beyond, priorGrid, params, batchSize=1)
     assert abs(good.Ar_quantile_median.to_numpy()[0] - (top - 0.5)) < 0.6
     assert bad.Ar_quantile_median.to_numpy()[0] > top - 0.1  # pinned at the edge, 1.5 mag short
-    assert np.isfinite(bad.Mr_true_quantile_median.to_numpy()[0])  # pinned, not NaN
+    assert np.isfinite(bad.Mr_quantile_median.to_numpy()[0])  # pinned, not NaN
