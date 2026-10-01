@@ -1,306 +1,312 @@
+"""Stellar locus tables and the 3D (FeH, Mr or tLoc, Ar) color model built from them."""
+
+from pathlib import Path
+
 import numpy as np
 from astropy.table import Table
+from scipy.spatial import KDTree
+
+DEFAULT_LOCUS_FILE = Path(__file__).resolve().parents[2] / "data" / "MSandRGBcolors_v1.3.txt"
+
+# The locus a run fits against, and the one scripts/make_priors.py tabulates the prior maps on. It is
+# the SDSS locus with DSED giants, calibrated to LSST and parametrised in tLoc, so it is read without
+# the Stripe 82 fixes that DEFAULT_LOCUS_FILE above needs. Naming it once keeps the run, the priors and
+# the tests on the same table: they have to agree, because the maps are indexed by its tLoc.
+RUN_LOCUS_FILE = DEFAULT_LOCUS_FILE.parent / "LSSTlocus_10Gyr_fix.txt"
+
+# For LSSTlocus_10Gyr_fix.txt: which TRILEGAL evolutionary labels (0 PMS, 1 MS, 2 SGB, 3 RGB, 4-6 CHeB,
+# 7 EAGB, 8 TPAGB, 9 PAGB/WD) belong to each monotonic segment of Mr(tLoc) below the turn-off, per [Fe/H] row.
+# Segments are numbered from the smallest tLoc.
+_ALL_LABELS = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
+_EVOLVED = {3, 4, 5, 6, 7, 9}
+SEGMENT_LABEL_MAP = {
+    **{round(feh, 1): {0: _ALL_LABELS} for feh in np.arange(-2.5, -0.75, 0.1)},
+    -0.7: {2: {0, 1, 2}, 1: _EVOLVED, 0: {8}},
+    -0.6: {2: {0, 1, 2}, 1: _EVOLVED, 0: {8}},
+    -0.5: {2: {0, 1, 2}, 1: _EVOLVED, 0: {8}},
+    -0.4: {3: {0, 1}, 2: {2}, 1: _EVOLVED, 0: {8}},
+    -0.3: {3: {0, 1}, 2: {2}, 1: _EVOLVED, 0: {8}},
+    -0.2: {4: {0, 1}, 3: {2}, 2: _EVOLVED, 1: {8}},
+    -0.1: {3: {0, 1, 2}, 2: _EVOLVED, 1: {8}},
+    0.0: {4: {0, 1}, 3: {2}, 2: _EVOLVED, 1: {8}},
+    0.1: {4: {0, 1}, 3: {2}, 2: _EVOLVED, 1: {8}},
+    0.2: {3: {0, 1}, 2: {2} | _EVOLVED, 1: {8}},
+    0.3: {5: {0, 1}, 4: {2}, 3: _EVOLVED, 2: {8}},
+    0.4: {5: {0, 1}, 4: {2}, 3: _EVOLVED, 2: {8}},
+    0.5: {5: {0, 1}, 4: {2}, 3: _EVOLVED, 2: {8}},
+}
 
 
-def LSSTsimsLocus(fixForStripe82=True, datafile=""):
-    ## Mr, as function of [Fe/H], along the SDSS/LSST stellar
-    ## for more details see the file header
-    colnames = ["Mr", "FeH", "ug", "gr", "ri", "iz", "zy"]
-    if datafile == "":
-        datafile = "../../data/MSandRGBcolors_v1.3.txt"
-    LSSTlocus = Table.read(datafile, format="ascii", names=colnames)
-    LSSTlocus["gi"] = LSSTlocus["gr"] + LSSTlocus["ri"]
+def LSSTsimsLocus(fixForStripe82=False, datafile=None, colnames=("Mr", "FeH", "ug", "gr", "ri", "iz", "zy")):
+    """Read a stellar locus table: colors on a regular grid of [Fe/H] and Mr (or tLoc).
+
+    Parameters
+    ----------
+    fixForStripe82 : bool
+        Apply the empirical u-g and i-z corrections that bring the SDSS-based locus MSandRGBcolors_v1.3 into
+        agreement with the SDSS Stripe 82 standard-star catalog (v4.2). Only meant for that locus: loci
+        calibrated to LSST, such as LSSTlocus_10Gyr_fix.txt, must be read without it.
+    datafile : str or Path, optional
+        Locus table; by default data/MSandRGBcolors_v1.3.txt of this repository.
+    colnames : sequence of str
+        Column names, in the order of the file columns.
+    """
+    path = Path(datafile or DEFAULT_LOCUS_FILE)
+    if not path.exists():
+        # the tables live in data/ of the repository rather than inside the package, so the default only
+        # resolves in a checkout; from an installed copy the table has to be named
+        raise FileNotFoundError(
+            f"no locus table at {path}; pass datafile=, the tables are in data/ of the photoD repository"
+        )
+    locus = Table.read(path, format="ascii", names=list(colnames))
+    locus["gi"] = locus["gr"] + locus["ri"]
     if fixForStripe82:
-        print("Fixing input Mr-FeH-colors grid to agree with the SDSS v4.2 catalog")
-        # for SDSS v4.2 catalog, see: http://faculty.washington.edu/ivezic/sdss/catalogs/stripe82.html
-        # implement empirical corrections for u-g and i-z colors to make it better agree with the SDSS v4.2 catalog
-        # fix u-g: slightly redder for progressively redder stars and fixed for gi>giMax
-        ugFix = LSSTlocus["ug"] + 0.02 * (2 + LSSTlocus["FeH"]) * LSSTlocus["gi"]
-        giMax = 1.8
-        ugMax = 2.53 + 0.13 * (1 + LSSTlocus["FeH"])
-        LSSTlocus["ug"] = np.where(LSSTlocus["gi"] > giMax, ugMax, ugFix)
-        # fix i-z color: small offsets as functions of r-i and [Fe/H]
-        off0 = 0.08
-        off2 = -0.09
-        off5 = 0.008
-        offZ = 0.01
-        Z0 = 2.5
-        LSSTlocus["iz"] += off0 * LSSTlocus["ri"] + off2 * LSSTlocus["ri"] ** 2 + off5 * LSSTlocus["ri"] ** 5
-        LSSTlocus["iz"] += offZ * (Z0 + LSSTlocus["FeH"])
-    return LSSTlocus
+        ugFix = locus["ug"] + 0.02 * (2 + locus["FeH"]) * locus["gi"]
+        ugMax = 2.53 + 0.13 * (1 + locus["FeH"])
+        locus["ug"] = np.where(locus["gi"] > 1.8, ugMax, ugFix)
+        ri = locus["ri"]
+        locus["iz"] += 0.08 * ri - 0.09 * ri**2 + 0.008 * ri**5 + 0.01 * (2.5 + locus["FeH"])
+    return locus
 
 
-## subsample locusData along Mr and FeH grids by factors kMr and kFeH (if both are 1, no subsampling)
-def subsampleLocusData(locusData, kMr, kFeH, verbose=True):
-    xLabel = "FeH"
-    yLabel = "Mr"
-    FeHGrid = locusData[xLabel]
-    MrGrid = locusData[yLabel]
-    FeH1d = np.sort(np.unique(FeHGrid))
-    Mr1d = np.sort(np.unique(MrGrid))
-    # original grid sizes
-    nFeH = FeH1d.size
-    nMr = Mr1d.size
-    # subsampled grid sizes
-    nFeHs = int(nFeH / kFeH)
-    nMrs = int(nMr / kMr)
+def subsampleLocusData(locusData, kMr, kFeH, xLabel="FeH", yLabel="Mr", verbose=False):
+    """Keep every kFeH-th [Fe/H] and every kMr-th Mr (or tLoc) value of a locus on a regular grid.
+
+    The last value of each axis is kept whatever the step leaves over. Dropping it takes the end off the
+    model: with the DP2 locus and every twentieth tLoc that is the reddest dwarfs, and with every third
+    [Fe/H] the metal-rich end, neither of which the fit could then place a star on.
+    """
+    nFeH = np.unique(locusData[xLabel]).size
+    nMr = np.unique(locusData[yLabel]).size
+    keep = lambda n, k: np.unique(np.append(np.arange(0, n, k), n - 1))  # noqa: E731
+    feHrows, mrRows = keep(nFeH, kFeH), keep(nMr, kMr)
+    rows = (feHrows[:, None] * nMr + mrRows[None, :]).ravel()
     if verbose:
-        print("subsampled locus 2D grid in FeH and Mr from", nFeH, nMr, "to:", nFeHs, nMrs)
-    subsampled = locusData[:0].copy()
-    # now add subsampled rows from the input table
-    for j in range(0, nFeHs):
-        for i in range(0, nMrs):
-            k = i * kMr + j * kFeH * nMr
-            subsampled.add_row(locusData[k])
-    return subsampled
+        print(
+            f"subsampled locus grid from {nFeH} x {nMr} to {feHrows.size} x {mrRows.size} "
+            f"([Fe/H] x {yLabel})"
+        )
+    return locusData[rows]
 
 
-def get3DmodelList(locusData, fitColors, agressive=False, DSED=False):
+def get3DmodelList(locusData, fitColors, agressive=False, DSED=False, xLabel="FeH", yLabel="Mr", ArFixed=0.2):
+    """3D color models for the standard A_r grids ("ArSmall", "ArMedium", "ArLarge" and "ArFixed").
 
+    DSED is kept so that older calls still work; it is not needed any more because the colors are reddened by
+    name for any column order of the locus table.
+    """
     if agressive:
-        ## AGRESSIVE
-        # for small 3D locus:
-        ArGridSmall = np.linspace(0, 0.5, 101)  # step 0.005 mag
-        # for medium 3D locus:
-        ArGridMedium = np.linspace(0, 2.0, 201)  # step 0.01 mag
-        # for large 3D locus:
-        ArGridLarge = np.linspace(0, 5.0, 251)  # step 0.02 mag
+        grids = {
+            "ArSmall": np.linspace(0, 0.5, 101),
+            "ArMedium": np.linspace(0, 2.0, 201),
+            "ArLarge": np.linspace(0, 5.0, 251),
+        }
     else:
-        ## LESS AGRESSIVE
-        ArGridSmall = np.linspace(0, 0.3, 31)  # step 0.01 mag
-        ArGridMedium = np.linspace(0, 0.8, 81)  # step 0.01 mag
-        ArGridLarge = np.linspace(0, 2.5, 126)  # step 0.02 mag
-
-    AGList = []
-    AGList.append(ArGridSmall)
-    AGList.append(ArGridMedium)
-    AGList.append(ArGridLarge)
-
-    ### call the workhorse
-    L3Dlist = make3DlocusList(locusData, fitColors, AGList, DSED=DSED)
-
-    # repack
-    ArGridList = {}
-    locus3DList = {}
-    locus3DList["ArSmall"] = L3Dlist[0]
-    ArGridList["ArSmall"] = ArGridSmall
-    locus3DList["ArMedium"] = L3Dlist[1]
-    ArGridList["ArMedium"] = ArGridMedium
-    locus3DList["ArLarge"] = L3Dlist[2]
-    ArGridList["ArLarge"] = ArGridLarge
-    return ArGridList, locus3DList
+        grids = {
+            "ArSmall": np.linspace(0, 0.3, 31),
+            "ArMedium": np.linspace(0, 0.8, 81),
+            "ArLarge": np.linspace(0, 2.5, 126),
+        }
+    grids["ArFixed"] = np.array([ArFixed])
+    models = make3DlocusList(locusData, fitColors, list(grids.values()), xLabel=xLabel, yLabel=yLabel)
+    return grids, dict(zip(grids, models, strict=True))
 
 
-def make3DlocusList(locusData, fitColors, ArGridList, DSED=False):
+def make3DlocusList(locusData, fitColors, ArGridList, DSED=False, xLabel="FeH", yLabel="Mr"):
+    """For each A_r grid, the locus as a (FeH, Mr, Ar) structured array with the fitted colors reddened.
 
-    # color corrections due to dust reddening
-    # for finding extinction, too
+    DSED is not used (see get3DmodelList).
+    """
     C = extcoeff()
-    reddCoeffs = {}
-    reddCoeffs["ug"] = C["u"] - C["g"]
-    reddCoeffs["gr"] = C["g"] - C["r"]
-    reddCoeffs["ri"] = C["r"] - C["i"]
-    reddCoeffs["iz"] = C["i"] - C["z"]
-
-    # intrinsic table sizes
-    xLabel = "FeH"
-    yLabel = "Mr"
-    FeHGrid = locusData[xLabel]
-    MrGrid = locusData[yLabel]
-    FeH1d = np.sort(np.unique(FeHGrid))
-    Mr1d = np.sort(np.unique(MrGrid))
-
-    # turn astropy table into numpy array
-    locusData["Ar"] = 0 * locusData["Mr"]
-    LocusNP = np.array(locusData)
-    # the repeating block
-    locus3D0 = LocusNP.reshape(np.size(FeH1d), np.size(Mr1d))
+    nFeH = np.unique(locusData[xLabel]).size
+    nMr = np.unique(locusData[yLabel]).size
+    table = locusData.copy(copy_data=False)
+    table["Ar"] = np.zeros(len(table))
+    locus2D = np.array(table).reshape(nFeH, nMr)
 
     locus3DList = []
     for ArGrid in ArGridList:
-        colCorr = {}
+        ArGrid = np.asarray(ArGrid, dtype=float)
+        locus3D = np.repeat(locus2D[:, :, np.newaxis], ArGrid.size, axis=2)
         for color in fitColors:
-            colCorr[color] = ArGrid * reddCoeffs[color]
-        if DSED:
-            locus3D = make3DlocusFastDSED(locus3D0, ArGrid, fitColors, colCorr, FeH1d, Mr1d)
-        else:
-            locus3D = make3DlocusFast(locus3D0, ArGrid, fitColors, colCorr, FeH1d, Mr1d)
+            locus3D[color] = locus3D[color] + ArGrid * (C[color[0]] - C[color[1]])
+        locus3D["Ar"] = np.broadcast_to(ArGrid, locus3D.shape)
         locus3DList.append(locus3D)
     return locus3DList
 
 
-def make3DlocusFastDSED(locus3D0, ArGrid, colors, colorCorrection, FeH1d, Mr1d):
+def locusPlateau(locusData, xLabel="FeH", yLabel="Mr"):
+    """Flag grid points that only repeat the next point along yLabel at the same [Fe/H].
 
-    N3rd = np.size(ArGrid)
-    locus3D = np.repeat(locus3D0[:, :, np.newaxis], N3rd, axis=2)
-    for i in range(0, np.size(FeH1d)):
-        for j in range(0, np.size(Mr1d)):
-            for k in range(0, np.size(ArGrid)):
-                locus3D[i, j, k][3] = locus3D[i, j, k][3] + colorCorrection["ug"][k]
-                locus3D[i, j, k][4] = locus3D[i, j, k][4] + colorCorrection["gr"][k]
-                locus3D[i, j, k][5] = locus3D[i, j, k][5] + colorCorrection["ri"][k]
-                locus3D[i, j, k][6] = locus3D[i, j, k][6] + colorCorrection["iz"][k]
-                locus3D[i, j, k][9] = ArGrid[k]
-    return locus3D
-
-
-## VOLATILE: assumes order of colors in locus3D0 (that must be consistent with colCorr
-##      NB IT WILL BREAK WHEN ANOTHER COLOR IS ADDED!  (e.g. z-y for LSST data)
-## given 2D numpy array, make a 3D numpy array by replicating it for each element
-## in ArGrid and apply reddening corrections
-## n.b. colors is not used (place holder to fix VOLATILE problem...)
-def make3DlocusFast(locus3D0, ArGrid, colors, colorCorrection, FeH1d, Mr1d):
-
-    N3rd = np.size(ArGrid)
-    locus3D = np.repeat(locus3D0[:, :, np.newaxis], N3rd, axis=2)
-    for i in range(0, np.size(FeH1d)):
-        for j in range(0, np.size(Mr1d)):
-            for k in range(0, np.size(ArGrid)):
-                locus3D[i, j, k][2] = locus3D[i, j, k][2] + colorCorrection["ug"][k]
-                locus3D[i, j, k][3] = locus3D[i, j, k][3] + colorCorrection["gr"][k]
-                locus3D[i, j, k][4] = locus3D[i, j, k][4] + colorCorrection["ri"][k]
-                locus3D[i, j, k][5] = locus3D[i, j, k][5] + colorCorrection["iz"][k]
-                locus3D[i, j, k][8] = ArGrid[k]
-    return locus3D
+    To fill a rectangular grid, isochrones that end before the edge of the tLoc range are padded with copies
+    of their last point. Such copies are not separate models and must not add posterior weight.
+    """
+    nFeH = np.unique(locusData[xLabel]).size
+    nMr = np.unique(locusData[yLabel]).size
+    names = [n for n in locusData.colnames if n not in (xLabel, yLabel)]
+    values = np.stack([np.asarray(locusData[n], dtype=float) for n in names], axis=-1).reshape(nFeH, nMr, -1)
+    plateau = np.zeros((nFeH, nMr), dtype=bool)
+    plateau[:, :-1] = np.all(values[:, :-1] == values[:, 1:], axis=-1)
+    return plateau.ravel()
 
 
 def extcoeff():
-    ## coefficients to correct for ISM dust (for S82 from Berry+2012, Table 1)
-    ## extcoeff(band) = A_band / A_r
-    extcoeff = {}
-    extcoeff["u"] = 1.810
-    extcoeff["g"] = 1.400
-    extcoeff["r"] = 1.000  # by definition
-    extcoeff["i"] = 0.759
-    extcoeff["z"] = 0.561
-    return extcoeff
+    """Extinction A_band / A_r (Berry et al. 2012 for ugriz, Cardelli et al. 1989 for y)."""
+    return {"u": 1.810, "g": 1.400, "r": 1.000, "i": 0.759, "z": 0.561, "y": 0.484}
 
 
-def readTRILEGALLSDB(trilegal):
-    ### NOTE THAT THIS IS NO LONGER NEEDED AS TRILEGAL IS IMPORTED INTO HIPSCAT WITH COLUMN NAMES FIXED, AND THE REQUIRED COLUMNS ADDED!!!!
-    colnames = [
-        "glon",
-        "glat",
-        "comp",
-        "logage",
-        "FeH",
-        "DM",
-        "Av",
-        "logg",
-        "gmag",
-        "rmag",
-        "imag",
-        "umag",
-        "zmag",
-        "label",
-    ]
-    # comp: Galactic component the star belongs to: 1 → thin disk; 2 → thick disk; 3 → halo; 4 → bulge; 5 → Magellanic Clouds.
-    # logage with age in years
-    # DM = m-M is called true distance modulus in DalTio+(2022), so presumably extinction is not included
-    # and thus Mr = rmag - Ar - DM
-    ## read TRILEGAL simulation (per healpix, as extracted by Dani, ~1-2M stars)
-    # trilegal = Table.read(infile, format='ascii', names=colnames) <<-- replaced with pd.read_csv
-    trilegal = trilegal[colnames].copy()
-    # dust extinction: Berry+ give Ar = 2.75E(B-V) and DalTio+ used Av=3.10E(B-V)
-    trilegal.loc[:, "Ar"] = 2.75 * trilegal.loc[:, "Av"] / 3.10
-    C = extcoeff()
-    # correcting colors for extinction effects
-    trilegal.loc[:, "ug"] = (
-        trilegal.loc[:, "umag"] - trilegal.loc[:, "gmag"] - (C["u"] - C["g"]) * trilegal.loc[:, "Ar"]
-    )
-    trilegal.loc[:, "gr"] = (
-        trilegal.loc[:, "gmag"] - trilegal.loc[:, "rmag"] - (C["g"] - C["r"]) * trilegal.loc[:, "Ar"]
-    )
-    trilegal.loc[:, "ri"] = (
-        trilegal.loc[:, "rmag"] - trilegal.loc[:, "imag"] - (C["r"] - C["i"]) * trilegal.loc[:, "Ar"]
-    )
-    trilegal.loc[:, "iz"] = (
-        trilegal.loc[:, "imag"] - trilegal.loc[:, "zmag"] - (C["i"] - C["z"]) * trilegal.loc[:, "Ar"]
-    )
-    trilegal.loc[:, "gi"] = trilegal.loc[:, "gr"] + trilegal.loc[:, "ri"]
-    return trilegal
+def getColorsFromMrFeHDSED(L, Lvalues, colors=("ug", "gr", "ri", "iz"), Mr_label="Mr"):
+    """Colors of the locus point nearest to each star in (Mr or tLoc, [Fe/H]); used to simulate catalogs."""
+    tree = KDTree(np.column_stack([L[Mr_label], L["FeH"]]))
+    nearest = tree.query(np.column_stack([Lvalues[Mr_label], Lvalues["FeH"]]))[1]
+    Lvalues[f"{Mr_label}Assigned"] = np.asarray(L[Mr_label])[nearest]
+    for c in colors:
+        Lvalues[c] = np.asarray(L[c])[nearest]
+    return Lvalues
 
 
-def getPhotoDchi2map3D(i, colors, colorReddCoeffs, data2fit, locus, ArCoeff, masterLocus=True):
+LSST_M5 = {
+    "coadd": {"u": 25.73, "g": 26.86, "r": 26.88, "i": 26.34, "z": 25.63, "y": 24.87},
+    "single": {"u": 23.50, "g": 24.44, "r": 23.98, "i": 23.41, "z": 22.77, "y": 22.01},
+}
+LSST_GAMMA = {"u": 0.038, "g": 0.039, "r": 0.039, "i": 0.039, "z": 0.039, "y": 0.039}
 
-    # first adopt, or generate, 3D model locus
-    if masterLocus:
-        locus3D = locus
-    else:
-        # extend 2D Mr-FeH grid in zero-reddening locus (astropy Table), to a 3D color grid by
-        # adding reddening grid to each entry in locus (which corresponds to ArGrid[0] = 0)
-        ArMax = ArCoeff[0] * data2fit["Ar"][i] + ArCoeff[1]
-        nArGrid = int(ArMax / ArCoeff[2]) + 1
-        if nArGrid > 1000:
-            print("resetting nArGrid to 1000 in getPhotoDchi2map3D, from:", nArGrid)
-            nArGrid = 1000
-        if 1:
-            ArGrid = np.linspace(0, ArMax, nArGrid)
+
+def getLSSTm5(data, depth="coadd", magVersion=False, suffix=""):
+    """LSST photometric errors for the magnitudes in data (Ivezic et al. 2019, with a 0.005 mag floor).
+
+    data holds the magnitudes under the band names ("u", ...) or, with magVersion, under "umag" + suffix etc.
+    """
+    m5 = LSST_M5["coadd" if depth == "coadd" else "single"]
+    errors = {}
+    for b in "ugrizy":
+        x = 10 ** (0.4 * (data[b + "mag" + suffix if magVersion else b] - m5[b]))
+        errors[b] = np.sqrt(0.005**2 + (0.04 - LSST_GAMMA[b]) * x + LSST_GAMMA[b] * x**2)
+    return errors
+
+
+def getLSSTm5err(mags, depth="coadd"):
+    """Same as getLSSTm5, by interpolation in a 0.01 mag table."""
+    magGrid = np.linspace(10, 30, 2001)
+    errGrid = getLSSTm5({b: magGrid for b in "ugrizy"}, depth)
+    return {b: np.interp(mags[b], magGrid, errGrid[b]) for b in "ugrizy"}
+
+
+def splitMonotonicSegments(tLocVals, MrTrueVals, minSegmentLen=4):
+    """Split Mr(tLoc) at one [Fe/H] into monotonic runs, as (start, end) index pairs ordered by tLoc.
+
+    Runs shorter than minSegmentLen points (numerical noise) are merged into the preceding run.
+    """
+    signs = np.sign(np.diff(MrTrueVals))
+    signs[signs == 0] = signs[signs != 0][0] if np.any(signs != 0) else 1
+    breaks = [0, *(i for i in range(1, signs.size) if signs[i] != signs[i - 1]), len(tLocVals) - 1]
+    merged = []
+    for start, end in zip(breaks[:-1], breaks[1:], strict=True):
+        if merged and end - start < minSegmentLen:
+            merged[-1][1] = end
         else:
-            # this is for testing performance when Ar prior is delta function centered on true value
-            ArGrid = np.linspace(data2fit["Ar"][i], data2fit["Ar"][i], 1)
-
-        # color corrections due to dust reddening (for each Ar in the grid for this particular star)
-        colorCorrection = {}
-        for color in colors:
-            colorCorrection[color] = ArGrid * colorReddCoeffs[color]
-        locus3D = make3Dlocus(locus, ArGrid, colors, colorCorrection)
-
-    # set up colors for fitting (for this star specified by input "i")
-    ObsColor = {}
-    ObsColorErr = {}
-    for color in colors:
-        # print('    color=', color)
-        # ObsColor[color] = data2fit[color][i]
-        ObsColor[color] = data2fit[color].iloc[i]
-        errname = color + "Err"
-        # ObsColorErr[color] = data2fit[errname][i]
-        ObsColorErr[color] = data2fit[errname].iloc[i]
-
-    ## return chi2map (data cube) for each grid point in locus3D
-    if masterLocus:
-        return getLocusChi2colors(colors, locus3D, ObsColor, ObsColorErr)
-    else:
-        return ArGrid, getLocusChi2colors(colors, locus3D, ObsColor, ObsColorErr)
+            merged.append([start, end])
+    return [tuple(s) for s in merged]
 
 
-# given a grid of model colors, Mcolors, compute chi2
-# for a given set of observed colors Ocolors, with errors Oerrors
-# colors to be used in chi2 computation are listed in colorNames
-# Mcolors is astropy Table
-def getLocusChi2colors(colorNames, Mcolors, Ocolors, Oerrors):
-    chi2 = 0 * Mcolors[colorNames[0]]
-    for color in colorNames:
-        chi2 += ((Ocolors[color] - Mcolors[color]) / Oerrors[color]) ** 2
-    return chi2
+def buildSegmentData(globalParams, segmentLabelMap=None, turnoffTLoc=4.0):
+    """Per [Fe/H] row: Mr range and interpolation table of each monotonic segment of Mr(tLoc) below the
+    turn-off, and which TRILEGAL labels may be placed on it. Computed once and passed to assignTLocPartition.
+    """
+    segmentLabelMap = SEGMENT_LABEL_MAP if segmentLabelMap is None else segmentLabelMap
+    tLoc1d = globalParams.Mr1d
+    below = tLoc1d <= turnoffTLoc
+    segmentData = {}
+    for i, feh in enumerate(globalParams.FeH1d):
+        MrRow = np.asarray(globalParams.MrTrueTable[i])[below]
+        segments = splitMonotonicSegments(tLoc1d[below], MrRow)
+        labels = segmentLabelMap.get(round(float(feh), 1), {})
+        ranges = np.zeros((len(segments), 2))
+        labelToSeg = np.zeros((10, len(segments)), dtype=bool)
+        interpMr, interpTLoc = [], []
+        for k, (s, e) in enumerate(segments):
+            order = np.argsort(MrRow[s : e + 1])
+            interpMr.append(MrRow[s : e + 1][order])
+            interpTLoc.append(tLoc1d[below][s : e + 1][order])
+            ranges[k] = interpMr[-1][0], interpMr[-1][-1]
+            labelToSeg[list(labels.get(k, ())), k] = True
+        segmentData[i] = {
+            "ranges": ranges,
+            "interpMr": interpMr,
+            "interpTLoc": interpTLoc,
+            "labelToSeg": labelToSeg,
+        }
+    return segmentData
 
 
-### WHY IS THIS CODE SCALING WITH THE SQUARE OF ArGrid LENGTH???
-# replace each row in locus (astropy Table) with np.size(ArGrid) rows where colors in colors
-# are reddened using the values in colCorr and return the resulting astropy Table
-def make3Dlocus(locus, ArGrid, colors, colCorr):
+def assignTLocPartition(
+    df,
+    segmentData,
+    FeH1d,
+    turnoffTLoc=4.0,
+    starFeHCol="FeH",
+    starMrCol="Mr",
+    starLabelCol="label",
+    newCol="tLoc",
+):
+    """tLoc for each star of a TRILEGAL catalog (partition), from its Mr, [Fe/H] and evolutionary label.
 
-    # initialize the first block of 3D table that corresponds to Ar=0 and the input table
-    locus3D = Table((locus["Mr"], locus["FeH"]), copy=True)
-    for color in colors:
-        locus3D.add_column(locus[color])
-    # the first point in Ar grid is usually, but NOT necessarily, equal to 0
-    locus3D["Ar"] = 0 * locus3D["Mr"] + ArGrid[0]
-    for color in colors:
-        locus3D[color] = locus3D[color] + colCorr[color][0]
+    Above the turn-off tLoc equals Mr. Below it, Mr(tLoc) is not monotonic; a star is placed on the segment
+    whose Mr range contains its Mr, and if several do, on the one that matches its label. Stars that cannot be
+    placed get NaN. The input is not modified.
+    """
+    starFeH = df[starFeHCol].to_numpy()
+    starMr = df[starMrCol].to_numpy()
+    starLabel = np.clip(df[starLabelCol].to_numpy().astype(int), 0, 9)
+    tLoc = np.where(starMr > turnoffTLoc, starMr, np.nan)
 
-    # loop over all >0 reddening values
-    for k in range(1, np.size(ArGrid)):
-        # new block, start with a copy of the input table
-        locusAr = Table((locus["Mr"], locus["FeH"]), copy=True)
-        # add a column with the corresponding value of Ar
-        locusAr["Ar"] = 0 * locusAr["Mr"] + ArGrid[k]
-        # and now redden zero-reddening colors with provided reddening corrections
-        cRed = {}
-        for color in colors:
-            cRed[color] = locus[color] + colCorr[color][k]
-            locusAr.add_column(cRed[color])
-        # now vstack the segment for this Ar value to locus3D table:
-        locus3D = np.vstack([locus3D, locusAr])
+    idx = np.clip(np.searchsorted(FeH1d, starFeH), 1, len(FeH1d) - 1)
+    nearestFeH = np.where(np.abs(starFeH - FeH1d[idx - 1]) <= np.abs(starFeH - FeH1d[idx]), idx - 1, idx)
+    below = starMr <= turnoffTLoc
+    for i in np.unique(nearestFeH[below]):
+        data = segmentData[i]
+        stars = np.where(below & (nearestFeH == i))[0]
+        if data["ranges"].size == 0:
+            continue
+        mr = starMr[stars]
+        inRange = (mr[:, None] >= data["ranges"][None, :, 0]) & (mr[:, None] <= data["ranges"][None, :, 1])
+        candidates = np.where(
+            inRange.sum(axis=1)[:, None] > 1, inRange & data["labelToSeg"][starLabel[stars]], inRange
+        )
+        segment = np.where(candidates.any(axis=1), np.argmax(candidates, axis=1), -1)
+        for k in np.unique(segment[segment >= 0]):
+            sel = segment == k
+            tLoc[stars[sel]] = np.interp(mr[sel], data["interpMr"][k], data["interpTLoc"][k])
 
-    return locus3D
+    out = df.copy()
+    out[newCol] = tLoc
+    return out
+
+
+def assignTLocFromLabel(
+    trilegalCatalog,
+    globalParams,
+    segmentLabelMap=None,
+    turnoffTLoc=4.0,
+    starFeHCol="FeH",
+    starMrCol="Mr",
+    starLabelCol="label",
+    newCol="tLoc",
+):
+    """assignTLocPartition for a whole catalog, building the segment data from globalParams.
+
+    The tLoc column is added to trilegalCatalog, which is also returned.
+    """
+    segmentData = buildSegmentData(globalParams, segmentLabelMap, turnoffTLoc)
+    withTLoc = assignTLocPartition(
+        trilegalCatalog,
+        segmentData,
+        globalParams.FeH1d,
+        turnoffTLoc,
+        starFeHCol,
+        starMrCol,
+        starLabelCol,
+        newCol,
+    )
+    trilegalCatalog[newCol] = withTLoc[newCol].to_numpy()
+    return trilegalCatalog

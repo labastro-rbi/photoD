@@ -2,42 +2,25 @@ import jax
 import lsdb
 import nested_pandas as npd
 import numpy as np
-import pandas as pd
-from dask import delayed
-from numpy.testing import assert_allclose
-from scipy.interpolate import griddata
 
 import photod.locus as lt
-from photod.bayes import makeBayesEstimates3d
+from photod.bayes import getEstimatesMeta, makeBayesEstimates3d
 from photod.parameters import GlobalParams
+from photod.priors import initializePriorGrid
 
 
-def merging_function(partition, map_partition, partition_pixel, map_pixel, globalParams, *kwargs):
-    priorGrid = {}
-    for rind, r in enumerate(np.sort(map_partition["rmag"].to_numpy())):
-        # interpolate prior map onto locus Mr-FeH grid
-        Z = map_partition[map_partition["rmag"] == r]
-        Zval = np.frombuffer(Z.iloc[0]["kde"], dtype=np.float64).reshape((96, 36))
-        X = np.frombuffer(Z.iloc[0]["xGrid"], dtype=np.float64).reshape((96, 36))
-        Y = np.frombuffer(Z.iloc[0]["yGrid"], dtype=np.float64).reshape((96, 36))
-        points = np.array((X.flatten(), Y.flatten())).T
-        values = Zval.flatten()
-        # actual (linear) interpolation
-        priorGrid[rind] = griddata(
-            points,
-            values,
-            (globalParams.locusData["FeH"], globalParams.locusData[globalParams.MrColumn]),
-            method="linear",
-            fill_value=0,
-        )
-    priorGrid = jax.numpy.array(list(priorGrid.values()))
+def merging_function(partition, map_partition, partition_pixel, map_pixel, globalParams, **kwargs):
+    """Bayes estimates for one catalog partition and the prior maps of its sky pixel."""
+    # the test catalog predates the objectId column
+    partition = partition.assign(objectId=np.arange(len(partition)))
+    priorGrid = jax.numpy.array(list(initializePriorGrid(map_partition, globalParams).values()))
     estimatesDf, _ = makeBayesEstimates3d(partition, priorGrid, globalParams, batchSize=10)
     return npd.NestedFrame(estimatesDf)
 
 
-def test_make_bayes_estimates_3d(tmp_path, s82_0_5_dir, s82_priors_dir, locus_file_path):
+def test_make_bayes_estimates_3d(s82_0_5_dir, s82_priors_dir, locus_file_path):
     """End to end test of the Make Bayes Estimates 3D for S82 HP(5,0)"""
-    LSSTlocus = lt.LSSTsimsLocus(fixForStripe82=False, datafile=locus_file_path)
+    LSSTlocus = lt.LSSTsimsLocus(datafile=locus_file_path)
     OKlocus = LSSTlocus[(LSSTlocus["gi"] > 0.2) & (LSSTlocus["gi"] < 3.55)]
     locusData = lt.subsampleLocusData(OKlocus, kMr=10, kFeH=2)
 
@@ -45,17 +28,18 @@ def test_make_bayes_estimates_3d(tmp_path, s82_0_5_dir, s82_priors_dir, locus_fi
     ArGridList, locus3DList = lt.get3DmodelList(locusData, fitColors)
     globalParams = GlobalParams(fitColors, locusData, ArGridList, locus3DList)
 
-    quantile_cols = [f"{statisticsName}_quantile_{quantile}" for statisticsName in ["Mr","FeH","Ar","Qr"] for quantile in ["lo","median","hi"]]
-    estimate_cols = sorted([*quantile_cols,"MrdS","FeHdS","ArdS"])
-    col_names = ["glon","glat","chi2min",*estimate_cols]
-    meta = npd.NestedFrame.from_dict({ col: pd.Series([], dtype=np.float32) for col in col_names })
-
     s82_stripe_catalog = lsdb.read_hats(s82_0_5_dir)
     prior_map_catalog = lsdb.read_hats(s82_priors_dir)
-
-    delayed_global_params = delayed(globalParams)
-
     merge_lazy = s82_stripe_catalog.merge_map(
-        prior_map_catalog, merging_function, globalParams=delayed_global_params, meta=meta
+        prior_map_catalog, merging_function, globalParams=globalParams, meta=getEstimatesMeta()
     )
     result = merge_lazy.compute()
+
+    assert len(result) == len(s82_stripe_catalog.compute())
+    finite = np.isfinite(result["Mr_quantile_median"])
+    assert finite.mean() > 0.95
+    assert np.all(result["Mr_quantile_lo"][finite] <= result["Mr_quantile_median"][finite])
+    assert np.all(result["Mr_quantile_median"][finite] <= result["Mr_quantile_hi"][finite])
+    assert np.all(
+        (result["FeH_quantile_median"][finite] >= -2.5) & (result["FeH_quantile_median"][finite] <= 0.5)
+    )

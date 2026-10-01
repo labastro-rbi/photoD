@@ -4,11 +4,13 @@ Base class of any column map.
 
 from dataclasses import dataclass
 from pathlib import Path
+
 import yaml
 
 
 @dataclass
 class ColumnMap:
+    """Named set of column names, with the purpose it serves."""
 
     name: str = "Name of column map"
     purpose: str = "Purpose of map"
