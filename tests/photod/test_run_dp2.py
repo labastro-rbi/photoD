@@ -21,6 +21,8 @@ from photod.priors import getBayesConstants
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "run_dp2.py"
 DATA = Path(__file__).resolve().parents[2] / "data"
+PRIORS = DATA / "priors_dp2.npz"
+needsPriors = pytest.mark.skipif(not PRIORS.exists(), reason="the prior maps do not ship here")
 # the command line of a run, as far as what it asks of the fit is concerned
 SETTINGS = dict(
     catalog="/data/dp2",
@@ -104,25 +106,6 @@ def test_a_sightline_no_3d_map_covers_keeps_the_flat_prior(run, tmp_path):
     assert stars["Ar"].to_numpy()[0] == 0.5, "a measured column no longer bounds the extinction"
 
 
-def test_the_dust_curves_that_ship_leave_their_uncovered_sky_flat(run):
-    """The same on the real file, which covers 22400 of the 196608 pixels of its grid."""
-    curves = run.readCurves(str(DATA / "dust_dp2.npz"))
-    index = np.asarray(curves["index"])
-    ra, dec = zip(
-        *[
-            pixelCentre(pixel, curves["order"])
-            for pixel in (int(np.argmax(index >= 0)), int(np.argmin(index)))
-        ],
-        strict=True,
-    )
-    stars = run.withDust(pd.DataFrame({"ra": ra, "dec": dec, "Ar": [9.0, 9.0]}), curves)
-
-    covered, uncovered = stars["dustIndex"].to_numpy()
-    assert curves["shapes"][covered][-1] == 1, "a covered sightline no longer carries all of its dust"
-    assert np.all(curves["shapes"][uncovered] == 0), "an uncovered sightline came with dust on it"
-    assert stars["Ar"].to_numpy()[1] == 9.0, "an uncovered star had its extinction bounded"
-
-
 def test_the_fit_reads_the_curves_the_sightlines_were_looked_up_in(run, tmp_path, monkeypatch):
     """The flat row is only the flat row if the table the fit reads is the one the index was resolved in."""
     monkeypatch.setattr(run, "PARAMS", {})
@@ -146,6 +129,7 @@ def test_an_nside_that_is_not_a_power_of_two_is_an_error(run, tmp_path):
         run.readCurves(str(dustFile(tmp_path / "odd.npz", nside=12)))
 
 
+@needsPriors
 def test_a_star_with_no_prior_map_is_kept_and_flagged(run, monkeypatch):
     """The maps cover the footprint they were built for, which is not the one the stars came from.
 
@@ -154,7 +138,7 @@ def test_a_star_with_no_prior_map_is_kept_and_flagged(run, monkeypatch):
     own dust file covers, so the sky it does not reach is not a hypothetical.
     """
     globalParams = SimpleNamespace(computeMrTrue=True, fitColors=("ug", "gr", "ri", "iz", "zy"))
-    with np.load(DATA / "priors_dp2.npz") as data:
+    with np.load(PRIORS) as data:
         index, order = np.asarray(data["index"]), int(data["order"])
     covered = np.where(index >= 0)[0][:2]
     missing = np.where(index < 0)[0][:2]
@@ -423,13 +407,14 @@ def test_prior_maps_built_on_another_grid_are_refused(run, tmp_path):
         run.checkPriorFile(tmp_path / "odd.npz")
 
 
+@needsPriors
 def test_the_prior_maps_that_ship_are_taken_as_they_come(run):
     """They record neither the grid nor the decades, and reading them must not depend on either.
 
     Only the metadata of the file is touched here: npz members are read when they are asked for, and the
     maps themselves are 140 MB.
     """
-    run.checkPriorFile(DATA / "priors_dp2.npz")
+    run.checkPriorFile(PRIORS)
 
 
 def test_the_pool_is_kept_fed_rather_than_handed_the_whole_survey(run, monkeypatch):
@@ -780,10 +765,11 @@ def test_the_pool_says_when_it_cannot_replace_its_workers(run, monkeypatch, caps
     assert capsys.readouterr().out == "", "an interpreter that can replace a worker was warned anyway"
 
 
+@needsPriors
 def test_the_batch_memory_budget_reaches_the_fit(run, monkeypatch):
     """--batch-bytes bounds one batch of one worker, and has to arrive at the call that makes the batch."""
     globalParams = SimpleNamespace(computeMrTrue=True, fitColors=("ug", "gr", "ri", "iz", "zy"))
-    with np.load(DATA / "priors_dp2.npz") as data:
+    with np.load(PRIORS) as data:
         index, order = np.asarray(data["index"]), int(data["order"])
     covered = int(np.where(index >= 0)[0][0])
     maps = np.zeros((int(index.max()) + 1, 4, 4, 4))

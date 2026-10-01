@@ -37,9 +37,8 @@ Nothing in the package reads them; `src/photod` is the code that runs.
 The package needs `lsdb`, `jax`, `astropy` and `scipy`, and imports `numpy`, `pandas`, `nested-pandas`,
 `mocpy` and `pyyaml` itself rather than leaving them to those; `pip install -e .` brings in all of them.
 Install it from a
-clone rather than as a wheel: the locus tables, the prior maps and the dust curves live in `data/` of the
-repository rather than inside the package, and that is where the defaults look for them. `[dust]` adds
-`dustmaps`, which only `scripts/make_dust_curves.py` needs, and which fetches gigabytes of map data of its own.
+clone rather than as a wheel: the locus tables and the prior maps live in `data/` of the
+repository rather than inside the package, and that is where the defaults look for them.
 
 ### Running on Rubin DP2
 
@@ -200,27 +199,9 @@ then implies more dust in front of the star than a dwarf one, and the map can co
 this prior are quadratic in A_r, so they combine into one quadratic and the fit keeps its single pass over the
 (locus, A_r) grid: the run takes as long as before.
 
-`scripts/make_dust_curves.py` tabulates the shape of the extinction, A_r(mu) / A_r(total), on a HEALPix grid;
-each star scales it by its own A_r from the 2D map, so the band and the calibration of the 3D map cancel and
-any of them can be used. Sightlines the 3D map does not reach keep the flat prior: the file marks them, and
-the run gives them a flat curve, which is what turns the Gaussian back into the flat prior.
-
-No single 3D map covers the sky, so `make_dust_curves.py` takes several and lets the first with data win each
-sightline, in the order Marshall in the inner plane, Chen, Bayestar above declination -30, and Edenhofer for
-what is left, which is used only above |b| = 10 because it stops at 2 kpc. That covers all of DP2; in the
-file that ships here Bayestar holds 16,000 of the 22,400 sightlines, Edenhofer 3,400, Marshall 3,100 and Chen
-none.
-
-It also writes the total column, which the run takes as the bound on a star's A_r wherever it is smaller than
-the 2D one. That matters towards the bulge, where the 2D map integrates the dust to infinity and reports tens
-of magnitudes about stars that sit in front of it. Only a map that reaches past the far side of the disc may
-write one: Marshall stops at 10 kpc and Chen at 6 kpc, and their totals would bound the distant stars of
-those sightlines below the truth, so of the four only Bayestar writes a total.
-
-```
-python scripts/make_dust_curves.py --footprint <object_lc/skymap.6.fits> --out dust_dp2.npz
-python scripts/run_dp2.py --catalog ... --priors ... --out ... --dust-curves dust_dp2.npz
-```
+The curves themselves no longer ship here, and the script that built them has been removed: no run uses the
+3D prior. `--dust-curves` still takes such a file if one is built elsewhere, and `readCurves` in
+`scripts/run_dp2.py` documents the format it expects.
 
 The A_r grid has to reach the extinction of the field first. The `ArLarge` grid of `get3DmodelList` stops at
 2.5 mag, so in a field with A_r = 5.5 two stars in five have their A_r pinned at the edge and their distances

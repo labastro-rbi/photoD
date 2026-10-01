@@ -39,7 +39,7 @@ class GlobalParams:
         Shapes A_r(mu) / A_r(total) of a 3D dust map, one row per sightline, on the grid ArCurveMu. With them
         the A_r prior is no longer flat: locus point i puts the star at mu = r - Mr_i - A_r, so the map gives
         the extinction consistent with that distance and the prior becomes a Gaussian around it. A row of
-        zeros, or a star without a dust map, falls back to the flat prior. See scripts/make_dust_curves.py.
+        zeros, or a star without a dust map, falls back to the flat prior.
     ArCurveMu : ndarray, optional
         Distance moduli of the ArCurves columns.
     ArCurveIndexColumn : str, optional

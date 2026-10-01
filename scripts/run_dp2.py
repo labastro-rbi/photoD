@@ -8,7 +8,7 @@ Options: --cone RA DEC RADIUS_DEG to run a piece of sky, --workers for the proce
 between them), --batch-size and --batch-bytes for the JAX setup, the second of them a memory budget for one
 batch of one worker, --chunk for how many partitions a process handles before it is replaced, --floor for the
 colour-error floor (0.03 mag), --no-dust-map to run the flat A_r prior, which reads no extinction column
-at all, --dust-curves to shape that prior with a 3D dust map (scripts/make_dust_curves.py), which is off
+at all, --dust-curves to shape that prior with a 3D dust map, which is off
 by default and matters at low Galactic latitude, --ar-scale to put an extinction column built with another
 A_r/E(B-V) coefficient on this code's scale, and --ar-max for the top of the A_r grid, which has to be above
 the extinction of the field.
@@ -73,7 +73,6 @@ from photod.priors import getBayesConstants, priorGridFromMaps  # noqa: E402
 
 DATA = Path(__file__).resolve().parents[1] / "data"
 PRIOR_FILE = DATA / "priors_dp2.npz"
-DUST_FILE = DATA / "dust_dp2.npz"
 BANDS = "ugrizy"
 COLORS = ("ug", "gr", "ri", "iz", "zy")
 # A_r per unit of the object table's ebv, which is the SFD map as it was published. Two things go into it: the
@@ -1006,9 +1005,8 @@ def main():
         "--dust-curves",
         default="",
         help="3D dust map to shape the A_r prior with, which is what matters at low Galactic latitude. Off "
-        f"by default: the curves for the DP2 footprint ship as data/{DUST_FILE.name} and naming them turns "
-        "them on. Without them the A_r prior is still bounded by the extinction column, which comes from the "
-        "2D map and not the 3D one",
+        "by default, and no such file ships here. Without one the A_r prior is still bounded by the "
+        "extinction column, which comes from the 2D map and not the 3D one",
     )
     ap.add_argument(
         "--workers",
