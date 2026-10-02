@@ -168,7 +168,7 @@ def test_a_star_with_no_prior_map_is_kept_and_flagged(run, monkeypatch):
 
     assert len(estimates) == len(stars), "a star was dropped for the sky it sits in"
     assert sorted(estimates["objectId"]) == sorted(stars["objectId"])
-    flags = dict(zip(estimates["objectId"], estimates["flags"], strict=True))
+    flags = dict(zip(estimates["objectId"], estimates["fit_flags"], strict=True))
     assert all(flags[star] == FLAG_NO_PRIOR | FLAG_POOR_FIT for star in (3, 4)), "the rows do not say why"
     assert not any(flags[star] & FLAG_NO_PRIOR for star in (0, 1, 2)), "a fitted star was marked unfittable"
 

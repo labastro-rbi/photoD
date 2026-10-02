@@ -110,19 +110,19 @@ def brute_force(star, params, priorGrid):
     if params.computeMrTrue:
         MrTrue = np.where(params.Mr1d > 4, params.Mr1d, params.MrTrueTable)
     margs = {
-        "Mr": (params.Mr1d, pnorm(post.sum(axis=(0, 2)), params.dMr)),
+        "tLoc": (params.Mr1d, pnorm(post.sum(axis=(0, 2)), params.dMr)),
         "FeH": (params.FeH1d, pnorm(post.sum(axis=(1, 2)), params.dFeH)),
         "Ar": (A, pnorm(post.sum(axis=(0, 1)), params.dAr)),
         "Qr": histogram(MrTrue[:, :, None] + A, post),
     }
     if params.computeMrTrue:
-        margs["Mr_true"] = histogram(MrTrue, post.sum(axis=2))
+        margs["Mr"] = histogram(MrTrue, post.sum(axis=2))
     out = {"chi2min": chi2.min()}
     for name, (x, p) in margs.items():
         out.update(
             zip([f"{name}_quantile_{q}" for q in ("lo", "median", "hi")], quantiles(x, p), strict=True)
         )
-    out["MrdS"] = entropy(margs["Mr"][1], params.dMr) - entropy(
+    out["MrdS"] = entropy(margs["tLoc"][1], params.dMr) - entropy(
         pnorm(prior.sum(axis=0), params.dMr), params.dMr
     )
     out["FeHdS"] = entropy(margs["FeH"][1], params.dFeH) - entropy(
@@ -173,7 +173,7 @@ def test_empty_partition():
     estimates, _ = makeBayesEstimates3d(
         make_stars(locus).iloc[:0], np.ones((27, len(locus))), make_params(locus)
     )
-    assert len(estimates) == 0 and "Mr_quantile_median" in estimates.columns
+    assert len(estimates) == 0 and "tLoc_quantile_median" in estimates.columns
 
 
 def test_small_partitions():

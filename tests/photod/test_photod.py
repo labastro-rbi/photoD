@@ -36,10 +36,10 @@ def test_make_bayes_estimates_3d(s82_0_5_dir, s82_priors_dir, locus_file_path):
     result = merge_lazy.compute()
 
     assert len(result) == len(s82_stripe_catalog.compute())
-    finite = np.isfinite(result["Mr_quantile_median"])
+    finite = np.isfinite(result["tLoc_quantile_median"])
     assert finite.mean() > 0.95
-    assert np.all(result["Mr_quantile_lo"][finite] <= result["Mr_quantile_median"][finite])
-    assert np.all(result["Mr_quantile_median"][finite] <= result["Mr_quantile_hi"][finite])
+    assert np.all(result["tLoc_quantile_lo"][finite] <= result["tLoc_quantile_median"][finite])
+    assert np.all(result["tLoc_quantile_median"][finite] <= result["tLoc_quantile_hi"][finite])
     assert np.all(
         (result["FeH_quantile_median"][finite] >= -2.5) & (result["FeH_quantile_median"][finite] <= 0.5)
     )

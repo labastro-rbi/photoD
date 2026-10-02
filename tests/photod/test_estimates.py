@@ -135,7 +135,7 @@ def test_the_entropy_drop_is_in_bits():
             lambda p: -np.sum(np.where(p > 0, p, 1) * np.log2(np.where(p > 0, p, 1))) * params.dAr
         )  # noqa: E731
         assert_allclose(
-            estimates[bayes.cc.extinction_r_entropy_drop].to_numpy()[star],
+            results.statistics[bayes.cc.extinction_r_entropy_drop][star],
             bits(posterior) - bits(prior),
             rtol=2e-3,
             atol=2e-3,
@@ -195,14 +195,16 @@ def test_a_batch_is_kept_within_its_memory_budget():
 
 
 def test_the_distance_modulus_is_the_magnitude_less_the_reddened_absolute_one():
-    """DM = r - (Mr + A_r), and Qr is the posterior of Mr + A_r, so the quantiles swap ends."""
+    """DM = r - (Mr + A_r). Qr is that posterior, and it is no longer written, so read it inside."""
     catalog, priorGrid, params = setup()
-    estimates, _ = makeBayesEstimates3d(catalog, priorGrid, params, batchSize=8)
+    estimates, results = makeBayesEstimates3d(
+        catalog, priorGrid, params, batchSize=8, returnPosteriors=True
+    )
     rmag = catalog["rmag"].to_numpy()
     for low, high in (("lo", "hi"), ("median", "median"), ("hi", "lo")):
         assert_allclose(
             estimates[f"{bayes.cc.distance_modulus}_quantile_{low}"],
-            rmag - estimates[f"{bayes.cc.abs_mag_ext_r}_quantile_{high}"],
+            rmag - results.statistics[f"{bayes.cc.abs_mag_ext_r}_quantile_{high}"],
             atol=1e-6,
         )
     assert np.all(
@@ -263,7 +265,7 @@ def test_a_lopsided_posterior_is_flagged():
     """
     catalog, priorGrid, params = setup()
     estimates, _ = makeBayesEstimates3d(catalog, priorGrid, params, batchSize=8)
-    low, median, high = (estimates[f"Mr_true_quantile_{q}"].to_numpy() for q in ("lo", "median", "hi"))
+    low, median, high = (estimates[f"Mr_quantile_{q}"].to_numpy() for q in ("lo", "median", "hi"))
     ratio = (high - median) / np.where(median - low > 0, median - low, np.nan)
     flagged = (estimates[bayes.cc.quality_flags].to_numpy() & FLAG_TWO_BRANCHES) > 0
     assert np.all(flagged[np.isfinite(ratio) & (ratio > 3.0)])
@@ -292,12 +294,6 @@ def test_the_r_error_widens_the_distance_modulus():
         widened[f"{bayes.cc.distance_modulus}_quantile_median"].to_numpy(float),
         rtol=1e-6,
     )
-    # Qr itself is untouched: only the distance modulus knows about the magnitude error
-    assert_allclose(
-        exact[f"{bayes.cc.abs_mag_ext_r}_quantile_hi"].to_numpy(float),
-        widened[f"{bayes.cc.abs_mag_ext_r}_quantile_hi"].to_numpy(float),
-        rtol=1e-6,
-    )
     # and a catalogue without the column is fitted as it was before the column was read
     assert "rmagErr" not in catalog.columns
     assert_allclose(bayes.magnitudeError(catalog), 0.0)
@@ -312,6 +308,9 @@ def test_a_collapsed_posterior_is_flagged():
         for name in estimates.columns
         if name.endswith(("_lo", "_median", "_hi"))
     }
+    # Qr is computed but no longer written, so the widths it carries are seeded rather than read.
+    for end in ("lo", "median", "hi"):
+        statistics[f"{bayes.cc.abs_mag_ext_r}_quantile_{end}"] = np.full(len(estimates), 5.0)
     # Widths are set here rather than taken from the fit: this locus is a handful of grid points and the
     # colour errors are 0.02, so its posteriors are narrower than any real star's and would all be flagged.
     statistics[f"{bayes.cc.abs_mag_ext_r}_quantile_lo"][:] = 5.0 - 2 * bayes.COLLAPSED_WIDTH
