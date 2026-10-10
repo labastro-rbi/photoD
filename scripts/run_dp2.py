@@ -23,6 +23,9 @@ recorded beside the answers, and a resume that asks for anything else is refused
 two fits inside one catalog. A partition that fails takes only itself down, and the run ends with a non-zero
 status saying how much of the sky is missing.
 
+A prepared catalog carries objectId, rmag, the colours and their errors, and its position as ra and dec or,
+as the survey names it, coord_ra and coord_dec.
+
 Input columns (DP2 object table): coord_ra, coord_dec, objectId, <band>_psfFlux and _psfFluxErr for ugrizy,
 refExtendedness, ebv. Point sources are refExtendedness == 0 with r between 16.5 and 23.5 and S/N > 10 in r,
 > 3 in g and i. A colour whose bands are not both at S/N > 3 is set to 0 with error 9.99 and carries no
@@ -101,8 +104,8 @@ WINDOW = 2  # partitions in the pool per worker, so that a worker always has the
 RUN_FILE = "photod_run.json"  # what the run was configured with, beside the answers it wrote
 # columns of the layout of a HATS catalog rather than of its stars, which the answers are given afresh
 HATS_LAYOUT = ("_healpix_29", "Norder", "Dir", "Npix")
-# answers that are the catalog's own values already, read from it or made from its fluxes
-IDENTITY = ("objectId", "ra", "dec", "rmag")
+# the names a prepared catalog may give its position: the ones the answers use, or the survey's
+POSITION_NAMES = (("ra", "dec"), ("coord_ra", "coord_dec"))
 PARTIAL = ".partial"  # where a partition is written before it is renamed into the dataset
 SHARDS = ".shards"  # where each process of a --shard run marks itself finished
 # ProcessPoolExecutor learned to replace a worker in Python 3.11, and the package supports 3.10 as well.
@@ -181,26 +184,49 @@ def inputColumns(available, arColumn):
     arColumn is None when the fit reads no extinction at all, which is what the flat A_r prior does, and a
     prepared catalog is then not asked for a column nothing will look at.
     """
-    if set(FIT_COLUMNS) <= set(available):
+    fit = preparedColumns(available)
+    if fit is not None:
         # the r error widens the distance modulus, and a catalogue that carries it should have it used; one
         # that does not is fitted exactly as before, with r taken as exact
         found = rmagErrorColumn(available)
         extra = [found] if found else []
         if arColumn is None:
-            return list(FIT_COLUMNS) + extra
+            return fit + extra
         extinction = [c for c in (arColumn, "ebv") if c in available]
         if not extinction:
             raise SystemExit(
                 f"the prepared catalog carries no extinction column: it has neither {arColumn} nor ebv, "
                 "so name the one it does have with --ar-column"
             )
-        return FIT_COLUMNS + extinction[:1] + extra
+        return fit + extinction[:1] + extra
     missing = [c for c in RAW_COLUMNS if c not in available]
     if missing:
         raise SystemExit(
             f"the catalog has neither the colours nor the fluxes to make them: missing {missing}"
         )
     return RAW_COLUMNS
+
+
+def positionColumns(available):
+    """The columns a catalog holds its position in, as (ra, dec), or None where it has neither pair."""
+    for pair in POSITION_NAMES:
+        if set(pair) <= set(available):
+            return pair
+    return None
+
+
+def preparedColumns(available):
+    """FIT_COLUMNS as this catalog names them, or None for a catalog that does not carry the colours.
+
+    A catalog prepared from the survey keeps the survey's coord_ra and coord_dec as often as it renames them,
+    and refusing it for that would send it down the path for the raw object table, which then asks for fluxes
+    it does not have.
+    """
+    position = positionColumns(available)
+    if position is None:
+        return None
+    named = [dict(zip(("ra", "dec"), position, strict=True)).get(c, c) for c in FIT_COLUMNS]
+    return named if set(named) <= set(available) else None
 
 
 def keptColumns(available, read):
@@ -212,7 +238,7 @@ def keptColumns(available, read):
     that only what the fit reads is kept. The columns of the HATS layout are left out, since the answers are
     given their own.
     """
-    if set(FIT_COLUMNS) <= set(available):
+    if preparedColumns(available) is not None:
         return [c for c in available if c not in HATS_LAYOUT]
     return list(read)
 
@@ -220,10 +246,10 @@ def keptColumns(available, read):
 def withInputColumns(estimates, inputs, source=""):
     """The answers with the catalog's own columns beside them, each row matched to its star by objectId.
 
-    objectId, ra, dec and rmag are in the answers already, as the catalog has them or as they were made from
-    its fluxes, and are not written twice; any other catalog column with the name of an answer is written as
-    input_<name>. The columns keep the types the catalog gives them. Read into numpy, an integer column with
-    a missing value in it would become a float in that partition and stay an integer in the next, and a
+    objectId, the position and rmag are in the answers already, as the catalog has them or as they were made
+    from its fluxes, and are not written twice; any other catalog column with the name of an answer is written
+    as input_<name>. The columns keep the types the catalog gives them. Read into numpy, an integer column
+    with a missing value in it would become a float in that partition and stay an integer in the next, and a
     catalog whose partitions disagree on a type does not read back as one.
     """
     ids = pd.Index(inputs.column("objectId").to_numpy())
@@ -233,7 +259,8 @@ def withInputColumns(estimates, inputs, source=""):
             "--no-input-columns"
         )
     taken = inputs.take(ids.get_indexer(estimates["objectId"].to_numpy()))
-    taken = taken.drop_columns([c for c in IDENTITY if c in taken.column_names])
+    copies = ("objectId", "rmag", *(positionColumns(taken.column_names) or ()))
+    taken = taken.drop_columns([c for c in copies if c in taken.column_names])
     taken = taken.rename_columns([f"input_{c}" if c in estimates.columns else c for c in taken.column_names])
     return pd.concat([estimates.reset_index(drop=True), taken.to_pandas(types_mapper=pd.ArrowDtype)], axis=1)
 
@@ -248,8 +275,9 @@ def prepareStars(df, curves=None, arColumn="", arScale=1.0):
     arScale puts a named column on this code's scale, as --ar-scale describes; an extinction made here from
     ebv already carries AR_PER_EBV and is left alone.
     """
-    if set(FIT_COLUMNS) <= set(df.columns):
-        out = pd.DataFrame({c: df[c].to_numpy() for c in FIT_COLUMNS})
+    fit = preparedColumns(df.columns)
+    if fit is not None:
+        out = pd.DataFrame({c: df[name].to_numpy() for c, name in zip(FIT_COLUMNS, fit, strict=True)})
         found = rmagErrorColumn(df.columns)
         if found:
             out[RMAG_ERROR_NAMES[0]] = df[found].to_numpy(dtype=float)
@@ -472,6 +500,21 @@ def priorMaps(data):
     return np.where(kde == 0, 0.0, out).astype(np.float32)
 
 
+def priorMapsHeader(path):
+    """The type and shape of the maps of a prior file, read from the header of the array, not the array.
+
+    Full-resolution maps are gigabytes, and all that is wanted here is which kind of file a run is reading.
+    """
+    import zipfile
+
+    with zipfile.ZipFile(path) as archive, archive.open("kde.npy") as member:
+        version = np.lib.format.read_magic(member)
+        fmt = np.lib.format
+        header = fmt.read_array_header_1_0 if version == (1, 0) else fmt.read_array_header_2_0
+        shape, _, dtype = header(member)
+    return np.dtype(dtype), shape
+
+
 def checkPriorFile(path):
     """Check a prior file against the code that is about to read it, before the pool starts.
 
@@ -489,7 +532,13 @@ def checkPriorFile(path):
             f"the maps in {path} were built with {said}: rebuild them, or fit with the code they came with"
         )
     grid = "built on the grid this code reads" if constants else "built on a grid the file does not record"
-    print(f"prior maps from {path}: {grid}, {decades:g} decades of log in a compact file")
+    # said in the log, since a run on the compact maps and one on the full ones otherwise look the same
+    dtype, shape = priorMapsHeader(path)
+    if dtype == np.uint8:
+        kind = f"compact maps, a byte of log over {decades:g} decades on every other grid point"
+    else:
+        kind = f"full-resolution {dtype} maps on {shape[2]} x {shape[3]} grid points"
+    print(f"prior maps from {path}: {grid}; {kind}, for {shape[0]} sky pixels")
 
 
 def unpackPriors(path):
