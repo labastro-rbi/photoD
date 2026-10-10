@@ -37,7 +37,10 @@ entropy the colours took out of the prior, ``chi2min``, and a ``flags`` column w
 knowing about the answer. The fit is parametrised by tLoc, the coordinate along the locus, so
 ``Mr_quantile_*`` holds tLoc and the absolute magnitude is ``Mr_true_quantile_*``. ``multimodality`` is how
 much of the distance modulus posterior lies in a second peak: zero when the posterior has one, however skewed,
-and for two a lower bound on the weight of the smaller.
+and for two a lower bound on the weight of the smaller. Beside the estimates each row carries the columns of
+the catalog row it was fitted from (all of a prepared catalog; of the survey object table, the ones the fit
+reads), a catalog column named like an estimate written as ``input_<name>``; ``--no-input-columns`` leaves
+them out.
 
 The README of the repository is the reference for the options, the flag bits, the 3D dust prior and what was
 measured against Gaia parallaxes and DESI spectra. The pages below predate this pipeline and show the

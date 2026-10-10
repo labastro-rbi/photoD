@@ -34,6 +34,7 @@ SETTINGS = dict(
     no_dust_map=False,
     dust_curves="/data/dust.npz",
     cone=None,
+    no_input_columns=False,
 )
 
 
@@ -597,6 +598,70 @@ def test_an_unscaled_run_records_no_scale_so_a_catalog_fitted_before_it_resumes(
     assert "arScale" not in flat, "a fit that reads no extinction recorded a scale for one"
 
 
+def inputTable(objectIds, qFlag):
+    """A prepared catalog's rows for the given stars, with columns the fit does not read and one named like
+    an answer."""
+    import pyarrow as pa
+
+    n = len(objectIds)
+    return pa.table(
+        {
+            "objectId": pa.array(objectIds, pa.int64()),
+            "ra": pa.array(np.zeros(n)),
+            "dec": pa.array(np.zeros(n)),
+            "rmag": pa.array(np.full(n, 20.0), pa.float32()),
+            "rErr": pa.array(0.01 * (1 + np.asarray(objectIds)), pa.float32()),
+            "q_flag": pa.array(qFlag, pa.int64()),
+            "chi2min": pa.array(np.full(n, -1.0)),
+        }
+    )
+
+
+def test_the_catalog_columns_are_written_beside_the_answers(run):
+    """Matched by objectId whatever order either comes in, each written once, and in the catalog's types."""
+    answers = estimatesFrame([10.0, 11.0, 12.0], [0.0, 1.0, 2.0])
+    inputs = inputTable([2, 0, 1], [None, 5, 7])
+    out = run.withInputColumns(answers, inputs, "part.parquet")
+
+    assert list(out.columns) == list(answers.columns) + ["rErr", "q_flag", "input_chi2min"]
+    assert np.allclose(out["rErr"].to_numpy(float), 0.01 * (1 + out["objectId"].to_numpy()))
+    assert out["q_flag"].tolist()[:2] == [5, 7] and pd.isna(out["q_flag"].tolist()[2])
+    assert str(out["q_flag"].dtype) == "int64[pyarrow]", "a missing value turned the integers into floats"
+    assert np.all(out["chi2min"].to_numpy() == answers["chi2min"].to_numpy()), "an answer was overwritten"
+    with pytest.raises(ValueError, match="--no-input-columns"):
+        run.withInputColumns(answers, inputTable([0, 0, 1], [1, 2, 3]))
+
+
+def test_a_prepared_catalog_is_kept_whole_and_the_survey_table_as_read(run):
+    """The survey object table has over a thousand columns, so of that only what the fit reads is kept."""
+    prepared = run.FIT_COLUMNS + ["Ar_SFD", "rErr", "q_flag", "_healpix_29", "Norder", "Dir", "Npix"]
+    read = run.inputColumns(prepared, "Ar_SFD")
+    assert run.keptColumns(prepared, read) == run.FIT_COLUMNS + ["Ar_SFD", "rErr", "q_flag"]
+    survey = run.RAW_COLUMNS + ["shape_xx", "_healpix_29"]
+    assert run.keptColumns(survey, run.inputColumns(survey, "Ar")) == run.RAW_COLUMNS
+    assert run.runConfiguration(SimpleNamespace(**SETTINGS))["inputColumns"] is True
+    alone = run.runConfiguration(SimpleNamespace(**(SETTINGS | {"no_input_columns": True})))
+    assert "inputColumns" not in alone, "a run without them would no longer resume one written before them"
+
+
+def test_partitions_with_the_catalog_columns_read_back_as_one_catalog(run, tmp_path):
+    """One partition with a missing integer and one without must still agree on its type."""
+    import lsdb
+    from hats.pixel_math import HealpixPixel
+
+    base = tmp_path / "photod"
+    pixels = [HealpixPixel(3, 0), HealpixPixel(3, 5)]
+    for pixel, flags in zip(pixels, ([None, 1, 2, 3], [4, 5, 6, 7]), strict=True):
+        answers = estimatesFrame(*zip(*[pixelCentre(pixel.pixel * 4 + c, 4) for c in range(4)], strict=True))
+        answers["objectId"] += 4 * pixel.pixel
+        inputs = inputTable(answers["objectId"].tolist(), flags)
+        run.writePartition(base, pixel, run.withInputColumns(answers, inputs))
+    assert run.writeCatalogMetadata(base, "photod", pixels, 8) is True
+    back = lsdb.open_catalog(base).compute()
+    assert len(back) == 8 and {"rErr", "q_flag", "input_chi2min"} <= set(back.columns)
+    assert back["q_flag"].isna().sum() == 1
+
+
 def test_a_resume_that_asks_for_another_fit_is_refused(run, tmp_path):
     """A partition already written is kept whatever this run asked for, so the two have to agree.
 
@@ -625,10 +690,18 @@ def test_a_resume_that_asks_for_another_fit_is_refused(run, tmp_path):
         ("cone", [30.0, 15.0, 1.0]),
         ("catalog", "/data/dp3"),
         ("ar_scale", 0.86),
+        ("no_input_columns", True),
     ):
         other = run.runConfiguration(SimpleNamespace(**(settings | {name: value})))
         with pytest.raises(SystemExit, match="--overwrite"):
             run.recordConfiguration(base, other)
+
+    # and the other way round: a setting the record holds and this run no longer asks for
+    scaled = run.runConfiguration(SimpleNamespace(**(settings | {"ar_scale": 0.86})))
+    (base / run.RUN_FILE).write_text(json.dumps(scaled))
+    with pytest.raises(SystemExit, match="arScale"):
+        run.recordConfiguration(base, wanted)
+    (base / run.RUN_FILE).write_text(json.dumps(wanted))
 
     # how the work is divided up does not change an answer, so a run must be free to finish elsewhere
     divided = settings | {"workers": 8, "chunk": 10, "batch_size": 4000, "batch_bytes": 1 << 30}
