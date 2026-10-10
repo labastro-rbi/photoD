@@ -28,6 +28,11 @@ one per cent of the time. Twelve per GPU on four H100s fitted 110 million stars 
 per GPU, which is the rate a single process reaches on the same partitions, so the other eleven bought
 nothing and cost forty-eight processes of memory instead of four.
 
+A batch of each worker is bounded by ``--batch-bytes``, 16 GB by default. Large batches are what make the fit
+fast, the stars on a deep A_r grid most of all, and a batch holds well under half of its bound: a DP2 worker
+peaked at 6.2 GB of GPU memory, and two of them shared an 80 GB H100 at 18 GB. On a smaller GPU, or one
+shared with other work, give it less.
+
 ``notebooks/run_dp2.ipynb`` walks through the same run on one field first, with the checks worth making on
 the answer, and then over the survey.
 

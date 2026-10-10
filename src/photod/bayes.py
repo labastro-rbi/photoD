@@ -37,9 +37,12 @@ QUANTILE_NAMES = ("lo", "median", "hi")
 # batch size serve a locus of any size and a field of any extinction: bounding the plane alone leaves the
 # locus to decide how much memory a run needs, and the full locus of DP2 on a deep A_r grid then asks for
 # tens of gigabytes per batch.
-# The budget is for one batch of one process, and a run has as many processes as it has workers, so it is
-# set well below the memory of a machine rather than near it.
-BATCH_BYTES = 2 << 30
+# The budget is for one batch of one process, and a run has as many processes as it has workers. It is a
+# bound worked out at BATCH_BYTES_PER_CELL, and the fit holds far less than that: at 16 GB a DP2 process
+# peaked at 6.2 GB of GPU memory, and two of them shared an 80 GB H100 at 18 GB. Large batches are what make
+# the fit fast, the stars on a deep A_r grid most of all, so a GPU with less memory, or one shared with other
+# work, is the case for giving a run less rather than the default.
+BATCH_BYTES = 16 << 30
 BATCH_BYTES_PER_CELL = 12  # the posterior in float32, and the temporaries it is built from
 # Bits of the fit_flags column. A star with none of them set is one the model describes, on a single branch,
 # with every colour measured and nothing of it against the edge of the grid.
