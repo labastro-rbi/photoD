@@ -3,8 +3,8 @@ Run the fit on a survey
 
 ``scripts/run_dp2.py`` is the entry point for a whole survey: it reads point sources from the object
 catalog partition by partition, builds the colours and their errors from the PSF fluxes, fits them against
-the locus in ``data/LSSTlocus_10Gyr_fix.txt`` with the TRILEGAL prior maps that ship in ``data/``, and
-writes the answers as a HATS catalog. The A_r prior is bounded by the extinction column and is not shaped by
+the locus ``photod.locus.RUN_LOCUS_FILE`` names with the TRILEGAL prior maps ``--priors`` names, and writes
+the answers as a HATS catalog. The A_r prior is bounded by the extinction column and is not shaped by
 the 3D dust curves unless ``--dust-curves`` names them.
 
 .. code-block:: bash
@@ -31,17 +31,32 @@ nothing and cost forty-eight processes of memory instead of four.
 ``notebooks/run_dp2.ipynb`` walks through the same run on one field first, with the checks worth making on
 the answer, and then over the survey.
 
-Per star the result carries the 16th, 50th and 84th percentiles of the fitted absolute magnitude, the
-metallicity, the extinction, the reddened absolute magnitude ``Qr`` and the distance modulus ``DM``, the
-entropy the colours took out of the prior, ``chi2min``, and a ``flags`` column with one bit per thing worth
-knowing about the answer. The fit is parametrised by tLoc, the coordinate along the locus, so
-``Mr_quantile_*`` holds tLoc and the absolute magnitude is ``Mr_true_quantile_*``. ``multimodality`` is how
-much of the distance modulus posterior lies in a second peak: zero when the posterior has one, however skewed,
-and for two a lower bound on the weight of the smaller. Beside the estimates each row carries the columns of
-the catalog row it was fitted from (all of a prepared catalog; of the survey object table, the ones the fit
-reads), a catalog column named like an estimate written as ``input_<name>``; ``--no-input-columns`` leaves
-them out.
+Per star the result carries ``objectId``, ``ra``, ``dec`` and ``rmag``; ``chi2min``, the chi-squared of the
+best fit; ``fit_flags``, one bit per thing worth knowing about the answer; ``multimodality``; and for the
+absolute magnitude ``Mr``, the metallicity ``FeH``, the extinction ``Ar``, the distance modulus ``DM`` and
+``tLoc`` the 16th, 50th and 84th percentiles and the standard deviation of the posterior, as
+``<name>_quantile_lo``, ``_quantile_median``, ``_quantile_hi`` and ``<name>_std``. tLoc is the coordinate
+along the locus that the fit is parametrised by. It is the absolute magnitude below the turn-off and not
+above it, so the absolute magnitude is ``Mr``. The interval and the standard deviation of ``DM`` include the
+error on r. ``multimodality`` is how much of the distance modulus posterior lies in a second peak: zero when
+the posterior has one, however skewed, and for two a lower bound on the weight of the smaller.
 
-The README of the repository is the reference for the options, the flag bits, the 3D dust prior and what was
-measured against Gaia parallaxes and DESI spectra. The pages below predate this pipeline and show the
+Beside the estimates each row carries the columns of the catalog row it was fitted from: every column of a
+prepared catalog, and of the survey object table the ones the fit reads. A catalog column named like an
+estimate is written as ``input_<name>``, and ``--no-input-columns`` leaves them all out.
+
+=====  ==================================================================================================
+Bit    ``fit_flags``
+=====  ==================================================================================================
+1      a poor fit: ``chi2min`` above 100, or no answer at all
+2      the ``Mr`` posterior is lopsided, which is how a giant and a dwarf solution both survive
+4      [Fe/H] is against the end of the model grid, so it is a limit rather than a measurement
+8      A_r is against the top of what the grid and the dust map allow, and the distance goes wrong with it
+16     at least one colour was not measured and carried no weight in the fit
+32     no r magnitude, so neither a prior map nor a distance: the row carries no estimate
+64     no prior map for this part of the sky, so the fit was never run: no estimate either
+128    the posterior fell into a single grid cell: precise-looking and not to be trusted
+=====  ==================================================================================================
+
+``python scripts/run_dp2.py --help`` lists the options. The pages below predate this pipeline and show the
 library being driven directly, which is still how a single field or a handful of stars is best looked at.
