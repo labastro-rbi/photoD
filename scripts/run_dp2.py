@@ -10,8 +10,12 @@ batch of one worker, --chunk for how many partitions a process handles before it
 colour-error floor (0.03 mag), --no-dust-map to run the flat A_r prior, which reads no extinction column
 at all, --dust-curves to shape that prior with a 3D dust map, which is off
 by default and matters at low Galactic latitude, --ar-scale to put an extinction column built with another
-A_r/E(B-V) coefficient on this code's scale, and --ar-max for the top of the A_r grid, which has to be above
-the extinction of the field.
+A_r/E(B-V) coefficient on this code's scale, --ar-max for the top of the A_r grid, which has to be above
+the extinction of the field, and --no-input-columns to write the estimates alone.
+
+Beside its estimates each row carries the columns of the catalog row it was fitted from, so that an answer can
+be judged against what went into it: every column of a prepared catalog, and of the survey object table the
+ones listed below that the fit reads, since that table has over a thousand.
 
 A partition whose answers are already written is left alone, so a run that stopped part way is finished by
 repeating the command; --overwrite starts the result again from nothing. What the run was configured with is
@@ -95,6 +99,10 @@ PRIOR_DECADES = 8.0  # how far below its own peak a compact prior map is kept, f
 FAILURES_REPORTED = 20  # failed partitions named one by one, after which only the count is kept
 WINDOW = 2  # partitions in the pool per worker, so that a worker always has the next one waiting
 RUN_FILE = "photod_run.json"  # what the run was configured with, beside the answers it wrote
+# columns of the layout of a HATS catalog rather than of its stars, which the answers are given afresh
+HATS_LAYOUT = ("_healpix_29", "Norder", "Dir", "Npix")
+# answers that are the catalog's own values already, read from it or made from its fluxes
+IDENTITY = ("objectId", "ra", "dec", "rmag")
 PARTIAL = ".partial"  # where a partition is written before it is renamed into the dataset
 SHARDS = ".shards"  # where each process of a --shard run marks itself finished
 # ProcessPoolExecutor learned to replace a worker in Python 3.11, and the package supports 3.10 as well.
@@ -193,6 +201,41 @@ def inputColumns(available, arColumn):
             f"the catalog has neither the colours nor the fluxes to make them: missing {missing}"
         )
     return RAW_COLUMNS
+
+
+def keptColumns(available, read):
+    """The columns of the catalog that are written beside the answers.
+
+    A prepared catalog is kept whole. It is a table of the stars to fit, and what it carries beyond the
+    colours, a quality flag, another measurement or the truth of a simulation, is what an answer is judged
+    against. The survey object table is not: it has over a thousand columns, light curves among them, so of
+    that only what the fit reads is kept. The columns of the HATS layout are left out, since the answers are
+    given their own.
+    """
+    if set(FIT_COLUMNS) <= set(available):
+        return [c for c in available if c not in HATS_LAYOUT]
+    return list(read)
+
+
+def withInputColumns(estimates, inputs, source=""):
+    """The answers with the catalog's own columns beside them, each row matched to its star by objectId.
+
+    objectId, ra, dec and rmag are in the answers already, as the catalog has them or as they were made from
+    its fluxes, and are not written twice; any other catalog column with the name of an answer is written as
+    input_<name>. The columns keep the types the catalog gives them. Read into numpy, an integer column with
+    a missing value in it would become a float in that partition and stay an integer in the next, and a
+    catalog whose partitions disagree on a type does not read back as one.
+    """
+    ids = pd.Index(inputs.column("objectId").to_numpy())
+    if not ids.is_unique:
+        raise ValueError(
+            f"objectId repeats in {source}, so its columns cannot be matched to the answers: run with "
+            "--no-input-columns"
+        )
+    taken = inputs.take(ids.get_indexer(estimates["objectId"].to_numpy()))
+    taken = taken.drop_columns([c for c in IDENTITY if c in taken.column_names])
+    taken = taken.rename_columns([f"input_{c}" if c in estimates.columns else c for c in taken.column_names])
+    return pd.concat([estimates.reset_index(drop=True), taken.to_pandas(types_mapper=pd.ArrowDtype)], axis=1)
 
 
 def prepareStars(df, curves=None, arColumn="", arScale=1.0):
@@ -562,7 +605,7 @@ def separation(ra, dec, ra0, dec0):
 
 def fitAndWrite(
     source, pixel, base, priorPath, curvePath, setup, batchSize, batchBytes, cone, arColumn, arScale,
-    columns,
+    columns, keep=(),
 ):
     """Read one partition file, fit its stars and write them where the partition's HEALPix pixel belongs.
 
@@ -571,15 +614,16 @@ def fitAndWrite(
     a single star is read, and the results are far larger than the stars they came from, so collecting them
     for a separate writing step holds the survey in memory as well.
     """
-    frame = pq.read_table(source, columns=columns).to_pandas()
-    stars = prepareStars(frame, loadCurves(curvePath), arColumn, arScale)
-    del frame
+    table = pq.read_table(source, columns=columns)
+    stars = prepareStars(table.to_pandas(), loadCurves(curvePath), arColumn, arScale)
     if cone is not None and len(stars):
         ra, dec, radius = cone
         stars = stars[separation(stars["ra"].to_numpy(), stars["dec"].to_numpy(), ra, dec) <= radius]
     estimates = fitPartition(stars, priorPath, setup, batchSize, batchBytes)
     if not len(estimates):
         return 0
+    if keep:
+        estimates = withInputColumns(estimates, table.select(list(keep)), source)
     writePartition(base, pixel, estimates)
     return len(estimates)
 
@@ -662,7 +706,9 @@ def fitPartition(partition, priorPath, setup, batchSize, batchBytes=None):
     return npd.NestedFrame(pd.concat(pieces, ignore_index=True))
 
 
-def startWorker(base, priorPath, curvePath, setup, batchSize, batchBytes, cone, arColumn, arScale, columns):
+def startWorker(
+    base, priorPath, curvePath, setup, batchSize, batchBytes, cone, arColumn, arScale, columns, keep=()
+):
     """What every partition of this run needs, held once per worker process."""
     WORK.update(
         base=base,
@@ -675,6 +721,7 @@ def startWorker(base, priorPath, curvePath, setup, batchSize, batchBytes, cone, 
         arColumn=arColumn,
         arScale=arScale,
         columns=columns,
+        keep=keep,
     )
 
 
@@ -694,6 +741,7 @@ def runPartition(source):
         WORK["arColumn"],
         WORK["arScale"],
         WORK["columns"],
+        WORK["keep"],
     )
 
 
@@ -767,6 +815,11 @@ def runConfiguration(args):
     # record and a catalog fitted then still resumes; a scaled one is written down and cannot be mixed with it
     if not args.no_dust_map and float(args.ar_scale) != 1.0:
         configuration["arScale"] = float(args.ar_scale)
+    # The catalog's own columns change what a partition holds rather than any answer, but partitions that
+    # hold different columns do not read back as one catalog. Left out of the record when they are not
+    # written, which is how every run made before they were was written, so that such a run still resumes.
+    if not args.no_input_columns:
+        configuration["inputColumns"] = True
     return configuration
 
 
@@ -786,10 +839,12 @@ def recordConfiguration(base, configuration):
     answers = any(Path(str(base)).glob("dataset/Norder=*/Dir=*/Npix=*.parquet"))
     if path.exists() and answers:
         found = json.loads(path.read_text())
+        # both ways round: a setting that was recorded and is no longer asked for differs as much as one that
+        # is asked for and was never recorded
         differs = {
-            name: (found.get(name), value)
-            for name, value in configuration.items()
-            if found.get(name) != value
+            name: (found.get(name), configuration.get(name))
+            for name in sorted(found.keys() | configuration.keys())
+            if found.get(name) != configuration.get(name)
         }
         if differs:
             said = ", ".join(f"{name} {was!r} rather than {now!r}" for name, (was, now) in differs.items())
@@ -1045,6 +1100,12 @@ def main():
         default=2 << 30,
         help="memory one batch of the fit may take, per worker: a pool of several asks for that much each",
     )
+    ap.add_argument(
+        "--no-input-columns",
+        action="store_true",
+        help="write the estimates alone, without the catalog's own columns beside them, which is how a "
+        "result written before those were kept was written, and how it is resumed",
+    )
     args = ap.parse_args()
     shard = parseShard(args.shard)
     if shard and args.overwrite:
@@ -1063,8 +1124,11 @@ def main():
         if args.cone
         else None
     )
-    columns = inputColumns(catalogColumns(args.catalog), arColumn)
-    objects = lsdb.open_catalog(args.catalog, columns=columns, search_filter=search)
+    available = catalogColumns(args.catalog)
+    columns = inputColumns(available, arColumn)
+    keep = [] if args.no_input_columns else keptColumns(available, columns)
+    read = columns + [c for c in keep if c not in columns]
+    objects = lsdb.open_catalog(args.catalog, columns=read, search_filter=search)
     everything = [(pixel, str(path)) for pixel, path in partitionFiles(objects)]
     sources = everything[shard[0] :: shard[1]] if shard else everything
     if shard:
@@ -1116,7 +1180,8 @@ def main():
         cone,
         arColumn,
         arScale,
-        columns,
+        read,
+        keep,
     )
     fitted, failed = fitPartitions(todo, args.workers, args.chunk, initargs)
     total += fitted
