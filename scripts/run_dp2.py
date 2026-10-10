@@ -1146,8 +1146,9 @@ def main():
     ap.add_argument(
         "--batch-bytes",
         type=int,
-        default=2 << 30,
-        help="memory one batch of the fit may take, per worker: a pool of several asks for that much each",
+        default=16 << 30,
+        help="memory one batch of the fit may take, per worker, as a bound: a batch holds well under half of "
+        "it, so two or three workers share an 80 GB GPU at the default. Give less on a smaller or shared GPU",
     )
     ap.add_argument(
         "--no-input-columns",
