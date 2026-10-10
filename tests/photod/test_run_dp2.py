@@ -386,6 +386,19 @@ def test_the_maps_are_decoded_the_way_the_file_that_holds_them_says(run):
     assert run.priorDecades({"kde": kde}) == run.PRIOR_DECADES
 
 
+def test_the_log_says_which_kind_of_prior_maps_a_run_reads(run, tmp_path, capsys):
+    """Compact maps and full-resolution ones fit the same way and must not look the same in the log."""
+    constants = json.dumps(getBayesConstants())
+    np.savez(tmp_path / "compact.npz", kde=np.zeros((3, 2, 4, 5), np.uint8), decades=6.0, constants=constants)
+    np.savez_compressed(tmp_path / "full.npz", kde=np.zeros((3, 2, 7, 9), np.float32), constants=constants)
+    run.checkPriorFile(tmp_path / "compact.npz")
+    assert "compact maps, a byte of log over 6 decades" in capsys.readouterr().out
+    run.checkPriorFile(tmp_path / "full.npz")
+    said = capsys.readouterr().out
+    assert "full-resolution float32 maps on 7 x 9 grid points, for 3 sky pixels" in said
+    assert "compact" not in said
+
+
 def test_prior_maps_built_on_another_grid_are_refused(run, tmp_path):
     """The maps are read back on the grid they were tabulated on; another grid is wrong everywhere.
 
@@ -617,6 +630,20 @@ def inputTable(objectIds, qFlag):
     )
 
 
+def test_a_prepared_catalog_may_name_its_position_as_the_survey_does(run):
+    """coord_ra and coord_dec are read as ra and dec, and the catalog is fitted as a prepared one."""
+    survey = ["coord_ra" if c == "ra" else "coord_dec" if c == "dec" else c for c in run.FIT_COLUMNS]
+    read = run.inputColumns(survey + ["Ar_SFD", "rErr", "q_flag"], "Ar_SFD")
+    assert read[:3] == ["objectId", "coord_ra", "coord_dec"] and "u_psfFlux" not in read
+    assert run.keptColumns(survey + ["q_flag", "_healpix_29"], read) == survey + ["q_flag"]
+    frame = pd.DataFrame({c: np.arange(2.0) for c in survey + ["Ar_SFD"]})
+    frame["coord_ra"], frame["coord_dec"] = [10.0, 11.0], [-5.0, -6.0]
+    stars = run.prepareStars(frame, None, "Ar_SFD")
+    assert list(stars["ra"]) == [10.0, 11.0] and list(stars["dec"]) == [-5.0, -6.0]
+    # a catalog with the colours but no position under either name is not a prepared one
+    assert run.preparedColumns([c for c in run.FIT_COLUMNS if c != "ra"]) is None
+
+
 def test_the_catalog_columns_are_written_beside_the_answers(run):
     """Matched by objectId whatever order either comes in, each written once, and in the catalog's types."""
     answers = estimatesFrame([10.0, 11.0, 12.0], [0.0, 1.0, 2.0])
@@ -630,6 +657,11 @@ def test_the_catalog_columns_are_written_beside_the_answers(run):
     assert np.all(out["chi2min"].to_numpy() == answers["chi2min"].to_numpy()), "an answer was overwritten"
     with pytest.raises(ValueError, match="--no-input-columns"):
         run.withInputColumns(answers, inputTable([0, 0, 1], [1, 2, 3]))
+    # the position the answers were read from is not written again, under the survey's names either
+    surveyNamed = inputTable([2, 0, 1], [1, 2, 3]).rename_columns(
+        ["objectId", "coord_ra", "coord_dec", "rmag", "rErr", "q_flag", "chi2min"]
+    )
+    assert "coord_ra" not in run.withInputColumns(answers, surveyNamed).columns
 
 
 def test_a_prepared_catalog_is_kept_whole_and_the_survey_table_as_read(run):
