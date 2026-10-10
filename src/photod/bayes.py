@@ -362,7 +362,9 @@ def starPosterior(star, logPriorGrid, priorEntropy, args, computeMrTrue=False, r
     ones = partial(jnp.ones, dtype=post.dtype)
     postFeHMr = _dot(post, ones(nAr)).reshape(nFeH, nMr)
     post = post.reshape(nFeH, nMr, nAr)
-    postMrAr = jnp.sum(post, axis=0)
+    # Held as an array of its own. Left to the compiler, this sum is fused into what is read from it, and on a
+    # GPU that made the standard deviation of A_r alone take 16 of the 26 ms of a batch of 400 DP2 stars.
+    postMrAr = jax.lax.optimization_barrier(jnp.sum(post, axis=0))
     margMr = pnorm(jnp.sum(postFeHMr, axis=0), args["dMr"])
     margFeH = pnorm(_dot(postFeHMr, ones(nMr)), args["dFeH"])
     margAr = pnorm(jnp.sum(postMrAr, axis=0), args["dAr"])
