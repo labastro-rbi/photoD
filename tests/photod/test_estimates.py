@@ -81,6 +81,14 @@ def test_the_columns_are_the_ones_the_meta_promises():
     assert str(estimates[bayes.cc.right_ascension].dtype) == "float64"
 
 
+def test_the_multimodality_is_written_for_every_fitted_star():
+    """A probability, and never more than half of one: the smaller of two peaks holds at most half."""
+    catalog, priorGrid, params = setup()
+    estimates, _ = makeBayesEstimates3d(catalog, priorGrid, params, batchSize=8)
+    values = estimates[bayes.cc.multimodality].to_numpy(float)
+    assert np.all((values >= 0) & (values <= 0.5))
+
+
 def test_the_value_of_an_unmeasured_colour_barely_matters():
     """A colour marked unmeasured keeps the weight its error asks for, and 9.99 mag asks for almost none.
 

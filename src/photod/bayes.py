@@ -15,7 +15,7 @@ from photod.column_map.base import mapper_from_glossary
 from photod.parameters import GlobalParams
 from photod.priors import getPriorMapIndex, initializePriorGrid
 from photod.results import BayesResults
-from photod.stats import entropies, getMargDistr3D, getPosteriorQuantiles, getStats, pnorm
+from photod.stats import entropies, getMargDistr3D, getPosteriorQuantiles, getStats, multimodality, pnorm
 
 cc = None
 
@@ -290,6 +290,7 @@ def getEstimatesMeta(computeMrTrue: bool = False):
         cc.observed_mag_r,
         cc.chi_sq_min,
         cc.quality_flags,
+        cc.multimodality,
         *sorted(quantileCols + stdCols),
     ]
     # the positions and the magnitude are carried over from the catalog rather than fitted, and float32
@@ -309,7 +310,7 @@ def getEstimatesMeta(computeMrTrue: bool = False):
 
 
 def starPosterior(star, logPriorGrid, priorEntropy, args, computeMrTrue=False, returnPosteriors=False):
-    """Posterior statistics for one star.
+    """Posterior statistics for one star, and the Qr posterior they are partly read from.
 
     For locus point i and extinction A the model colors are m_i + A R, so
         chi2(i, A) = sum_c w_c (d_ic - A R_c)^2 = c_i + s (A - A0_i)^2,
@@ -413,7 +414,7 @@ def starPosterior(star, logPriorGrid, priorEntropy, args, computeMrTrue=False, r
         for k, cube in enumerate((prior, like, post)):
             margs = getMargDistr3D(cube, args["dMr"], args["dFeH"], args["dAr"])
             cubes[f"margMr{k}"], cubes[f"margFeH{k}"], cubes[f"margAr{k}"] = margs
-    return chi2min, statistics, cubes
+    return chi2min, statistics, cubes, QrWeights
 
 
 @partial(jax.jit, static_argnames=("computeMrTrue", "returnPosteriors"))
@@ -426,7 +427,12 @@ def _starBatch(data, logPriorGrid, priorEntropy, args, computeMrTrue, returnPost
         computeMrTrue=computeMrTrue,
         returnPosteriors=returnPosteriors,
     )
-    return jax.vmap(star)(data)
+    chi2min, statistics, cubes, QrWeights = jax.vmap(star)(data)
+    # Of the distance modulus, which is the Qr posterior turned round: the measure does not depend on which
+    # way the axis runs. It is taken before the error on r is folded in, which moves both peaks together, and
+    # on the whole batch at once, which is several times faster than star by star (see stats.multimodality).
+    statistics[cc.multimodality] = multimodality(args["QrGrid"], QrWeights)
+    return chi2min, statistics, cubes
 
 
 def _dot(a, b):

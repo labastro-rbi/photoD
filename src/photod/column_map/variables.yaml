@@ -72,6 +72,9 @@
 - column_id: fit_flags
   description: what the fit has to say about itself, one bit per warning
   variable: quality_flags
+- column_id: multimodality
+  description: how much of the distance modulus posterior lies in a second peak
+  variable: multimodality
 - column_id: gr
   description: g band minus r band
   variable: g_minus_r

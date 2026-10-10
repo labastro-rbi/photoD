@@ -9,6 +9,7 @@ import photod.locus as lt
 from photod.bayes import _starBatch, makeBayesEstimates3d
 from photod.parameters import GlobalParams
 from photod.priors import get2Dmap, getBayesConstants, getPriorMapIndex, initializePriorGrid
+from photod.stats import multimodality
 
 try:
     from jax import enable_x64
@@ -81,6 +82,20 @@ def make_stars(locus, n=12, seed=3):
     return stars
 
 
+def multimodality_by_hand(x, p, nLevels=300):
+    """The second largest excess over any cut of the density, the runs of bins above each cut split out."""
+    edges = np.concatenate([[1.5 * x[0] - 0.5 * x[1]], 0.5 * (x[1:] + x[:-1]), [1.5 * x[-1] - 0.5 * x[-2]]])
+    width = np.diff(edges)
+    density = p / p.sum() / width
+    best = 0.0
+    for level in np.linspace(0, density.max(), nLevels)[1:-1]:
+        above = density >= level
+        runs = np.split(np.arange(density.size), np.flatnonzero(np.diff(above)) + 1)
+        excess = sorted(np.sum((density[r] - level) * width[r]) for r in runs if above[r[0]])
+        best = max([best, *excess[-2:-1]])
+    return best
+
+
 def brute_force(star, params, priorGrid):
     """Posterior statistics from the full (FeH, Mr, Ar) cube, written out directly."""
     nFeH, nMr, A = params.FeH1d.size, params.Mr1d.size, params.Ar1d
@@ -129,6 +144,7 @@ def brute_force(star, params, priorGrid):
         pnorm(prior.sum(axis=1), params.dFeH), params.dFeH
     )
     out["ArdS"] = entropy(margs["Ar"][1], params.dAr) - entropy(pnorm(allowed * 1.0, params.dAr), params.dAr)
+    out["multimodality"] = multimodality_by_hand(*margs["Qr"])
     return out
 
 
@@ -309,6 +325,68 @@ def test_binned_kde_matches_gaussian_kde():
     X, Y, Z = get2Dmap(sample, ["FeH", "Mr"], metadata)
     reference = gaussian_kde(np.vstack([sample["FeH"], sample["Mr"]]))(np.vstack([X.ravel(), Y.ravel()]))
     assert np.max(np.abs(Z - reference)) < 0.01 * reference.max()
+
+
+def bumps(x, centres, widths, weights):
+    """A posterior made of Gaussian peaks."""
+    peaks = zip(centres, widths, weights, strict=True)
+    return sum(w * np.exp(-0.5 * ((x - c) / s) ** 2) / s for c, s, w in peaks)
+
+
+def multimodality_of(x, p):
+    """The multimodality of one posterior."""
+    return float(multimodality(x, np.asarray(p)[None, :])[0])
+
+
+def test_a_single_peak_has_no_multimodality():
+    """However skewed, long-tailed or flat-topped, a posterior with one peak has nothing in a second one."""
+    x = np.arange(0.0, 20.0, 0.01)
+    skewed = np.where(x < 8, np.exp(-0.5 * ((x - 8) / 0.3) ** 2), np.exp(-(x - 8) / 3.0))
+    for p in (bumps(x, [8], [0.4], [1]), skewed, ((x > 5) & (x < 9)) * 1.0):
+        assert multimodality_of(x, p) == 0.0
+
+
+def test_the_multimodality_of_two_peaks_approaches_the_weight_of_the_smaller():
+    """It grows as two peaks move apart and stops a little short of the weight in the smaller one.
+
+    Two widths apart the smaller peak is only a shoulder on the larger, the posterior has one peak, and the
+    multimodality is zero.
+    """
+    x = np.arange(0.0, 20.0, 0.01)
+    gaps = (0.6, 1.0, 2.0, 6.0)
+    values = [multimodality_of(x, bumps(x, [6, 6 + gap], [0.3, 0.3], [0.8, 0.2])) for gap in gaps]
+    assert values[0] == 0 and 0 < values[1] < values[2] < values[3]
+    assert 0.18 < values[-1] < 0.2
+
+
+def test_the_second_peak_need_not_be_next_to_the_first():
+    """Two equal peaks with a small one between them: what lies in a second peak is the other big one."""
+    x = np.arange(0.0, 20.0, 0.01)
+    assert 0.4 < multimodality_of(x, bumps(x, [4, 6, 8], [0.1, 0.1, 0.1], [0.45, 0.1, 0.45])) < 0.45
+
+
+def test_the_multimodality_of_the_distance_modulus_is_that_of_qr():
+    """DM = r - Qr turns the axis round, and neither that nor the scale of the weights changes it."""
+    x = np.arange(-3.0, 24.0, 0.01)
+    p = bumps(x, [4.0, 6.5, 9.0], [0.4, 0.2, 0.6], [0.5, 0.2, 0.3])
+    assert_allclose(multimodality_of(22.7 - x[::-1], 5.0 * p[::-1]), multimodality_of(x, p), rtol=1e-5)
+
+
+def test_the_multimodality_is_the_count_by_hand():
+    """Over every cut, on evenly and unevenly spaced values, for posteriors with one to three peaks and noise.
+
+    The posteriors of one grid go in as a batch, with an empty one among them.
+    """
+    rng = np.random.default_rng(5)
+    with float64():
+        for x in (np.arange(0.0, 20.0, 0.01), np.sort(rng.uniform(0.0, 20.0, 1500))):
+            batch = []
+            for n in (1, 2, 3, 2, 3, 2, 3, 3):
+                p = bumps(x, rng.uniform(3, 17, n), rng.uniform(0.1, 1.0, n), rng.uniform(0.1, 1.0, n))
+                batch.append(p * rng.uniform(0.9, 1.1, x.size))
+            values = np.asarray(multimodality(x, np.array(batch + [np.zeros_like(x)])))
+            assert_allclose(values[:-1], [multimodality_by_hand(x, p) for p in batch], rtol=1e-9, atol=1e-12)
+            assert np.isnan(values[-1])
 
 
 def test_calls_of_the_tLoc_parametrization():
