@@ -135,16 +135,19 @@ def measureMrOffsets(stars, estimates, binEdges=None, minStars=300, nDraws=300):
     """The Mr table from a catalog with Gaia parallaxes (parallax, parallaxErr) and the fit estimates for it.
 
     stars needs rmag, gr, ri, parallax and, if the colours are to be dereddened, Ar; estimates needs the
-    Mr_true and Ar quantiles of the fit, in the same row order. Every star with a parallax enters. The bins
+    Mr and Ar quantiles of the fit, in the same row order. Every star with a parallax enters. The bins
     are the bins of GI unless given, so that the table printed is the table MR_OFFSET holds.
     """
     if binEdges is None:
         half = (GI[1] - GI[0]) / 2
         binEdges = np.append(GI - half, GI[-1] + half)
     plx = stars.parallax.to_numpy(float) + 0.017
+    # A catalog written before the columns were renamed holds the absolute magnitude as Mr_true, and in its Mr
+    # the tLoc of the locus, which is a different number above the turn-off
+    name = "Mr_true" if "Mr_true_quantile_median" in estimates else "Mr"
     mu = {
         q: stars.rmag.to_numpy()
-        - estimates[f"Mr_true_quantile_{o}"].to_numpy()
+        - estimates[f"{name}_quantile_{o}"].to_numpy()
         - estimates.Ar_quantile_median.to_numpy()
         for q, o in (("lo", "hi"), ("med", "median"), ("hi", "lo"))
     }

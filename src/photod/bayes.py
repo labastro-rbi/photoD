@@ -41,8 +41,8 @@ QUANTILE_NAMES = ("lo", "median", "hi")
 # set well below the memory of a machine rather than near it.
 BATCH_BYTES = 2 << 30
 BATCH_BYTES_PER_CELL = 12  # the posterior in float32, and the temporaries it is built from
-# Bits of the flags column. A star with none of them set is one the model describes, on a single branch, with
-# every colour measured and nothing of it against the edge of the grid.
+# Bits of the fit_flags column. A star with none of them set is one the model describes, on a single branch,
+# with every colour measured and nothing of it against the edge of the grid.
 FLAG_POOR_FIT = 1  # chi2 above CHI2_POOR, or no answer at all: the locus does not describe this star
 FLAG_TWO_BRANCHES = 2  # the Mr posterior is lopsided, which is how a giant and a dwarf solution both survive
 FLAG_FEH_EDGE = 4  # [Fe/H] is against the end of the model grid, so it is a limit rather than a measurement
@@ -91,9 +91,11 @@ def makeBayesEstimates3d(
     Returns
     -------
     estimatesDf : DataFrame
-        chi2min, the 16th/50th/84th percentiles of Mr, [Fe/H], A_r and Qr (and of the true Mr when
-        globalParams.computeMrTrue), and the entropy drop from prior to posterior for Mr, [Fe/H] and A_r.
+        The columns and types of getEstimatesMeta: object id, position and r magnitude, chi2min, the flags,
+        the multimodality, and the 16th/50th/84th percentiles and standard deviation of the locus coordinate,
+        [Fe/H], A_r and the distance modulus (and of the true Mr when globalParams.computeMrTrue).
     results : BayesResults
+        chi2min and every statistic computed, which also holds Qr and the entropy drops, written to no column.
     """
     colors, colorsErr, priorIndices, arMax, rmag, curveIndex, arMap = getColorsAndPriorIndices(
         starsData, globalParams
