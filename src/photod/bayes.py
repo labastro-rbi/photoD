@@ -532,15 +532,12 @@ def _batchLimit(globalParams, nAr, batchBytes=None):
 
 
 def _toHost(out):
-    """A batch result as plain arrays, releasing the device buffers it was computed into."""
-    return tuple(
-        (
-            {name: np.asarray(value) for name, value in item.items()}
-            if isinstance(item, dict)
-            else np.asarray(item)
-        )
-        for item in out
-    )
+    """A batch result as plain arrays, releasing the device buffers it was computed into.
+
+    All of them in one transfer: copied one at a time, each waits on the device by itself, and with the 25 or
+    so arrays of a batch that took a sixth of the time of a run.
+    """
+    return jax.device_get(out)
 
 
 def _collect(parts, nStars):
