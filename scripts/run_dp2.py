@@ -32,9 +32,9 @@ refExtendedness, ebv. Point sources are refExtendedness == 0 with r between 16.5
 weight. The error on r, which widens the distance modulus, is read from rmagErr or rErr, and a catalog that
 carries one under another name is refused rather than fitted with r taken as exact. The dust-map A_r is
 AR_PER_EBV ebv, the LSST r ratio with the Schlafly & Finkbeiner 2011 recalibration of the map folded in, and
-it bounds the A_r prior; where the 3D map has measured the column through the disc, the smaller of the two is
-the bound, which matters towards the bulge, where the 2D map integrates to infinity and reaches tens of
-magnitudes.
+it only bounds the A_r prior, which is flat from zero to a little above it. With --dust-curves, where the 3D
+map has measured the column through the disc, the smaller of the two is the bound, which matters towards the
+bulge, where the 2D map integrates to infinity and reaches tens of magnitudes.
 """
 
 import argparse
@@ -78,8 +78,6 @@ from photod.locus import (  # noqa: E402
 from photod.parameters import GlobalParams  # noqa: E402
 from photod.priors import getBayesConstants, priorGridFromMaps  # noqa: E402
 
-DATA = Path(__file__).resolve().parents[1] / "data"
-PRIOR_FILE = DATA / "priors_dp2.npz"
 BANDS = "ugrizy"
 COLORS = ("ug", "gr", "ri", "iz", "zy")
 # A_r per unit of the object table's ebv, which is the SFD map as it was published. Two things go into it: the
@@ -1073,8 +1071,8 @@ def main():
     ap.add_argument("--catalog", required=True, help="DP2 object collection (HATS)")
     ap.add_argument(
         "--priors",
-        default=str(PRIOR_FILE),
-        help="TRILEGAL prior maps; the ones the DP2 footprint was fitted with come with the repository",
+        required=True,
+        help="TRILEGAL prior maps, as scripts/make_priors.py writes them; too large to come with the repository",
     )
     ap.add_argument("--out", required=True, help="directory for the result catalog")
     ap.add_argument("--name", default="dp2_photod")
