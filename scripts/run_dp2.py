@@ -43,7 +43,6 @@ import multiprocessing as mp
 import os
 import re
 import shutil
-import sys
 import tempfile
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from pathlib import Path
@@ -106,9 +105,6 @@ HATS_LAYOUT = ("_healpix_29", "Norder", "Dir", "Npix")
 POSITION_NAMES = (("ra", "dec"), ("coord_ra", "coord_dec"))
 PARTIAL = ".partial"  # where a partition is written before it is renamed into the dataset
 SHARDS = ".shards"  # where each process of a --shard run marks itself finished
-# ProcessPoolExecutor learned to replace a worker in Python 3.11, and the package supports 3.10 as well.
-# Checked here rather than at the call so that both paths can be exercised without another interpreter.
-WORKERS_REPLACED = sys.version_info >= (3, 11)
 PRIORS = {}
 PARAMS = {}
 CURVES = {}
@@ -906,21 +902,13 @@ def recordConfiguration(base, configuration):
 
 
 def poolOptions(chunk):
-    """How the pool bounds the memory of a survey-wide run, as far as this interpreter allows.
+    """How the pool bounds the memory of a survey-wide run.
 
     A worker is replaced every chunk partitions, which the pool only does with processes it starts itself
-    rather than forks. ProcessPoolExecutor learned to do it in Python 3.11 and this package supports 3.10,
-    where the argument is not merely ignored but a TypeError as the pool is built.
+    rather than forks.
     """
     options = {"mp_context": mp.get_context("spawn")}
     if chunk <= 0:
-        return options
-    if not WORKERS_REPLACED:
-        print(
-            "this Python cannot replace a worker of the pool (3.11 and up can), so the workers live for the "
-            "whole run and their memory grows with it: split a survey-wide run by --cone if it runs out",
-            flush=True,
-        )
         return options
     return options | {"max_tasks_per_child": chunk}
 

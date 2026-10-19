@@ -841,33 +841,14 @@ def test_an_orphan_of_an_earlier_version_is_swept_and_the_failure_is_visible(run
     assert path.exists(), "sweeping took a real partition with it"
 
 
-def test_the_pool_replaces_its_workers_only_where_the_interpreter_can(run, monkeypatch):
-    """max_tasks_per_child arrived in Python 3.11 and this package supports 3.10, where it is a TypeError."""
-    import multiprocessing
-
-    monkeypatch.setattr(run, "WORKERS_REPLACED", True)
+def test_the_pool_replaces_its_workers_every_chunk(run):
+    """max_tasks_per_child is only allowed with a pool that spawns its workers rather than forking them."""
     options = run.poolOptions(400)
     assert options["max_tasks_per_child"] == 400, "the workers are no longer replaced"
     assert options["mp_context"].get_start_method() == "spawn"
     assert "max_tasks_per_child" not in run.poolOptions(0), "a chunk of zero asked for replacement anyway"
-
-    monkeypatch.setattr(run, "WORKERS_REPLACED", False)
-    older = run.poolOptions(400)
-    assert "max_tasks_per_child" not in older, "an older interpreter was handed an argument it has not got"
-    assert isinstance(older["mp_context"], type(multiprocessing.get_context("spawn")))
-    # the pool has to be buildable with exactly what poolOptions returns, on either interpreter
-    run.ProcessPoolExecutor(max_workers=1, **older).shutdown()
-
-
-def test_the_pool_says_when_it_cannot_replace_its_workers(run, monkeypatch, capsys):
-    """A survey-wide run on 3.10 grows without bound, so it is worth one line rather than a surprise."""
-    monkeypatch.setattr(run, "WORKERS_REPLACED", False)
-    run.poolOptions(400)
-    printed = capsys.readouterr().out
-    assert "replace a worker" in printed and "memory" in printed, "nothing said the memory would grow"
-    monkeypatch.setattr(run, "WORKERS_REPLACED", True)
-    run.poolOptions(400)
-    assert capsys.readouterr().out == "", "an interpreter that can replace a worker was warned anyway"
+    # the pool has to be buildable with exactly what poolOptions returns
+    run.ProcessPoolExecutor(max_workers=1, **options).shutdown()
 
 
 @needsPriors

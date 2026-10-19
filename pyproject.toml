@@ -15,8 +15,8 @@ classifiers = [
     "Programming Language :: Python",
 ]
 dynamic = ["version"]
-requires-python = ">=3.10"
-dependencies = ["lsdb", "jax", "astropy", "scipy", "numpy", "pandas", "nested-pandas", "mocpy", "pyyaml"]
+requires-python = ">=3.11"
+dependencies = ["lsdb", "jax", "astropy", "scipy", "numpy", "pandas", "nested-pandas", "mocpy", "pyyaml", "matplotlib"]
 
 [project.urls]
 "Source Code" = "https://github.com/labastro-rbi/photod"
@@ -47,7 +47,7 @@ testpaths = [
 
 [tool.black]
 line-length = 110
-target-version = ["py310"]
+target-version = ["py311"]
 
 [tool.isort]
 profile = "black"
@@ -55,7 +55,7 @@ line_length = 110
 
 [tool.ruff]
 line-length = 110
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = [
