@@ -89,12 +89,8 @@ def subsampleLocusData(locusData, kMr, kFeH, xLabel="FeH", yLabel="Mr", verbose=
     return locusData[rows]
 
 
-def get3DmodelList(locusData, fitColors, agressive=False, DSED=False, xLabel="FeH", yLabel="Mr", ArFixed=0.2):
-    """3D color models for the standard A_r grids ("ArSmall", "ArMedium", "ArLarge" and "ArFixed").
-
-    DSED is kept so that older calls still work; it is not needed any more because the colors are reddened by
-    name for any column order of the locus table.
-    """
+def getArGridList(agressive=False, ArFixed=0.2):
+    """The standard A_r grids, for GlobalParams.ArGridRange "Small", "Medium", "Large" and "Fixed"."""
     if agressive:
         grids = {
             "ArSmall": np.linspace(0, 0.5, 101),
@@ -108,6 +104,17 @@ def get3DmodelList(locusData, fitColors, agressive=False, DSED=False, xLabel="Fe
             "ArLarge": np.linspace(0, 2.5, 126),
         }
     grids["ArFixed"] = np.array([ArFixed])
+    return grids
+
+
+def get3DmodelList(locusData, fitColors, agressive=False, DSED=False, xLabel="FeH", yLabel="Mr", ArFixed=0.2):
+    """The A_r grids of getArGridList and, for each, the locus with the fitted colors reddened over it.
+
+    GlobalParams does not need these models any more, and on the DP2 locus they take gigabytes; they are kept
+    for code that uses them. DSED is kept so that older calls still work; it is not needed because the colors
+    are reddened by name for any column order of the locus table.
+    """
+    grids = getArGridList(agressive, ArFixed)
     models = make3DlocusList(locusData, fitColors, list(grids.values()), xLabel=xLabel, yLabel=yLabel)
     return grids, dict(zip(grids, models, strict=True))
 

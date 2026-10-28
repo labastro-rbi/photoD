@@ -29,12 +29,10 @@ def setup(**kwargs):
         colnames=["tLoc", "Mr", "FeH", "ug", "gr", "ri", "iz", "zy"],
     )
     locusData = lt.subsampleLocusData(locus, 20, 3, yLabel="tLoc")
-    ArGridList, locus3DList = lt.get3DmodelList(locusData, COLORS, yLabel="tLoc")
     params = GlobalParams(
         COLORS,
         locusData,
-        ArGridList,
-        locus3DList,
+        lt.getArGridList(),
         yLabel="tLoc",
         MrColumn="tLoc",
         computeMrTrue=True,

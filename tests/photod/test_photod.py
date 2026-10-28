@@ -25,8 +25,7 @@ def test_make_bayes_estimates_3d(s82_0_5_dir, s82_priors_dir, locus_file_path):
     locusData = lt.subsampleLocusData(OKlocus, kMr=10, kFeH=2)
 
     fitColors = ("ug", "gr", "ri", "iz")
-    ArGridList, locus3DList = lt.get3DmodelList(locusData, fitColors)
-    globalParams = GlobalParams(fitColors, locusData, ArGridList, locus3DList)
+    globalParams = GlobalParams(fitColors, locusData, lt.getArGridList())
 
     s82_stripe_catalog = lsdb.read_hats(s82_0_5_dir)
     prior_map_catalog = lsdb.read_hats(s82_priors_dir)

@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 from matplotlib import pyplot as plt
 from numpy.testing import assert_allclose
-from test_bayes import COLORS, brute_force, make_locus, make_params, make_stars
+from test_bayes import COLORS, brute_force, make_locus, make_params, make_stars, reddenedLocus
 
 import photod.plotting as pt
 from photod.priors import getBayesConstants, getPriorMapIndex
@@ -47,7 +47,7 @@ def run():
 
 def posteriorCube(star, params, priorGrid):
     """The (FeH, Mr, Ar) posterior cube of one star, written out as test_bayes.brute_force writes it."""
-    model = np.stack([params.locus3DList[f"Ar{params.ArGridRange}"][c] for c in COLORS], axis=-1)
+    model = reddenedLocus(params)
     obs = star[list(COLORS)].to_numpy(float)
     err = star[[color + "Err" for color in COLORS]].to_numpy(float)
     chi2 = np.sum(((obs - model) / err) ** 2, axis=-1)

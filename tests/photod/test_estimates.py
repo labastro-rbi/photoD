@@ -31,12 +31,10 @@ def setup(n=16, **columns):
         colnames=["tLoc", "Mr", "FeH", "ug", "gr", "ri", "iz", "zy"],
     )
     locusData = lt.subsampleLocusData(locus, 20, 3, yLabel="tLoc")
-    ArGridList, locus3DList = lt.get3DmodelList(locusData, COLORS, yLabel="tLoc")
     params = GlobalParams(
         COLORS,
         locusData,
-        ArGridList,
-        locus3DList,
+        lt.getArGridList(),
         yLabel="tLoc",
         MrColumn="tLoc",
         computeMrTrue=True,
@@ -182,7 +180,6 @@ def test_a_single_extinction_has_no_edge_to_be_pinned_against():
         COLORS,
         params.locusData,
         {"ArFixed": np.array([0.2])},
-        {"ArFixed": params.locus3DList["ArFixed"]},
         yLabel="tLoc",
         MrColumn="tLoc",
         computeMrTrue=True,

@@ -79,7 +79,6 @@ def test_color_error_floor_is_added_in_quadrature():
     locus = load("LSSTlocus_10Gyr_DP2.txt")
     locusData = lt.subsampleLocusData(locus, 20, 3, yLabel="tLoc")
     colors = ("ug", "gr", "ri")
-    ArGridList, locus3DList = lt.get3DmodelList(locusData, colors, yLabel="tLoc")
     catalog = pd.DataFrame(
         {
             "rmag": [18.0, 21.0],
@@ -95,8 +94,7 @@ def test_color_error_floor_is_added_in_quadrature():
         params = GlobalParams(
             colors,
             locusData,
-            ArGridList,
-            locus3DList,
+            lt.getArGridList(),
             yLabel="tLoc",
             MrColumn="tLoc",
             computeMrTrue=True,

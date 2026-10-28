@@ -45,12 +45,10 @@ def make_locus(tLoc=False):
 def make_params(locus, tLoc=False, ArGridRange="Small", ArMapColumn="ArMap"):
     """GlobalParams for a test locus."""
     yLabel = "tLoc" if tLoc else "Mr"
-    ArGridList, locus3DList = lt.get3DmodelList(locus, COLORS, xLabel="FeH", yLabel=yLabel)
     return GlobalParams(
         COLORS,
         locus,
-        ArGridList,
-        locus3DList,
+        lt.getArGridList(),
         xLabel="FeH",
         yLabel=yLabel,
         MrColumn=yLabel,
@@ -96,10 +94,18 @@ def multimodality_by_hand(x, p, nLevels=300):
     return best
 
 
+def reddenedLocus(params):
+    """The locus colors on the (FeH, Mr, Ar) grid, reddened by the extinction coefficients of each band."""
+    C = lt.extcoeff()
+    shape = (params.FeH1d.size, params.Mr1d.size, 1)
+    reddening = {c: params.Ar1d * (C[c[0]] - C[c[1]]) for c in COLORS}
+    return np.stack([np.asarray(params.locusData[c]).reshape(shape) + reddening[c] for c in COLORS], axis=-1)
+
+
 def brute_force(star, params, priorGrid):
     """Posterior statistics from the full (FeH, Mr, Ar) cube, written out directly."""
     nFeH, nMr, A = params.FeH1d.size, params.Mr1d.size, params.Ar1d
-    model = np.stack([params.locus3DList[f"Ar{params.ArGridRange}"][c] for c in COLORS], axis=-1)
+    model = reddenedLocus(params)
     obs, err = star[list(COLORS)].to_numpy(float), star[[c + "Err" for c in COLORS]].to_numpy(float)
     chi2 = np.sum(((obs - model) / err) ** 2, axis=-1)
     arMax = np.inf if params.ArMapColumn is None else 1.3 * star["ArMap"] + 0.1
@@ -214,21 +220,18 @@ def test_small_partitions():
 def test_a_tLoc_grid_needs_the_true_absolute_magnitude():
     """Otherwise Qr and the distance modulus would be built from tLoc and look like any other answer."""
     locus = make_locus(True)
-    ArGridList, locus3DList = lt.get3DmodelList(locus, COLORS, xLabel="FeH", yLabel="tLoc")
     with pytest.raises(ValueError, match="computeMrTrue"):
-        GlobalParams(COLORS, locus, ArGridList, locus3DList, xLabel="FeH", yLabel="tLoc", MrColumn="tLoc")
+        GlobalParams(COLORS, locus, lt.getArGridList(), xLabel="FeH", yLabel="tLoc", MrColumn="tLoc")
 
 
 def test_the_dust_prior_needs_a_width_where_there_is_no_dust():
     """The map puts no extinction in front of the nearest stars, so a zero floor is a prior of zero width."""
     locus = make_locus(True)
-    ArGridList, locus3DList = lt.get3DmodelList(locus, COLORS, xLabel="FeH", yLabel="tLoc")
     with pytest.raises(ValueError, match="ArCurveFloor"):
         GlobalParams(
             COLORS,
             locus,
-            ArGridList,
-            locus3DList,
+            lt.getArGridList(),
             xLabel="FeH",
             yLabel="tLoc",
             MrColumn="tLoc",
@@ -243,12 +246,11 @@ def test_the_dust_prior_needs_a_width_where_there_is_no_dust():
 def test_the_locus_rows_have_to_be_the_grid_they_claim():
     """The table is reshaped as it stands, so another row order would build a mirrored model in silence."""
     locus = make_locus()
-    ArGridList, locus3DList = lt.get3DmodelList(locus, COLORS)
     shuffled = locus[::-1]
     with pytest.raises(ValueError, match="ascending"):
-        GlobalParams(COLORS, shuffled, ArGridList, locus3DList)
+        GlobalParams(COLORS, shuffled, lt.getArGridList())
     with pytest.raises(ValueError, match="rectangular"):
-        GlobalParams(COLORS, locus[:-1], ArGridList, locus3DList)
+        GlobalParams(COLORS, locus[:-1], lt.getArGridList())
 
 
 def test_subsampling_keeps_the_end_of_each_axis():
@@ -264,16 +266,35 @@ def test_subsampling_keeps_the_end_of_each_axis():
 
 
 def test_reddening_follows_color_names():
-    """Reddening is added to each fitted color by name, whatever the column order of the locus."""
+    """The colors and their reddening are taken by name, whatever the column order of the locus."""
     locus = make_locus(True)
-    locus = locus[["FeH", "ri", "tLoc", "gr", "Mr", "ug"]]
-    ArGridList, locus3DList = lt.get3DmodelList(locus, COLORS, xLabel="FeH", yLabel="tLoc")
+    shuffled = locus[["FeH", "ri", "tLoc", "gr", "Mr", "ug"]]
+    params = make_params(shuffled, True)
     C = lt.extcoeff()
-    model, Ar = locus3DList["ArSmall"], ArGridList["ArSmall"]
-    for c in COLORS:
-        assert_allclose(model[c] - model[c][:, :, :1], np.broadcast_to(Ar * (C[c[0]] - C[c[1]]), model.shape))
-    for c in ("FeH", "tLoc", "Mr"):
-        assert_allclose(model[c], np.broadcast_to(model[c][:, :, :1], model.shape))
+    for k, c in enumerate(COLORS):
+        assert_allclose(params.locusColors2d[:, k], np.asarray(locus[c]))
+        assert params.reddVector[k] == C[c[0]] - C[c[1]]
+
+
+def test_calls_that_pass_the_3D_color_models_get_the_same_model():
+    """Older calls build the reddened cubes with get3DmodelList and pass them on. They get the model the locus
+    gives without them, and cubes that are not the locus reddened with extcoeff() are refused, not ignored.
+    """
+    locus = make_locus(True)[["FeH", "ri", "tLoc", "gr", "Mr", "ug"]]
+    options = dict(xLabel="FeH", yLabel="tLoc", MrColumn="tLoc", ArGridRange="Small", computeMrTrue=True)
+    for ArFixed in (0.2, 0.0):
+        ArGridList, locus3DList = lt.get3DmodelList(locus, COLORS, yLabel="tLoc", ArFixed=ArFixed)
+        assert ArGridList.keys() == lt.getArGridList().keys()
+        for name, grid in lt.getArGridList(ArFixed=ArFixed).items():
+            assert np.array_equal(ArGridList[name], grid)
+            assert locus3DList[name].shape == (5, 37, grid.size)
+        older = GlobalParams(COLORS, locus, ArGridList, locus3DList, **options)
+        newer = GlobalParams(COLORS, locus, lt.getArGridList(ArFixed=ArFixed), **options)
+        assert np.array_equal(older.locusColors2d, newer.locusColors2d)
+        assert np.array_equal(older.reddVector, newer.reddVector)
+    locus3DList["ArSmall"]["gr"] += 0.01
+    with pytest.raises(ValueError, match="extcoeff"):
+        GlobalParams(COLORS, locus, ArGridList, locus3DList, **options)
 
 
 def test_locus_plateau():

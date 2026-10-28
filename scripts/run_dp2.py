@@ -67,13 +67,7 @@ from photod.bayes import (  # noqa: E402
     makeBayesEstimates3d,
     unfittedEstimates,
 )
-from photod.locus import (  # noqa: E402
-    RUN_LOCUS_FILE,
-    LSSTsimsLocus,
-    get3DmodelList,
-    make3DlocusList,
-    subsampleLocusData,
-)
+from photod.locus import RUN_LOCUS_FILE, LSSTsimsLocus, getArGridList, subsampleLocusData  # noqa: E402
 from photod.parameters import GlobalParams  # noqa: E402
 from photod.priors import getBayesConstants, priorGridFromMaps  # noqa: E402
 
@@ -378,9 +372,8 @@ def globalParameters(floor, useDustMap, curves=None, arMax=5.0):
         fixForStripe82=False, datafile=str(RUN_LOCUS_FILE), colnames=["tLoc", "Mr", "FeH", *COLORS]
     )
     locusData = subsampleLocusData(locus, kMr=1, kFeH=1, yLabel="tLoc")
-    ArGridList, locus3DList = get3DmodelList(locusData, COLORS, yLabel="tLoc")
+    ArGridList = getArGridList()
     ArGridList["ArLarge"] = np.arange(0, arMax + 1e-9, 0.02)
-    locus3DList["ArLarge"] = make3DlocusList(locusData, COLORS, [ArGridList["ArLarge"]], yLabel="tLoc")[0]
     dust = {}
     if curves is not None:
         dust = dict(ArCurves=curves["shapes"], ArCurveMu=curves["mu"], ArCurveIndexColumn="dustIndex")
@@ -388,7 +381,6 @@ def globalParameters(floor, useDustMap, curves=None, arMax=5.0):
         COLORS,
         locusData,
         ArGridList,
-        locus3DList,
         yLabel="tLoc",
         MrColumn="tLoc",
         computeMrTrue=True,
@@ -641,11 +633,7 @@ def workerDevice(nDevices):
 
 
 def loadParams(setup):
-    """The fit setup, built once per worker process rather than sent to it.
-
-    The reddened locus of a wide A_r grid is a couple of gigabytes, and shipping that through the scheduler
-    to every worker costs more memory in flight than building it where it is used.
-    """
+    """The fit setup, built once per worker process from the few settings it is made of, rather than sent."""
     if setup not in PARAMS:
         floor, useDustMap, curvePath, arMax = setup
         # the same curves the sightlines were looked up in, flat row and all, so that the index of a star

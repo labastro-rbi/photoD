@@ -7,7 +7,7 @@ from photod.locus import extcoeff, locusPlateau
 
 @dataclass
 class GlobalParams:
-    """Fixed inputs of the Bayes fit: locus grid, 3D color model, A_r grid and the tables derived from them.
+    """Fixed inputs of the Bayes fit: locus grid, color model, A_r grid and the tables derived from them.
 
     Parameters
     ----------
@@ -15,8 +15,11 @@ class GlobalParams:
         Colors used in the fit, e.g. ("ug", "gr", "ri", "iz", "zy").
     locusData : astropy.table.Table
         Locus on a regular grid of xLabel and yLabel (see locus.subsampleLocusData).
-    ArGridList, locus3DList : dict
-        A_r grids and 3D color models from locus.get3DmodelList.
+    ArGridList : dict
+        A_r grids by name, such as locus.getArGridList() returns; ArGridRange picks one of them.
+    locus3DList : dict, optional
+        The reddened color models of locus.get3DmodelList, which older calls pass. The fit does not use them;
+        when given, they are checked against the locus colors reddened with locus.extcoeff().
     xLabel, yLabel : str
         Grid columns of locusData: [Fe/H] and Mr, or [Fe/H] and tLoc.
     MrColumn : str
@@ -54,7 +57,7 @@ class GlobalParams:
     fitColors: tuple
     locusData: object
     ArGridList: dict
-    locus3DList: dict
+    locus3DList: dict = None
     xLabel: str = "FeH"
     yLabel: str = "Mr"
     MrColumn: str = "Mr"
@@ -100,14 +103,18 @@ class GlobalParams:
                 "both ascending"
             )
 
-        # the color model is linear in A_r: colors = locusColors2d + A_r * reddVector
+        # the color model is linear in A_r: colors = locusColors2d + A_r * reddVector, each color reddened by
+        # its name, whatever the column order of the locus table
         C = extcoeff()
         self.reddVector = np.array([C[c[0]] - C[c[1]] for c in self.fitColors])
-        model = np.stack([self.locus3DList[f"Ar{self.ArGridRange}"][c] for c in self.fitColors], axis=-1)
-        self.locusColors2d = (model[:, :, 0, :] - self.Ar1d[0] * self.reddVector).reshape(nFeH * nMr, -1)
-        linear = self.locusColors2d.reshape(nFeH, nMr, 1, -1) + self.Ar1d[:, None] * self.reddVector
-        if not np.allclose(model, linear, rtol=0, atol=1e-9):
-            raise ValueError("locus3DList must hold the locus colors reddened with locus.extcoeff()")
+        self.locusColors2d = np.stack(
+            [np.asarray(self.locusData[c], dtype=float) for c in self.fitColors], axis=-1
+        )
+        if self.locus3DList is not None:
+            model = np.stack([self.locus3DList[f"Ar{self.ArGridRange}"][c] for c in self.fitColors], axis=-1)
+            linear = self.locusColors2d.reshape(nFeH, nMr, 1, -1) + self.Ar1d[:, None] * self.reddVector
+            if not np.allclose(model, linear, rtol=0, atol=1e-9):
+                raise ValueError("locus3DList must hold the locus colors reddened with locus.extcoeff()")
         if nAr > 2 and not np.allclose(np.diff(self.Ar1d), self.dAr, rtol=1e-9, atol=0):
             raise ValueError("the A_r grid must be uniform")
         # the width of the 3D dust prior is sqrt((ArCurveFrac A_r)^2 + ArCurveFloor^2), and the map puts no
