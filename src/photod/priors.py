@@ -126,8 +126,9 @@ def get2Dmap(sample, labels, metadata, bandwidthFactor=1.0):
     fx, fy = (x - xgrid[0]) / dx, (y - ya[0]) / dy
     ix, iy = np.floor(fx).astype(int), np.floor(fy).astype(int)
     # a star is spread over the four grid points around it, so it needs a point on each side; one sitting
-    # exactly on the last point of an axis has none beyond it and is left out. The grids of
-    # getBayesConstants() run wider than the locus in both parameters, so nothing reaches those edges.
+    # exactly on the last point of an axis has none beyond it and is left out. The model stars do reach the
+    # lowest [Fe/H] of the grid, where the locus starts, and the smoothing below has nothing beyond an edge,
+    # so the density falls to about half its value at an edge the stars reach.
     inside = (ix >= 0) & (ix < xgrid.size - 1) & (iy >= 0) & (iy < ya.size - 1)
     ix, iy, wx, wy = ix[inside], iy[inside], (fx - np.floor(fx))[inside], (fy - np.floor(fy))[inside]
     counts = np.zeros((ya.size, xgrid.size))

@@ -187,8 +187,6 @@ def showCornerPlot3(
     markTrue(axs[2, 2], z0, 1.1 * np.max(margAr))
     axs[2, 2].set(xlabel="Ar", ylabel="p(Ar)")
 
-    cax = fig.add_axes([0.84, 0.1, 0.1, 0.75])
-    cax.set_axis_off()
     if saveFig:
         saveFigure("cornerPlot3")
     plt.show()
@@ -257,8 +255,6 @@ def showQrCornerPlot(
     markTrue(axs[2], x0, 1.1 * np.max(margFeH))
     axs[2].set(xlabel="FeH", ylabel="p(FeH)")
 
-    cax = fig.add_axes([0.84, 0.1, 0.1, 0.75])
-    cax.set_axis_off()
     if saveFig:
         saveFigure("QrCornerPlot")
     plt.show()
@@ -296,9 +292,6 @@ def show3Flat2Dmaps(
     panel = dict(showTrue=showTrue, x0=x0, y0=y0, logScale=logScale, cmap=cmap, minFactor=minFac)
     for ax, image, title in zip(axs, (im1, im2, im3), ("Prior", "Likelihood", "Posterior"), strict=True):
         fig.colorbar(oneImage(ax, image, myExtent, title, origin="upper", **panel), ax=ax)
-
-    cax = fig.add_axes([0.84, 0.1, 0.1, 0.75])
-    cax.set_axis_off()
 
     for ax in axs.flat:
         ax.set(xlabel=xLab, ylabel=yLab)

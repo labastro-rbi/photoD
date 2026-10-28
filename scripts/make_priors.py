@@ -10,8 +10,9 @@ the fit will use, which is what makes the maps and the fit comparable.
 
 Only pixels of the footprint are built. The footprint comes from the sky map of the object catalog, either a
 sparse table of PIXEL and VALUE or a full HEALPix array; without one the whole sky is built. A pixel of the
-footprint that ends up with no maps is a hole the run drops the stars of, so the build reports every one of
-them and fails unless --allow-missing says a partial file is wanted.
+footprint that ends up with no maps is a hole: the run keeps the stars of it, but with no estimate and bit 64
+of fit_flags set. So the build reports every such pixel and fails unless --allow-missing says a partial file
+is wanted.
 
 The maps here leave out the model stars of TRILEGAL label 9, the white dwarfs and post-AGB stars, while
 photod.priors.dumpPriorMaps_testing keeps every label. The difference is deliberate: a white dwarf has no
@@ -186,7 +187,7 @@ def pixelMaps(pixel, order, catalog, radius, maxStars, feH, segments, mrMin, mrM
     """The prior maps of one pixel: model stars of a cone at its centre, binned in r and smoothed.
 
     Returns the maps and their two axes, or None when the cone holds no usable model stars, which leaves the
-    pixel out of the file and the stars of that sightline out of the run.
+    pixel out of the file and the stars of that sightline without an estimate.
     """
     lon, lat = cdshealpix.nested.healpix_to_lonlat(np.array([pixel]), order)
     ra, dec = float(lon.deg[0]), float(lat.deg[0])
@@ -276,7 +277,7 @@ def buildPixel(pixel):
     """Pool entry point: one pixel with its maps, None if the catalog cannot serve it, or what it raised.
 
     A pixel that raises must not take a build of thousands of them down, and must not disappear either: the
-    run drops every star of a sightline that has no maps, so the failure is handed back to be reported. It
+    run fits no star of a sightline that has no maps, so the failure is handed back to be reported. It
     goes back as text because it has to survive being pickled out of the worker, which not every exception
     of a catalog reader does.
     """
@@ -296,8 +297,8 @@ def buildPixel(pixel):
 def reportHoles(failed, empty, allowMissing):
     """List the pixels of the footprint that ended up with no maps, and stop unless a hole was intended.
 
-    The run looks a star's sightline up in the index of the file and drops the stars of a pixel that is not
-    in it without a word, so a hole here is stars missing from the results rather than a rougher prior. The
+    The run looks a star's sightline up in the index of the file, and the stars of a pixel that is not in it
+    keep their rows with no estimate, so a hole here is stars without answers rather than a rougher prior. The
     file is written first either way: a build of thousands of pixels is hours of catalog reading and the
     partial file is worth keeping while the cause of the holes is found.
     """
@@ -314,8 +315,8 @@ def reportHoles(failed, empty, allowMissing):
     if (failed or empty) and not allowMissing:
         raise SystemExit(
             f"{len(failed) + len(empty)} pixels of the footprint have no maps in the file just written, and "
-            "the run drops every star of a sightline that has none; find the cause or pass --allow-missing "
-            "to take the file as it stands"
+            "the run fits no star of a sightline that has none; find the cause or pass --allow-missing to "
+            "take the file as it stands"
         )
 
 
