@@ -252,6 +252,45 @@ def test_a_colour_with_no_measurement_is_flagged():
     assert not flags[2] & FLAG_COLOR_MISSING
 
 
+def test_a_colour_that_is_not_a_number_weighs_nothing_and_is_flagged():
+    """A prepared catalog may write an unmeasured colour as NaN, and one NaN must not empty the whole star.
+
+    The colour gets no weight at all, so the answer is the one of a colour whose error is enormous, and the
+    star says it had a colour missing. A star with none of its colours is answered from its prior.
+    """
+    catalog, priorGrid, params = setup(n=4)
+    catalog.loc[1, "ug"] = np.nan
+    catalog.loc[2, "riErr"] = np.nan
+    catalog.loc[3, ["ug", "gr", "ri"]] = np.nan
+    estimates, _ = makeBayesEstimates3d(catalog, priorGrid, params, batchSize=4)
+    columns = [c for c in estimates.columns if c.endswith(("_lo", "_median", "_hi", "_std"))]
+    assert np.all(np.isfinite(estimates[columns].to_numpy(float))), "a NaN colour emptied the star"
+    flags = estimates[bayes.cc.quality_flags].to_numpy()
+    assert list(flags & FLAG_COLOR_MISSING > 0) == [False, True, True, True]
+
+    weightless = catalog.copy()
+    weightless.loc[1, ["ug", "ugErr"]] = [0.0, 1e6]
+    weightless.loc[2, ["ri", "riErr"]] = [0.0, 1e6]
+    reference, _ = makeBayesEstimates3d(weightless, priorGrid, params, batchSize=4)
+    assert_allclose(estimates[columns].to_numpy(float)[:3], reference[columns].to_numpy(float)[:3], atol=1e-4)
+
+    rows = unfittedEstimates(catalog, params, FLAG_NO_PRIOR)[bayes.cc.quality_flags].to_numpy()
+    assert list(rows & FLAG_COLOR_MISSING > 0) == [False, True, True, True]
+
+
+def test_a_star_with_no_dust_map_value_is_not_bounded_by_it():
+    """A NaN in the dust-map column leaves A_r free over the whole grid, as a run without a map does."""
+    catalog, priorGrid, params = setup(n=3)
+    catalog.loc[1, "Ar"] = np.nan
+    estimates, _ = makeBayesEstimates3d(catalog, priorGrid, params, batchSize=3)
+    unbounded = catalog.copy()
+    unbounded.loc[1, "Ar"] = 1e3  # a bound far above the top of the grid
+    reference, _ = makeBayesEstimates3d(unbounded, priorGrid, params, batchSize=3)
+    columns = [c for c in estimates.columns if c.endswith(("_lo", "_median", "_hi", "_std"))]
+    assert np.all(np.isfinite(estimates[columns].to_numpy(float)[1])), "a NaN dust-map value emptied the star"
+    assert_allclose(estimates[columns].to_numpy(float), reference[columns].to_numpy(float), rtol=1e-6)
+
+
 def test_the_edges_of_the_grid_are_flagged_as_limits():
     """A parameter pinned against the end of the model grid is a limit, not a measurement."""
     catalog, priorGrid, params = setup()

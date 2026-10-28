@@ -5,7 +5,8 @@ Run the fit on a survey
 catalog partition by partition, builds the colours and their errors from the PSF fluxes, fits them against
 the locus ``photod.locus.RUN_LOCUS_FILE`` names with the TRILEGAL prior maps ``--priors`` names, and writes
 the answers as a HATS catalog. The A_r prior is bounded by the extinction column and is not shaped by
-the 3D dust curves unless ``--dust-curves`` names them.
+the 3D dust curves unless ``--dust-curves`` names them. A star with no value in that column is fitted over
+the whole A_r grid, as in a run with ``--no-dust-map``, and no flag marks it.
 
 .. code-block:: bash
 

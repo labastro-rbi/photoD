@@ -58,7 +58,8 @@ CHI2_POOR = 100.0
 ASYMMETRY_POOR = 3.0
 COLLAPSED_WIDTH = 0.1  # half-width of the Qr interval below which an answer is collapsed, not precise
 MISSING_COLOR_ERR = 1.0  # a colour whose error is above this is effectively unmeasured: the fit weighs it
-# by 1 / err^2 like any other, which against a well measured colour is a ten-thousandth of the weight or less
+# by 1 / err^2 like any other, which against a well measured colour is a ten-thousandth of the weight or less.
+# A colour or an error that is not a number is unmeasured as well, and weighs nothing at all.
 
 
 def makeBayesEstimates3d(
@@ -220,10 +221,12 @@ def unfittedEstimates(starsData, globalParams, flag):
         columns[name] = starsData[name].to_numpy()
     # the flags that describe the input rather than the answer are reported for these rows too, so that
     # counting the stars of a run by what was measured of them does not depend on which rows were fitted
+    colors = starsData[list(globalParams.fitColors)].to_numpy(dtype=np.float64)
     errors = starsData[[color + "Err" for color in globalParams.fitColors]].to_numpy(dtype=np.float64)
     flags = np.full(len(starsData), flag | FLAG_POOR_FIT, dtype=np.int32)
     rmag = starsData[cc.observed_mag_r].to_numpy(dtype=np.float64)
-    flags |= np.where((errors > MISSING_COLOR_ERR).any(axis=1), FLAG_COLOR_MISSING, 0)
+    missing = ~(errors <= MISSING_COLOR_ERR) | ~np.isfinite(colors)
+    flags |= np.where(missing.any(axis=1), FLAG_COLOR_MISSING, 0)
     flags |= np.where(~np.isfinite(rmag), FLAG_NO_MAGNITUDE, 0)
     columns[cc.quality_flags] = flags
     return pd.DataFrame(columns)[list(meta.columns)].astype(meta.dtypes.to_dict())
@@ -249,6 +252,12 @@ def getColorsAndPriorIndices(catalog, params):
     """Per star: colors and errors, prior map index, the A_r prior limit, r, the dust curve and A_r(map)."""
     colors = catalog[list(params.fitColors)].to_numpy(dtype=np.float64)
     colorsErr = catalog[[color + "Err" for color in params.fitColors]].to_numpy(dtype=np.float64)
+    # A colour or an error that is not a number is a colour that was not measured, and it carries no weight:
+    # an infinite error, whose weight 1 / err^2 is exactly zero, and a value of zero for that weight to
+    # multiply. Passed on as it is, a single one makes every estimate of the star NaN.
+    missing = ~np.isfinite(colors) | ~np.isfinite(colorsErr)
+    colors = np.where(missing, 0.0, colors)
+    colorsErr = np.where(missing, np.inf, colorsErr)
     if params.colorErrFloor > 0:
         colorsErr = np.sqrt(colorsErr**2 + params.colorErrFloor**2)
     priorIndices = np.asarray(getPriorMapIndex(catalog[cc.observed_mag_r]), dtype=np.int32)
@@ -256,8 +265,12 @@ def getColorsAndPriorIndices(catalog, params):
         arMap = np.zeros(len(catalog))
         arMax = np.full(len(catalog), np.inf)
     else:
+        # a star the dust map has no value for is not bounded by it, as in a run without a map: a limit of
+        # NaN leaves no A_r allowed at all, and the posterior empty
         arMap = catalog[params.ArMapColumn].to_numpy(dtype=np.float64)
-        arMax = params.ArPriorScale * arMap + params.ArPriorOffset
+        mapped = np.isfinite(arMap)
+        arMax = np.where(mapped, params.ArPriorScale * arMap + params.ArPriorOffset, np.inf)
+        arMap = np.where(mapped, arMap, 0.0)
     rmag = catalog[cc.observed_mag_r].to_numpy(dtype=np.float64)
     if params.ArCurveIndexColumn is None:
         curveIndex = np.zeros(len(catalog), dtype=np.int32)
@@ -350,8 +363,10 @@ def starPosterior(star, logPriorGrid, priorEntropy, args, computeMrTrue=False, r
             curve[-1] > 0, 1.0 / ((args["ArCurveFrac"] * Astar) ** 2 + args["ArCurveFloor"] ** 2), 0.0
         )
     S = s + wDust
-    Acomb = (s * A0 + wDust * Astar) / S
-    extra = s * wDust / S * (A0 - Astar) ** 2
+    # S is 0 for a star with no colour measured and no dust curve: nothing then constrains A_r, and the
+    # posterior is the prior
+    Acomb = jnp.where(S > 0, (s * A0 + wDust * Astar) / jnp.where(S > 0, S, 1.0), 0.0)
+    extra = s * wDust / jnp.where(S > 0, S, 1.0) * (A0 - Astar) ** 2
     # That Gaussian is a density in A_r whose width follows A*_i, so it has to be normalised along with it.
     # Dropping the normalisation weighs every locus point as if its A_r were equally well known, which
     # favours the points the map reddens the most, and those are the distant, luminous solutions.
