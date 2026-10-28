@@ -7,7 +7,7 @@
   description: declination
   variable: declination
 - column_id: tLoc
-  description: position along the locus, which is the absolute magnitude only below the turn-off
+  description: position along the locus, the absolute magnitude only fainter than the turn-off (tLoc > 4)
   variable: abs_mag_r
 - column_id: MrEst
   description: estimate of absolute magnitude in r band

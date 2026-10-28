@@ -15,8 +15,8 @@ DEFAULT_LOCUS_FILE = Path(__file__).resolve().parents[2] / "data" / "MSandRGBcol
 RUN_LOCUS_FILE = DEFAULT_LOCUS_FILE.parent / "LSSTlocus_10Gyr_fix.txt"
 
 # For LSSTlocus_10Gyr_fix.txt: which TRILEGAL evolutionary labels (0 PMS, 1 MS, 2 SGB, 3 RGB, 4-6 CHeB,
-# 7 EAGB, 8 TPAGB, 9 PAGB/WD) belong to each monotonic segment of Mr(tLoc) below the turn-off, per [Fe/H] row.
-# Segments are numbered from the smallest tLoc.
+# 7 EAGB, 8 TPAGB, 9 PAGB/WD) belong to each monotonic segment of Mr(tLoc) at the turn-off and brighter
+# (tLoc <= 4), per [Fe/H] row. Segments are numbered from the smallest tLoc.
 _ALL_LABELS = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
 _EVOLVED = {3, 4, 5, 6, 7, 9}
 SEGMENT_LABEL_MAP = {
@@ -217,16 +217,17 @@ def splitMonotonicSegments(tLocVals, MrTrueVals, minSegmentLen=4):
 
 
 def buildSegmentData(globalParams, segmentLabelMap=None, turnoffTLoc=4.0):
-    """Per [Fe/H] row: Mr range and interpolation table of each monotonic segment of Mr(tLoc) below the
-    turn-off, and which TRILEGAL labels may be placed on it. Computed once and passed to assignTLocPartition.
+    """Per [Fe/H] row: Mr range and interpolation table of each monotonic segment of Mr(tLoc) at the turn-off
+    and brighter (tLoc <= turnoffTLoc), and which TRILEGAL labels may be placed on it. Computed once and
+    passed to assignTLocPartition.
     """
     segmentLabelMap = SEGMENT_LABEL_MAP if segmentLabelMap is None else segmentLabelMap
     tLoc1d = globalParams.Mr1d
-    below = tLoc1d <= turnoffTLoc
+    bright = tLoc1d <= turnoffTLoc
     segmentData = {}
     for i, feh in enumerate(globalParams.FeH1d):
-        MrRow = np.asarray(globalParams.MrTrueTable[i])[below]
-        segments = splitMonotonicSegments(tLoc1d[below], MrRow)
+        MrRow = np.asarray(globalParams.MrTrueTable[i])[bright]
+        segments = splitMonotonicSegments(tLoc1d[bright], MrRow)
         labels = segmentLabelMap.get(round(float(feh), 1), {})
         ranges = np.zeros((len(segments), 2))
         labelToSeg = np.zeros((10, len(segments)), dtype=bool)
@@ -234,7 +235,7 @@ def buildSegmentData(globalParams, segmentLabelMap=None, turnoffTLoc=4.0):
         for k, (s, e) in enumerate(segments):
             order = np.argsort(MrRow[s : e + 1])
             interpMr.append(MrRow[s : e + 1][order])
-            interpTLoc.append(tLoc1d[below][s : e + 1][order])
+            interpTLoc.append(tLoc1d[bright][s : e + 1][order])
             ranges[k] = interpMr[-1][0], interpMr[-1][-1]
             labelToSeg[list(labels.get(k, ())), k] = True
         segmentData[i] = {
@@ -258,9 +259,9 @@ def assignTLocPartition(
 ):
     """tLoc for each star of a TRILEGAL catalog (partition), from its Mr, [Fe/H] and evolutionary label.
 
-    Above the turn-off tLoc equals Mr. Below it, Mr(tLoc) is not monotonic; a star is placed on the segment
-    whose Mr range contains its Mr, and if several do, on the one that matches its label. Stars that cannot be
-    placed get NaN. The input is not modified.
+    Fainter than the turn-off (Mr > turnoffTLoc) tLoc equals Mr. At the turn-off and brighter, Mr(tLoc) is
+    not monotonic; a star is placed on the segment whose Mr range contains its Mr, and if several do, on the
+    one that matches its label. Stars that cannot be placed get NaN. The input is not modified.
     """
     starFeH = df[starFeHCol].to_numpy()
     starMr = df[starMrCol].to_numpy()
@@ -269,10 +270,10 @@ def assignTLocPartition(
 
     idx = np.clip(np.searchsorted(FeH1d, starFeH), 1, len(FeH1d) - 1)
     nearestFeH = np.where(np.abs(starFeH - FeH1d[idx - 1]) <= np.abs(starFeH - FeH1d[idx]), idx - 1, idx)
-    below = starMr <= turnoffTLoc
-    for i in np.unique(nearestFeH[below]):
+    bright = starMr <= turnoffTLoc
+    for i in np.unique(nearestFeH[bright]):
         data = segmentData[i]
-        stars = np.where(below & (nearestFeH == i))[0]
+        stars = np.where(bright & (nearestFeH == i))[0]
         if data["ranges"].size == 0:
             continue
         mr = starMr[stars]

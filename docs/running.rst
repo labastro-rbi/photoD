@@ -10,13 +10,15 @@ the whole A_r grid, as in a run with ``--no-dust-map``, and no flag marks it.
 
 .. code-block:: bash
 
-    python scripts/run_dp2.py --catalog <rubin_dp2/object_collection> --out <dir> --name dp2_photod --workers 6
+    python scripts/run_dp2.py --catalog <rubin_dp2/object_collection> --priors <priors.npz> --out <dir> \
+        --name dp2_photod --workers 6
 
 On a machine with several GPUs the survey can be split between processes, each pinned to its own GPU and
 given the same ``--out`` and ``--name``::
 
     for i in 0 1 2 3; do
-        CUDA_VISIBLE_DEVICES=$i python scripts/run_dp2.py --catalog <...> --out <dir> --workers 3 --shard $i/4 &
+        CUDA_VISIBLE_DEVICES=$i python scripts/run_dp2.py --catalog <...> --priors <priors.npz> --out <dir> \
+            --workers 3 --shard $i/4 &
     done; wait
 
 Each fits every fourth partition, and whichever finishes last writes the catalog metadata for all of them.
@@ -42,8 +44,9 @@ best fit; ``fit_flags``, one bit per thing worth knowing about the answer; ``mul
 absolute magnitude ``Mr``, the metallicity ``FeH``, the extinction ``Ar``, the distance modulus ``DM`` and
 ``tLoc`` the 16th, 50th and 84th percentiles and the standard deviation of the posterior, as
 ``<name>_quantile_lo``, ``_quantile_median``, ``_quantile_hi`` and ``<name>_std``. tLoc is the coordinate
-along the locus that the fit is parametrised by. It is the absolute magnitude below the turn-off and not
-above it, so the absolute magnitude is ``Mr``. The interval and the standard deviation of ``DM`` include the
+along the locus that the fit is parametrised by. It equals the absolute magnitude only on the main sequence
+fainter than the turn-off (tLoc > 4) and not at the turn-off or brighter, so the absolute magnitude is
+``Mr``. The interval and the standard deviation of ``DM`` include the
 error on r. ``multimodality`` is how much of the distance modulus posterior lies in a second peak: zero when
 the posterior has one, however skewed, and for two a lower bound on the weight of the smaller.
 

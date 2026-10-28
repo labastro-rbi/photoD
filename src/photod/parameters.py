@@ -27,8 +27,9 @@ class GlobalParams:
     ArGridRange : str
         "Small", "Medium", "Large" or "Fixed".
     computeMrTrue : bool
-        For a grid in tLoc, also report quantiles of the true Mr (Mr = tLoc above the turn-off, and the Mr of
-        the locus table below it). Qr = Mr + A_r is then computed from the true Mr as well.
+        For a grid in tLoc, also report quantiles of the true Mr (Mr = tLoc fainter than the turn-off,
+        tLoc > turnoffTLoc, and the Mr of the locus table at the turn-off and brighter). Qr = Mr + A_r is
+        then computed from the true Mr as well.
     trueMrLabel : str
         Locus column with the true Mr.
     MrTrueTable : ndarray, optional
@@ -138,7 +139,7 @@ class GlobalParams:
         else:
             # Qr and the distance modulus are built from MrTrue, so on a grid that is not the absolute
             # magnitude they would be the reddened tLoc and a distance wrong by the difference, which on the
-            # DP2 locus reaches five magnitudes above the turn-off and looks like any other answer
+            # DP2 locus reaches five magnitudes brighter than the turn-off and looks like any other answer
             if self.trueMrLabel in self.locusData.colnames and self.yLabel != self.trueMrLabel:
                 raise ValueError(
                     f"the locus is on a {self.yLabel} grid, so computeMrTrue=True is needed for Qr and the "

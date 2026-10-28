@@ -143,7 +143,7 @@ def measureMrOffsets(stars, estimates, binEdges=None, minStars=300, nDraws=300):
         binEdges = np.append(GI - half, GI[-1] + half)
     plx = stars.parallax.to_numpy(float) + 0.017
     # A catalog written before the columns were renamed holds the absolute magnitude as Mr_true, and in its Mr
-    # the tLoc of the locus, which is a different number above the turn-off
+    # the tLoc of the locus, which is a different number at the turn-off and brighter
     name = "Mr_true" if "Mr_true_quantile_median" in estimates else "Mr"
     mu = {
         q: stars.rmag.to_numpy()

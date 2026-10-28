@@ -5,6 +5,7 @@ file leaves them quietly wrong: run_dp2.ipynb read `flags` and the patched locus
 """
 
 import ast
+import importlib
 import json
 from pathlib import Path
 
@@ -76,13 +77,16 @@ def test_notebook_reads_only_columns_a_fit_writes(path):
 
 
 @pytest.mark.parametrize("path", NOTEBOOKS)
-def test_notebook_names_only_data_files_that_exist(path):
-    """A file removed from data/ has to leave the notebook too."""
-    named = {
-        node.value
-        for tree in codeCells(path)
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.startswith("data/")
-    }
+def test_notebook_names_only_data_files_and_photod_names_that_exist(path):
+    """A file removed from data/, or a name removed from photod, has to leave the notebook too."""
+    named, imported = set(), set()
+    for tree in codeCells(path):
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and str(node.value).startswith("data/"):
+                named.add(node.value)
+            if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("photod"):
+                imported.update((node.module, alias.name) for alias in node.names)
+    assert named or imported, f"{path}: found no data file and no photod name; the test no longer sees it"
     missing = sorted(name for name in named if not (REPO / name).exists())
-    assert not missing, f"{path} names data files that are not in the repository: {missing}"
+    missing += sorted(f"{m}.{n}" for m, n in imported if not hasattr(importlib.import_module(m), n))
+    assert not missing, f"{path} names data files or photod names that do not exist: {missing}"

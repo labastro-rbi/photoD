@@ -13,8 +13,8 @@ from photod.stats import getStats
 # nothing is displayed or rendered here: the tests read back what the plots were given, not their pixels
 matplotlib.use("Agg")
 
-# stars of make_stars(n=4) whose posterior sits below the turn-off of the tLoc grid, where the true absolute
-# magnitude is several magnitudes brighter than tLoc, and above it, where the two are the same
+# stars of make_stars(n=4) whose posterior sits brighter than the turn-off of the tLoc grid, where the true
+# absolute magnitude is several magnitudes brighter than tLoc, and fainter than it, where the two are the same
 GIANT, DWARF = 0, 1
 # an A_r grid of the length and step a real run uses (scripts/run_dp2.py), rather than the test locus grid
 RUN_AR_GRID = np.arange(0, 5.0 + 1e-9, 0.02)
@@ -122,7 +122,7 @@ def test_qr_is_the_qr_of_the_fit(run, star):
     """The Qr of the plots is the Qr of the fit: Mr + A_r built from the true Mr of each grid point.
 
     On a tLoc grid the second axis of the cube is not a magnitude, and a Qr read off that axis is wrong by
-    the difference everywhere below the turn-off, which is where the giant of the two stars sits.
+    the difference everywhere brighter than the turn-off, which is where the giant of the two stars sits.
     """
     params, stars, priorGrid, cubes = run
     MrTrue = params.getPlottingArgs()[-1]
@@ -256,7 +256,7 @@ def test_true_values_go_on_their_own_axis(run):
     params, stars, priorGrid, cubes = run
     cube = cubes[DWARF]
     star = stars.iloc[DWARF].copy()
-    # the true Mr of a star below the turn-off is not its tLoc, and the Qr of the fit is made of the Mr
+    # the true Mr of a star brighter than the turn-off is not its tLoc, and the Qr of the fit is made of Mr
     truth = {"FeH": -1.0, "tLoc": 5.0, "Mr": 2.5, "Ar": 0.1}
     for column, value in truth.items():
         star[column] = value
