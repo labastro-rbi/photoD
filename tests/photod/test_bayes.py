@@ -121,11 +121,6 @@ def brute_force(star, params, priorGrid):
         grid, index = np.unique(np.round(values, 3), return_inverse=True)
         return grid, np.bincount(index.ravel(), weights.ravel(), minlength=grid.size)
 
-    def entropy(p, dx):
-        """Entropy of a sampled density, in bits, so with the width of its own bin."""
-        p = p[p > 0]
-        return -np.sum(p * np.log2(p)) * dx
-
     pnorm = lambda p, dx: p / p.sum() / dx  # noqa: E731
     MrTrue = np.broadcast_to(params.Mr1d, (nFeH, nMr))
     if params.computeMrTrue:
@@ -143,13 +138,6 @@ def brute_force(star, params, priorGrid):
         out.update(
             zip([f"{name}_quantile_{q}" for q in ("lo", "median", "hi")], quantiles(x, p), strict=True)
         )
-    out["MrdS"] = entropy(margs["tLoc"][1], params.dMr) - entropy(
-        pnorm(prior.sum(axis=0), params.dMr), params.dMr
-    )
-    out["FeHdS"] = entropy(margs["FeH"][1], params.dFeH) - entropy(
-        pnorm(prior.sum(axis=1), params.dFeH), params.dFeH
-    )
-    out["ArdS"] = entropy(margs["Ar"][1], params.dAr) - entropy(pnorm(allowed * 1.0, params.dAr), params.dAr)
     out["multimodality"] = multimodality_by_hand(*margs["Qr"])
     return out
 
@@ -295,6 +283,24 @@ def test_calls_that_pass_the_3D_color_models_get_the_same_model():
     locus3DList["ArSmall"]["gr"] += 0.01
     with pytest.raises(ValueError, match="extcoeff"):
         GlobalParams(COLORS, locus, ArGridList, locus3DList, **options)
+
+
+def test_simulated_catalogs_get_locus_colors_and_LSST_errors():
+    """The helpers that simulate a catalog from the locus: nearest locus colors, and LSST errors for them."""
+    locus = make_locus(True)
+    stars = pd.DataFrame({"tLoc": [2.05, 6.1], "FeH": [-1.9, -0.4]})
+    stars = lt.getColorsFromMrFeHDSED(locus, stars, colors=COLORS, Mr_label="tLoc")
+    nearest = ((2.0, -2.0), (6.0, -0.5))
+    rows = [np.flatnonzero((locus["tLoc"] == t) & (locus["FeH"] == f))[0] for t, f in nearest]
+    assert_allclose(stars["tLocAssigned"], [2.0, 6.0])
+    for c in COLORS:
+        assert_allclose(stars[c], np.asarray(locus[c])[rows])
+    mags = {b: np.array([18.0, 22.0, 25.0]) for b in "ugrizy"}
+    errors = lt.getLSSTm5(mags)
+    assert np.all(np.diff(errors["r"]) > 0) and errors["r"][0] >= 0.005
+    assert_allclose(lt.getLSSTm5err(mags)["r"], errors["r"], rtol=1e-3)
+    suffixed = lt.getLSSTm5({f"{b}magSL": m for b, m in mags.items()}, magVersion=True, suffix="SL")
+    assert_allclose(suffixed["u"], errors["u"])
 
 
 def test_locus_plateau():

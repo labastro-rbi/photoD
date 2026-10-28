@@ -30,21 +30,6 @@ def getMargDistr3D(arr3d, dX, dY, dZ):
     return pnorm(margX, dX), pnorm(margY, dY), pnorm(margZ, dZ)
 
 
-def Entropy(p):
-    """Entropy (in bits) of a sampled distribution; empty bins contribute nothing."""
-    pOK = jnp.where(p > 0, p, 1)
-    return -jnp.sum(pOK * jnp.log2(pOK))
-
-
-def entropies(pdfs):
-    """Entropy of each distribution in a list, with a single logarithm over all of them."""
-    p = jnp.concatenate(pdfs)
-    p = jnp.where(p > 0, p, 1)
-    terms = p * jnp.log2(p)
-    edges = np.cumsum([0] + [pdf.size for pdf in pdfs])
-    return [-jnp.sum(terms[a:b]) for a, b in zip(edges[:-1], edges[1:], strict=True)]
-
-
 def getStats(x, pdf):
     """Mean and standard deviation of a sampled distribution."""
     mean = jnp.sum(x * pdf) / jnp.sum(pdf)

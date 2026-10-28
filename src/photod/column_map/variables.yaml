@@ -15,9 +15,6 @@
 - column_id: MrEstUnc
   description: uncertainty of estimate of absolute magnitude in r band
   variable: abs_mag_r_est_unc
-- column_id: MrdS
-  description: drop in entropy of absolute magnitude in r band
-  variable: abs_mag_r_entropy_drop
 - column_id: rmag
   description: observed magnitude in r band
   variable: observed_mag_r
@@ -30,9 +27,6 @@
 - column_id: FeHEstUnc
   variable: metallicity_est_unc
   description: uncertainty of estimate of metallicity
-- column_id: FeHdS
-  variable: metallicity_entropy_drop
-  description: drop in entropy of metallicity
 - column_id: Ar
   variable: extinction_r
   description: extinction in r-band
@@ -42,9 +36,6 @@
 - column_id: ArEstUnc
   variable: extinction_r_est_unc
   description: uncertainty of estimate of extinction in r-band
-- column_id: ArdS
-  variable: extinction_r_entropy_drop
-  description: drop in entropy of extinction in r-band
 - column_id: Av
   variable: extinction_v
   description: extinction in v-band

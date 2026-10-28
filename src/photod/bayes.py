@@ -15,7 +15,7 @@ from photod.column_map.base import mapper_from_glossary
 from photod.parameters import GlobalParams
 from photod.priors import getPriorMapIndex, initializePriorGrid
 from photod.results import BayesResults
-from photod.stats import entropies, getMargDistr3D, getPosteriorQuantiles, getStats, multimodality, pnorm
+from photod.stats import getMargDistr3D, getPosteriorQuantiles, getStats, multimodality, pnorm
 
 cc = None
 
@@ -99,7 +99,7 @@ def makeBayesEstimates3d(
         the multimodality, and the 16th/50th/84th percentiles and standard deviation of the locus coordinate,
         [Fe/H], A_r and the distance modulus (and of the true Mr when globalParams.computeMrTrue).
     results : BayesResults
-        chi2min and every statistic computed, which also holds Qr and the entropy drops, written to no column.
+        chi2min and every statistic computed, which also holds Qr, written to no column.
     """
     colors, colorsErr, priorIndices, arMax, rmag, curveIndex, arMap = getColorsAndPriorIndices(
         starsData, globalParams
@@ -109,7 +109,7 @@ def makeBayesEstimates3d(
         meta = getEstimatesMeta(globalParams.computeMrTrue).reset_index(drop=True)
         return meta, BayesResults(meta[cc.chi_sq_min].to_numpy(), {})
 
-    logPriorGrid, priorEntropy = _priorTables(priorGrid, globalParams)
+    logPriorGrid = _logPrior(priorGrid, globalParams)
     if returnPosteriors:
         gridLength = np.full(nStars, globalParams.Ar1d.size)
     else:
@@ -139,9 +139,7 @@ def makeBayesEstimates3d(
                 curveIndex[b],
                 arMap[b],
             )
-            out = _starBatch(
-                data, logPriorGrid, priorEntropy, args, globalParams.computeMrTrue, returnPosteriors
-            )
+            out = _starBatch(data, logPriorGrid, args, globalParams.computeMrTrue, returnPosteriors)
             # off the device as soon as it is done: holding every batch of a partition on the GPU until the
             # end keeps thousands of buffers alive, which exhausts it on a large partition
             batches.append((b, _toHost(out)))
@@ -294,8 +292,7 @@ def magnitudeError(catalog):
 
 def getEstimatesMeta(computeMrTrue: bool = False):
     """Empty frame with the columns and types of the estimates, as lsdb meta."""
-    # Qr and the entropy drops are computed but not written: Qr is Mr + A_r, which the two of them
-    # already give, and the entropy drops were only ever a diagnostic of the fit against its own prior.
+    # Qr is computed but not written: it is Mr + A_r, which the distance modulus and r already give
     names = [cc.abs_mag_r, cc.metallicity, cc.extinction_r, cc.distance_modulus] + (
         ["Mr"] if computeMrTrue else []
     )
@@ -327,7 +324,7 @@ def getEstimatesMeta(computeMrTrue: bool = False):
     return meta
 
 
-def starPosterior(star, logPriorGrid, priorEntropy, args, computeMrTrue=False, returnPosteriors=False):
+def starPosterior(star, logPriorGrid, args, computeMrTrue=False, returnPosteriors=False):
     """Posterior statistics for one star, and the Qr posterior they are partly read from.
 
     For locus point i and extinction A the model colors are m_i + A R, so
@@ -415,11 +412,6 @@ def starPosterior(star, logPriorGrid, priorEntropy, args, computeMrTrue=False, r
         # the second moment of the same sampled density. It says something the quantiles do not for a
         # posterior with two branches, where the spread is wide while the 16-84 interval can be narrow.
         statistics[f"{name}_std"] = getStats(values, pdf)[1]
-    # the entropies are of sampled densities, so each carries the width of its own bin and comes out in bits
-    HMr, HFeH, HAr, HAr0 = entropies([margMr, margFeH, margAr, pnorm(allowed * 1.0, args["dAr"])])
-    statistics[cc.abs_mag_r_entropy_drop] = HMr * args["dMr"] - priorEntropy[priorIndex, 0]
-    statistics[cc.metallicity_entropy_drop] = HFeH * args["dFeH"] - priorEntropy[priorIndex, 1]
-    statistics[cc.extinction_r_entropy_drop] = (HAr - HAr0) * args["dAr"]
 
     cubes = {}
     if returnPosteriors:
@@ -438,11 +430,10 @@ def starPosterior(star, logPriorGrid, priorEntropy, args, computeMrTrue=False, r
 
 
 @partial(jax.jit, static_argnames=("computeMrTrue", "returnPosteriors"))
-def _starBatch(data, logPriorGrid, priorEntropy, args, computeMrTrue, returnPosteriors):
+def _starBatch(data, logPriorGrid, args, computeMrTrue, returnPosteriors):
     star = partial(
         starPosterior,
         logPriorGrid=logPriorGrid,
-        priorEntropy=priorEntropy,
         args=args,
         computeMrTrue=computeMrTrue,
         returnPosteriors=returnPosteriors,
@@ -473,16 +464,9 @@ def _chi2GridMin(c, s, A0, grid, kLast):
     return c + s * jnp.minimum((below - A0) ** 2, (above - A0) ** 2)
 
 
-def _priorTables(priorGrid, params):
-    """Log prior on the locus (plateau points excluded) and the entropy of its Mr and [Fe/H] marginals."""
-    prior = jnp.asarray(priorGrid) * params.locusValid
-    maps = prior.reshape(-1, params.FeH1d.size, params.Mr1d.size)
-    columns = []
-    for marg, step in ((maps.sum(axis=1), params.dMr), (maps.sum(axis=2), params.dFeH)):
-        p = marg / marg.sum(axis=1, keepdims=True) / step
-        p = jnp.where(p > 0, p, 1)
-        columns.append(-jnp.sum(p * jnp.log2(p), axis=1) * step)
-    return jnp.log(prior), jnp.stack(columns, axis=1)
+def _logPrior(priorGrid, params):
+    """Log prior on the locus, the points that only pad an isochrone to the grid excluded."""
+    return jnp.log(jnp.asarray(priorGrid) * params.locusValid)
 
 
 def _arGridLengths(arMax, Ar1d):

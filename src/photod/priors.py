@@ -2,8 +2,6 @@ import numpy as np
 from scipy.interpolate import RegularGridInterpolator
 from scipy.ndimage import gaussian_filter
 
-from photod.column_map.locus_data import map as ldc
-
 
 def getBayesConstants():
     """Grid of the prior maps and the r-band magnitude bins they are computed for."""
@@ -75,23 +73,6 @@ def interpolateMap(xgrid, ygrid, Z, x, y):
         ygrid, Z = ygrid[::-1], Z[::-1]
     interp = RegularGridInterpolator((ygrid, xgrid), Z, method="linear", bounds_error=False, fill_value=0.0)
     return interp(np.column_stack([y, x]))
-
-
-def readPriors(rootname, locusData, yColumn=ldc.abs_mag_r):
-    """Prior maps written by dumpPriorMaps_testing (rootname-NN.npz), interpolated onto the locus grid."""
-    bc = getBayesConstants()
-    priorGrid = {}
-    for rind in range(bc["rmagNsteps"]):
-        m = np.load(f"{rootname}-{rind:02d}.npz")
-        if m["metadata"][13] != bc["rmagBinWidth"]:
-            raise ValueError(
-                f"map {rind} was made with rmagBinWidth={m['metadata'][13]}, not {bc['rmagBinWidth']}"
-            )
-        X, Y = m["xGrid"], m["yGrid"]
-        priorGrid[rind] = interpolateMap(
-            X[0], Y[:, 0], m["kde"], locusData[ldc.metallicity], locusData[yColumn]
-        )
-    return priorGrid
 
 
 def getPriorMapIndex(rObs):

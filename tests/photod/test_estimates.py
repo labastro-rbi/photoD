@@ -130,24 +130,6 @@ def test_extinction_pinned_at_the_dust_map_bound_is_flagged():
     assert estimates[bayes.cc.quality_flags].to_numpy()[0] & FLAG_AR_EDGE
 
 
-def test_the_entropy_drop_is_in_bits():
-    """The entropies are of densities, so each carries the width of its own bin."""
-    catalog, priorGrid, params = setup(n=2)
-    estimates, results = makeBayesEstimates3d(catalog, priorGrid, params, returnPosteriors=True)
-    for star in range(len(catalog)):
-        posterior = np.asarray(results.margpostAr[2][star], dtype=float)
-        prior = np.asarray(results.margpostAr[0][star], dtype=float)
-        bits = (
-            lambda p: -np.sum(np.where(p > 0, p, 1) * np.log2(np.where(p > 0, p, 1))) * params.dAr
-        )  # noqa: E731
-        assert_allclose(
-            results.statistics[bayes.cc.extinction_r_entropy_drop][star],
-            bits(posterior) - bits(prior),
-            rtol=2e-3,
-            atol=2e-3,
-        )
-
-
 def test_a_star_the_fit_never_saw_is_kept_and_flagged():
     """A star whose part of the sky has no prior map cannot be fitted, and is not quietly left out either."""
     catalog, _, params = setup(n=3)
