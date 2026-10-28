@@ -20,9 +20,6 @@ from photod.bayes import FLAG_NO_PRIOR, FLAG_POOR_FIT, getEstimatesMeta, unfitte
 from photod.priors import getBayesConstants
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "run_dp2.py"
-DATA = Path(__file__).resolve().parents[2] / "data"
-PRIORS = DATA / "priors_dp2.npz"
-needsPriors = pytest.mark.skipif(not PRIORS.exists(), reason="the prior maps do not ship here")
 # the command line of a run, as far as what it asks of the fit is concerned
 SETTINGS = dict(
     catalog="/data/dp2",
@@ -73,9 +70,23 @@ def dustFile(path, nside=8, covered=(0, 1)):
     return path
 
 
-def asTable(constants):
-    """The grid constants as a table of name and value, the other shape a prior file may record them in."""
-    return np.array([[name, str(value)] for name, value in constants.items()])
+def priorIndex(path, covered=(100, 2000)):
+    """A prior file holding only the index of its sky pixels, order 5, with maps for the given pixels."""
+    index = np.full(12 * 4**5, -1, dtype=np.int32)
+    index[list(covered)] = np.arange(len(covered), dtype=np.int32)
+    np.savez(path, index=index, order=5)
+    return path
+
+
+def fittedStars(ra, dec):
+    """Prepared stars at the given positions, with what the fit reads of each."""
+    n = len(ra)
+    colors = ("ug", "gr", "ri", "iz", "zy")
+    return pd.DataFrame(
+        {"objectId": np.arange(n), "ra": ra, "dec": dec, "rmag": np.full(n, 20.0), "Ar": np.zeros(n)}
+        | {color: np.full(n, 0.5) for color in colors}
+        | {color + "Err": np.full(n, 0.02) for color in colors}
+    )
 
 
 def estimatesFrame(ra, dec):
@@ -130,16 +141,10 @@ def test_an_nside_that_is_not_a_power_of_two_is_an_error(run, tmp_path):
         run.readCurves(str(dustFile(tmp_path / "odd.npz", nside=12)))
 
 
-@needsPriors
-def test_a_star_with_no_prior_map_is_kept_and_flagged(run, monkeypatch):
-    """The maps cover the footprint they were built for, which is not the one the stars came from.
-
-    The pixels come from the index of the maps that ship here, which is 49 kB of that 140 MB file and the
-    only part of it this reads. When this was written the file was missing three of the order 5 pixels its
-    own dust file covers, so the sky it does not reach is not a hypothetical.
-    """
+def test_a_star_with_no_prior_map_is_kept_and_flagged(run, monkeypatch, tmp_path):
+    """The maps cover the footprint they were built for, which is not the one the stars came from."""
     globalParams = SimpleNamespace(computeMrTrue=True, fitColors=("ug", "gr", "ri", "iz", "zy"))
-    with np.load(PRIORS) as data:
+    with np.load(priorIndex(tmp_path / "priors.npz")) as data:
         index, order = np.asarray(data["index"]), int(data["order"])
     covered = np.where(index >= 0)[0][:2]
     missing = np.where(index < 0)[0][:2]
@@ -160,11 +165,7 @@ def test_a_star_with_no_prior_map_is_kept_and_flagged(run, monkeypatch):
     )
 
     pixels = [covered[0], covered[1], covered[1], missing[0], missing[1]]
-    ra, dec = zip(*[pixelCentre(pixel, order) for pixel in pixels], strict=True)
-    stars = pd.DataFrame(
-        {"objectId": np.arange(5), "ra": ra, "dec": dec, "rmag": np.full(5, 20.0), "Ar": np.zeros(5)}
-        | {color + "Err": np.full(5, 0.02) for color in globalParams.fitColors}
-    )
+    stars = fittedStars(*zip(*[pixelCentre(pixel, order) for pixel in pixels], strict=True))
     estimates = run.fitPartition(stars, "priors.npz", (0.03, True, "", 8.0), 100)
 
     assert len(estimates) == len(stars), "a star was dropped for the sky it sits in"
@@ -374,7 +375,7 @@ def test_the_maps_are_decoded_the_way_the_file_that_holds_them_says(run):
     """The quantisation is shared with scripts/make_priors.py, so the file has to carry its own end of it."""
     kde = np.array([[[[0, 128, 255]]]], dtype=np.uint8)
     scale = np.ones((1, 1), dtype=np.float32)
-    eight = run.priorMaps({"kde": kde, "kdeScale": scale})
+    eight = run.priorMaps({"kde": kde, "kdeScale": scale, "decades": 8.0})
     four = run.priorMaps({"kde": kde, "kdeScale": scale, "decades": 4.0})
 
     assert eight[0, 0, 0, 2] == pytest.approx(1.0) and four[0, 0, 0, 2] == pytest.approx(1.0)
@@ -383,14 +384,14 @@ def test_the_maps_are_decoded_the_way_the_file_that_holds_them_says(run):
     # hundred, and reading a map with the wrong one of them tilts every prior it holds
     assert eight[0, 0, 0, 1] == pytest.approx(10 ** (128 / 255 * 8 - 8), rel=1e-5)
     assert four[0, 0, 0, 1] == pytest.approx(10 ** (128 / 255 * 4 - 4), rel=1e-5)
-    assert run.priorDecades({"kde": kde}) == run.PRIOR_DECADES
 
 
 def test_the_log_says_which_kind_of_prior_maps_a_run_reads(run, tmp_path, capsys):
     """Compact maps and full-resolution ones fit the same way and must not look the same in the log."""
     constants = json.dumps(getBayesConstants())
     np.savez(tmp_path / "compact.npz", kde=np.zeros((3, 2, 4, 5), np.uint8), decades=6.0, constants=constants)
-    np.savez_compressed(tmp_path / "full.npz", kde=np.zeros((3, 2, 7, 9), np.float32), constants=constants)
+    full = np.zeros((3, 2, 7, 9), np.float32)
+    np.savez_compressed(tmp_path / "full.npz", kde=full, decades=8.0, constants=constants)
     run.checkPriorFile(tmp_path / "compact.npz")
     assert "compact maps, a byte of log over 6 decades" in capsys.readouterr().out
     run.checkPriorFile(tmp_path / "full.npz")
@@ -402,33 +403,24 @@ def test_the_log_says_which_kind_of_prior_maps_a_run_reads(run, tmp_path, capsys
 def test_prior_maps_built_on_another_grid_are_refused(run, tmp_path):
     """The maps are read back on the grid they were tabulated on; another grid is wrong everywhere.
 
-    scripts/make_priors.py records the grid as JSON, and a table of name and value is read as well, so that
-    the two scripts have to agree on the file rather than on the shape of one entry of it.
+    scripts/make_priors.py records the grid as JSON beside the maps, and the decades a compact map is
+    decoded with, so a file without either of them is refused rather than read with a guess.
     """
     constants = getBayesConstants()
     maps = np.zeros((1, 1, 2, 2), dtype=np.uint8)
-    for shape, recorded in (("json", json.dumps(constants)), ("table", asTable(constants))):
-        np.savez(tmp_path / f"{shape}.npz", kde=maps, decades=6.0, constants=recorded)
-        with np.load(tmp_path / f"{shape}.npz") as data:
-            assert run.priorConstants(data) == constants, f"the {shape} the grid is recorded in was not read"
-        run.checkPriorFile(tmp_path / f"{shape}.npz")
+    np.savez(tmp_path / "right.npz", kde=maps, decades=6.0, constants=json.dumps(constants))
+    with np.load(tmp_path / "right.npz") as data:
+        assert run.priorConstants(data) == constants, "the grid the file records was not read"
+    run.checkPriorFile(tmp_path / "right.npz")
 
-    np.savez(tmp_path / "wrong.npz", kde=maps, constants=asTable(constants | {"FeHNpts": 48}))
+    np.savez(tmp_path / "wrong.npz", kde=maps, decades=6.0, constants=json.dumps(constants | {"FeHNpts": 48}))
     with pytest.raises(SystemExit, match="FeHNpts"):
         run.checkPriorFile(tmp_path / "wrong.npz")
-    np.savez(tmp_path / "odd.npz", kde=maps, constants=np.zeros(3))
-    with pytest.raises(SystemExit, match="constants"):
-        run.checkPriorFile(tmp_path / "odd.npz")
-
-
-@needsPriors
-def test_the_prior_maps_that_ship_are_taken_as_they_come(run):
-    """They record neither the grid nor the decades, and reading them must not depend on either.
-
-    Only the metadata of the file is touched here: npz members are read when they are asked for, and the
-    maps themselves are 140 MB.
-    """
-    run.checkPriorFile(PRIORS)
+    recorded = {"constants": dict(decades=6.0), "decades": dict(constants=json.dumps(constants))}
+    for name, kept in recorded.items():
+        np.savez(tmp_path / "unrecorded.npz", kde=maps, **kept)
+        with pytest.raises(SystemExit, match=f"records no {name}"):
+            run.checkPriorFile(tmp_path / "unrecorded.npz")
 
 
 def test_the_pool_is_kept_fed_rather_than_handed_the_whole_survey(run, monkeypatch):
@@ -866,25 +858,6 @@ def test_a_partition_is_written_where_the_dataset_scan_cannot_see_it(run, tmp_pa
     # the file put back where the write had it, as a kernel kill between the write and the rename leaves it
     seen[0].write_bytes(b"PAR1 and then the run was killed")
     assert run.writeCatalogMetadata(base, "photod", pixels, 12) is True, "a leftover broke the metadata step"
-    assert run.sweepOrphans(base) == 0, "there was nothing in the dataset to sweep"
-
-
-def test_an_orphan_of_an_earlier_version_is_swept_and_the_failure_is_visible(run, tmp_path, capsys):
-    """Earlier runs wrote the temporary file beside the partition, where it breaks every run that follows."""
-    from hats.pixel_math import HealpixPixel
-
-    base = tmp_path / "photod"
-    pixels = [HealpixPixel(3, 0)]
-    inside = [pixelCentre(corner, 4) for corner in range(4)]
-    path = run.writePartition(base, pixels[0], estimatesFrame(*zip(*inside, strict=True)))
-    orphan = path.with_name("Npix=40-ab12cd34.parquet")
-    orphan.write_bytes(b"PAR1 and then the run was killed")
-
-    assert run.writeCatalogMetadata(base, "photod", pixels, 4) is False, "the orphan did not break anything"
-    assert "the catalog index is not" in capsys.readouterr().out, "the failure was not reported"
-    assert run.sweepOrphans(base) == 1 and not orphan.exists(), "the orphan was not swept"
-    assert run.writeCatalogMetadata(base, "photod", pixels, 4) is True, "sweeping did not repair the catalog"
-    assert path.exists(), "sweeping took a real partition with it"
 
 
 def test_the_pool_replaces_its_workers_every_chunk(run):
@@ -897,11 +870,10 @@ def test_the_pool_replaces_its_workers_every_chunk(run):
     run.ProcessPoolExecutor(max_workers=1, **options).shutdown()
 
 
-@needsPriors
-def test_the_batch_memory_budget_reaches_the_fit(run, monkeypatch):
+def test_the_batch_memory_budget_reaches_the_fit(run, monkeypatch, tmp_path):
     """--batch-bytes bounds one batch of one worker, and has to arrive at the call that makes the batch."""
     globalParams = SimpleNamespace(computeMrTrue=True, fitColors=("ug", "gr", "ri", "iz", "zy"))
-    with np.load(PRIORS) as data:
+    with np.load(priorIndex(tmp_path / "priors.npz")) as data:
         index, order = np.asarray(data["index"]), int(data["order"])
     covered = int(np.where(index >= 0)[0][0])
     maps = np.zeros((int(index.max()) + 1, 4, 4, 4))
@@ -921,10 +893,7 @@ def test_the_batch_memory_budget_reaches_the_fit(run, monkeypatch):
 
     monkeypatch.setattr(run, "makeBayesEstimates3d", watched)
     ra, dec = pixelCentre(covered, order)
-    stars = pd.DataFrame(
-        {"objectId": [0], "ra": [ra], "dec": [dec], "rmag": [20.0], "Ar": [0.0]}
-        | {color + "Err": [0.02] for color in globalParams.fitColors}
-    )
+    stars = fittedStars([ra], [dec])
     run.fitPartition(stars, "priors.npz", (0.03, True, "", 8.0), 100, 1 << 30)
 
     assert asked == {"batchSize": 100, "batchBytes": 1 << 30}, "the batch budget did not reach the fit"

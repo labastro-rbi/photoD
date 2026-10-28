@@ -88,8 +88,6 @@ FIT_COLUMNS = ["objectId", "ra", "dec", "rmag"] + [c + s for c in COLORS for s i
 # them; another catalog's spelling is renamed to it rather than passed over, because passed over it fits r as
 # exact and the distance interval comes out too narrow with nothing in the output to say that it happened.
 RMAG_ERROR_NAMES = ("rmagErr", "rErr")
-INPUT_COLUMNS = RAW_COLUMNS  # kept for anything importing the old name
-PRIOR_DECADES = 8.0  # how far below its own peak a compact prior map is kept, for a file that says nothing
 FAILURES_REPORTED = 20  # failed partitions named one by one, after which only the count is kept
 WINDOW = 2  # partitions in the pool per worker, so that a worker always has the next one waiting
 RUN_FILE = "photod_run.json"  # what the run was configured with, beside the answers it wrote
@@ -434,39 +432,16 @@ def loadCurves(path):
 def mapFile(path):
     """Where the unpacked maps live: a scratch copy keyed to the file and the time it was written.
 
-    Not beside the maps themselves, which ship with the repository and should not collect half a gigabyte of
-    working file every time a run starts.
+    Not beside the maps themselves, which should not collect gigabytes of working file every time a run
+    starts.
     """
     stamp = int(Path(path).stat().st_mtime)
     return Path(tempfile.gettempdir()) / f"photod-{Path(path).stem}-{stamp}.kde.npy"
 
 
-def priorDecades(data):
-    """How far below its own peak a compact prior map was kept, as the file carrying it says.
-
-    The number is one end of the quantisation and scripts/make_priors.py holds the other, so a file is
-    decoded with the value it was written with rather than with a copy of that value kept here, which would
-    decode every shipped map wrong the day the other end moves. Files written before it was recorded all
-    used eight decades.
-    """
-    return float(data["decades"]) if "decades" in data else PRIOR_DECADES
-
-
 def priorConstants(data):
-    """The grid constants a prior file records, as a dictionary; empty for a file that records none.
-
-    scripts/make_priors.py writes getBayesConstants() beside the maps as JSON, which is one string and needs
-    no pickle to read back. A table of name and value is read as well: what has to be agreed on is the file,
-    not the shape one version of that script happened to store the numbers in.
-    """
-    if "constants" not in data:
-        return {}
-    stored = np.asarray(data["constants"])
-    if stored.ndim == 2 and stored.shape[1] == 2:
-        return {str(name): float(value) for name, value in stored}
-    if stored.dtype.kind == "U" and stored.size == 1:
-        return {str(name): float(value) for name, value in json.loads(str(stored.item())).items()}
-    raise SystemExit(f"the prior file records its constants as {stored.dtype} of shape {stored.shape}")
+    """The grid constants a prior file records: scripts/make_priors.py writes them beside the maps as JSON."""
+    return {str(name): float(value) for name, value in json.loads(str(np.asarray(data["constants"]))).items()}
 
 
 def priorMaps(data):
@@ -474,12 +449,14 @@ def priorMaps(data):
 
     A compact file keeps the log of each map relative to its own peak, to a byte over the decades the file
     records, on every other point of the grid. The maps are smoothed densities, so that loses about 0.008 dex
-    where the prior has any weight, against a chi2 that runs to hundreds.
+    where the prior has any weight, against a chi2 that runs to hundreds. The decades are read from the file
+    rather than from scripts/make_priors.py, which holds the other end of the quantisation, so that a file is
+    decoded with the value it was written with.
     """
     kde = data["kde"]
     if kde.dtype != np.uint8:
         return kde
-    decades = priorDecades(data)
+    decades = float(data["decades"])
     levels = float(np.iinfo(np.uint8).max)
     out = 10 ** (kde.astype(np.float32) / levels * decades - decades)
     out *= data["kdeScale"][:, :, None, None]
@@ -505,11 +482,18 @@ def checkPriorFile(path):
     """Check a prior file against the code that is about to read it, before the pool starts.
 
     The maps are tabulated on the grid of photod.priors.getBayesConstants() and read back on it, so a file
-    built with another grid comes out wrong everywhere rather than obviously; a file that records the grid it
-    was built with says so here instead. An older file records nothing and is taken as it comes.
+    built with another grid comes out wrong everywhere rather than obviously; the file records the grid it
+    was built with, and says so here instead. So does a file that records no grid, or no decades to decode
+    its maps with: scripts/make_priors.py writes both.
     """
     with np.load(path) as data:
-        decades, constants = priorDecades(data), priorConstants(data)
+        missing = [name for name in ("constants", "decades") if name not in data]
+        if missing:
+            raise SystemExit(
+                f"{path} records no {' and no '.join(missing)}: rebuild the maps with "
+                "scripts/make_priors.py, which records both"
+            )
+        decades, constants = float(data["decades"]), priorConstants(data)
     wanted = getBayesConstants()
     wrong = {name: value for name, value in constants.items() if float(wanted.get(name, value)) != value}
     if wrong:
@@ -517,14 +501,13 @@ def checkPriorFile(path):
         raise SystemExit(
             f"the maps in {path} were built with {said}: rebuild them, or fit with the code they came with"
         )
-    grid = "built on the grid this code reads" if constants else "built on a grid the file does not record"
     # said in the log, since a run on the compact maps and one on the full ones otherwise look the same
     dtype, shape = priorMapsHeader(path)
     if dtype == np.uint8:
         kind = f"compact maps, a byte of log over {decades:g} decades on every other grid point"
     else:
         kind = f"full-resolution {dtype} maps on {shape[2]} x {shape[3]} grid points"
-    print(f"prior maps from {path}: {grid}; {kind}, for {shape[0]} sky pixels")
+    print(f"prior maps from {path}: built on the grid this code reads; {kind}, for {shape[0]} sky pixels")
 
 
 def unpackPriors(path):
@@ -592,25 +575,6 @@ def partialDirectory(base):
     directory = Path(str(base)) / PARTIAL
     directory.mkdir(parents=True, exist_ok=True)
     return directory
-
-
-def sweepOrphans(base):
-    """Drop what a run of an earlier version left half written inside the dataset, and say so.
-
-    Those runs wrote a partition under its temporary name beside the partition itself, so a kill between the
-    write and the rename left a Npix=<pixel>-<suffix>.parquet that the metadata step of every later run then
-    failed on, with nothing in the catalog to say which file to remove. It is reported and removed rather
-    than only reported, because the catalog is broken for as long as it is there and no version of this
-    script writes such a name any more, so nothing can be in the middle of writing one.
-
-    What this version leaves behind instead is a file in PARTIAL, which nothing reads and which the writer
-    itself removes unless the kernel takes the process without warning.
-    """
-    orphans = sorted(Path(str(base)).glob("dataset/Norder=*/Dir=*/Npix=*-*.parquet"))
-    for path in orphans:
-        print(f"removing {path}, which a killed run of an earlier version left half written")
-        path.unlink(missing_ok=True)
-    return len(orphans)
 
 
 def loadPriors(path):
@@ -717,10 +681,9 @@ def fitPartition(partition, priorPath, setup, batchSize, batchBytes=None):
     different depth and quietly keeps only one of the star partitions that share a map.
 
     A star whose sky pixel has no map at all keeps its row, empty and flagged. The maps are built for a
-    footprint, and a footprint never lines up exactly with the survey that produced the stars: the DP2 maps
-    that ship here are missing three of the pixels their own dust file covers. Dropping those stars leaves a
-    catalog that holds fewer stars than the selection it came from, and such a catalog cannot count stars,
-    which is most of what these catalogs are for. The rows come back in no particular order.
+    footprint, and a footprint never lines up exactly with the survey that produced the stars. Dropping those
+    stars leaves a catalog that holds fewer stars than the selection it came from, and such a catalog cannot
+    count stars, which is most of what these catalogs are for. The rows come back in no particular order.
 
     batchBytes bounds the memory of one batch, and so of one worker at a time: a run of several workers asks
     for that much again for each of them.
@@ -1207,7 +1170,6 @@ def main():
     recordConfiguration(base, configuration)
     if shard:
         startShard(base, shard)
-    sweepOrphans(base)
     unpackPriors(args.priors)
 
     todo, total = partitionsToFit(base, sources)
