@@ -3,16 +3,23 @@ from scipy.interpolate import RegularGridInterpolator
 from scipy.ndimage import gaussian_filter
 
 
-def getBayesConstants():
-    """Grid of the prior maps and the r-band magnitude bins they are computed for."""
+def getBayesConstants(tLocMin=-2.0):
+    """Grid of the prior maps and the r-band magnitude bins they are computed for.
+
+    The tLoc axis runs from 17 down to -2 in steps of 0.05, which holds every star of the stellar loci. A
+    locus that reaches lower, such as one with white dwarf tracks below the stars (locus.HELIUM_TLOC), takes
+    the axis down to its lowest tLoc, tLocMin, on the same step, so that the maps of the stars stay on the
+    same points.
+    """
+    steps = int(np.ceil(round((-2.0 - min(float(tLocMin), -2.0)) / 0.05, 6)))
     return {
         # [Fe/H] and Mr (or tLoc) grid of the maps
         "FeHmin": -2.5,
         "FeHmax": 1.0,
         "FeHNpts": 36,
         "MrFaint": 17.0,
-        "MrBright": -2.0,
-        "MrNpts": 381,
+        "MrBright": round(-2.0 - 0.05 * steps, 6),
+        "MrNpts": 381 + steps,
         # maps for r = rmagMin ... rmagMax, each from the stars within +-rmagBinWidth
         "rmagMin": 14,
         "rmagMax": 27,
