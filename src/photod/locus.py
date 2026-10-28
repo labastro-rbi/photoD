@@ -13,10 +13,14 @@ DEFAULT_LOCUS_FILE = Path(__file__).resolve().parents[2] / "data" / "MSandRGBcol
 # the Stripe 82 fixes that DEFAULT_LOCUS_FILE above needs. Naming it once keeps the run, the priors and
 # the tests on the same table: they have to agree, because the maps are indexed by its tLoc.
 RUN_LOCUS_FILE = DEFAULT_LOCUS_FILE.parent / "LSSTlocus_10Gyr_fix.txt"
+# The same locus with white dwarf tracks and a QSO track beside the stars (scripts/make_qso_locus.py), for a
+# run that tells the three classes apart: run_dp2.py --locus and make_priors.py --locus.
+WD_LOCUS_FILE = DEFAULT_LOCUS_FILE.parent / "LSSTlocus_10Gyr_WDmass_QSO.txt"
 
 # For LSSTlocus_10Gyr_fix.txt: which TRILEGAL evolutionary labels (0 PMS, 1 MS, 2 SGB, 3 RGB, 4-6 CHeB,
 # 7 EAGB, 8 TPAGB, 9 PAGB/WD) belong to each monotonic segment of Mr(tLoc) at the turn-off and brighter
-# (tLoc <= 4), per [Fe/H] row. Segments are numbered from the smallest tLoc.
+# (tLoc <= 4), per [Fe/H] row. Segments are numbered from the smallest tLoc. A locus with white dwarf tracks
+# has them in front (segmentLabelMapFor).
 _ALL_LABELS = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
 _EVOLVED = {3, 4, 5, 6, 7, 9}
 SEGMENT_LABEL_MAP = {
@@ -35,6 +39,111 @@ SEGMENT_LABEL_MAP = {
     0.4: {5: {0, 1}, 4: {2}, 3: _EVOLVED, 2: {8}},
     0.5: {5: {0, 1}, 4: {2}, 3: _EVOLVED, 2: {8}},
 }
+WHITE_DWARF_LABEL = 9
+# TRILEGAL's white dwarfs are all hydrogen (DA) models. A locus with a helium track as well needs some of them
+# moved onto it, which scripts/make_priors.py does by giving those stars this label of their own.
+HELIUM_WHITE_DWARF_LABEL = 10
+_WHITE_DWARF_LABELS = {WHITE_DWARF_LABEL, HELIUM_WHITE_DWARF_LABEL}
+# where the white dwarf tracks of a locus sit on the tLoc axis, below everything else on it
+HELIUM_TLOC = (-6.0, -4.5)
+HYDROGEN_TLOC = (-2.0, -0.5)
+# What each row of a locus models, as the integer column "segment" of the locus file. Every class of object
+# the fit tells apart is read from this column and from nothing else: where a row sits on the tLoc axis says
+# nothing once a class shares a stretch of the axis with another. A locus file without the column is all
+# stars.
+SEGMENT_STARS = 0  # main sequence and giants
+SEGMENT_HYDROGEN_WD = 1
+SEGMENT_HELIUM_WD = 2
+SEGMENT_QSO = 3
+SEGMENT_BHB = 4  # reserved
+WHITE_DWARF_SEGMENTS = (SEGMENT_HYDROGEN_WD, SEGMENT_HELIUM_WD)
+# where the QSO track sits on the tLoc axis, between the hydrogen track and the stars, and the redshifts its
+# ends stand for, linear in between (scripts/make_qso_locus.py). Its Mr is QSO_MR, a placeholder: a QSO has no
+# absolute magnitude a stellar distance could come from, and the fit leaves the track out of everything
+# built on Mr. The ends are where the prior maps can tell it from its neighbours: no point of another
+# segment interpolates the map from a point inside the band, on the full or on the compact map grid.
+QSO_TLOC = (0.02, 1.50)
+QSO_REDSHIFT = (0.2, 5.0)
+QSO_MR = -30.0
+# the segments TRILEGAL model stars are placed on, which leaves out the extragalactic ones
+EXTRAGALACTIC_SEGMENTS = (SEGMENT_QSO,)
+# the classes a posterior is split into, each as the segments it covers
+CLASS_SEGMENTS = {
+    "MS": (SEGMENT_STARS, SEGMENT_BHB),
+    "WD": WHITE_DWARF_SEGMENTS,
+    "QSO": (SEGMENT_QSO,),
+}
+
+
+def qsoRedshift(tLoc):
+    """The redshift a tLoc of the QSO track stands for."""
+    (t0, t1), (z0, z1) = QSO_TLOC, QSO_REDSHIFT
+    return z0 + (np.asarray(tLoc, dtype=float) - t0) * (z1 - z0) / (t1 - t0)
+
+
+def _withWhiteDwarfSegments(labelMap, whiteDwarfLabels):
+    """The same map with the white dwarf segments in front, in tLoc order: they are the lowest, so they are
+    segments 0, 1, ... and every segment that was there shifts up. Each white dwarf label goes only on its
+    own."""
+    n = len(whiteDwarfLabels)
+    return {
+        feh: {
+            **{k: {label} for k, label in enumerate(whiteDwarfLabels)},
+            **{k + n: set(v) - _WHITE_DWARF_LABELS for k, v in segments.items()},
+        }
+        for feh, segments in labelMap.items()
+    }
+
+
+def segmentLabelMapFor(tLoc1d, segment1d=None):
+    """The label map of a locus, from the white dwarf tracks its segment column holds: none, hydrogen, both.
+
+    A locus without white dwarf tracks (no segment column, or none of its rows on a track) takes
+    SEGMENT_LABEL_MAP as it is. The tracks go in front in the order they sit on the tLoc axis, since the
+    monotonic segments of splitMonotonicSegments are numbered that way.
+    """
+    if segment1d is None:
+        return SEGMENT_LABEL_MAP
+    tLoc1d, segment1d = np.asarray(tLoc1d), np.asarray(segment1d)
+    labelOf = {SEGMENT_HYDROGEN_WD: WHITE_DWARF_LABEL, SEGMENT_HELIUM_WD: HELIUM_WHITE_DWARF_LABEL}
+    present = [s for s in WHITE_DWARF_SEGMENTS if np.any(segment1d == s)]
+    present.sort(key=lambda s: tLoc1d[segment1d == s].min())
+    labels = [labelOf[s] for s in present]
+    return _withWhiteDwarfSegments(SEGMENT_LABEL_MAP, labels) if labels else SEGMENT_LABEL_MAP
+
+
+def segmentAxis(locusData, xLabel="FeH", yLabel="tLoc"):
+    """The segment of each value of the yLabel axis of a rectangular locus; zero for a locus without one.
+
+    A segment is a stretch of the axis, the same at every [Fe/H], since the classes are told apart by where a
+    star sits on the axis; a locus where one tLoc holds two classes at different [Fe/H] is refused.
+    """
+    nFeH = np.unique(np.asarray(locusData[xLabel])).size
+    nY = np.unique(np.asarray(locusData[yLabel])).size
+    if "segment" not in locusData.colnames:
+        return np.full(nY, SEGMENT_STARS, dtype=np.int32)
+    grid = np.asarray(locusData["segment"]).astype(np.int32).reshape(nFeH, nY)
+    if not np.all(grid == grid[:1]):
+        raise ValueError(f"the segment column of the locus changes with {xLabel} at a fixed {yLabel}")
+    return grid[0]
+
+
+def hasWhiteDwarfMassAxis(locusData, xLabel="FeH", yLabel="tLoc", colors=("ug", "gr", "ri", "iz", "zy")):
+    """Whether the colours of the white dwarf rows of a locus change with [Fe/H].
+
+    A white dwarf's colours do not depend on [Fe/H], so where they change the rows are a mass axis
+    (scripts/make_wd_mass_locus.py), and the prior has to say how much of each mass there is.
+    """
+    segment = segmentAxis(locusData, xLabel, yLabel)
+    wd = np.isin(segment, WHITE_DWARF_SEGMENTS)
+    if not wd.any():
+        return False
+    nFeH = np.unique(np.asarray(locusData[xLabel])).size
+    for color in colors:
+        grid = np.asarray(locusData[color], dtype=float).reshape(nFeH, segment.size)[:, wd]
+        if not np.all(grid == grid[:1]):
+            return True
+    return False
 
 
 def LSSTsimsLocus(fixForStripe82=False, datafile=None, colnames=("Mr", "FeH", "ug", "gr", "ri", "iz", "zy")):
@@ -58,7 +167,13 @@ def LSSTsimsLocus(fixForStripe82=False, datafile=None, colnames=("Mr", "FeH", "u
         raise FileNotFoundError(
             f"no locus table at {path}; pass datafile=, the tables are in data/ of the photoD repository"
         )
-    locus = Table.read(path, format="ascii", names=list(colnames))
+    colnames = list(colnames)
+    # a locus with a segment column says so in its header, and is read with it whatever names were asked for
+    if "segment" not in colnames and "segment" in headerNames(path):
+        colnames.append("segment")
+    locus = Table.read(path, format="ascii", names=colnames)
+    if "segment" in colnames:
+        locus["segment"] = np.asarray(locus["segment"]).astype(np.int32)
     locus["gi"] = locus["gr"] + locus["ri"]
     if fixForStripe82:
         ugFix = locus["ug"] + 0.02 * (2 + locus["FeH"]) * locus["gi"]
@@ -67,6 +182,20 @@ def LSSTsimsLocus(fixForStripe82=False, datafile=None, colnames=("Mr", "FeH", "u
         ri = locus["ri"]
         locus["iz"] += 0.08 * ri - 0.09 * ri**2 + 0.008 * ri**5 + 0.01 * (2.5 + locus["FeH"])
     return locus
+
+
+def headerNames(path):
+    """The column names of the header line of a locus file, the first line that is not a comment."""
+    with open(path) as handle:
+        for line in handle:
+            if line.strip() and not line.lstrip().startswith("#"):
+                words = line.split()
+                try:
+                    float(words[0])
+                except ValueError:
+                    return words
+                return []
+    return []
 
 
 def subsampleLocusData(locusData, kMr, kFeH, xLabel="FeH", yLabel="Mr", verbose=False):
@@ -83,8 +212,7 @@ def subsampleLocusData(locusData, kMr, kFeH, xLabel="FeH", yLabel="Mr", verbose=
     rows = (feHrows[:, None] * nMr + mrRows[None, :]).ravel()
     if verbose:
         print(
-            f"subsampled locus grid from {nFeH} x {nMr} to {feHrows.size} x {mrRows.size} "
-            f"([Fe/H] x {yLabel})"
+            f"subsampled locus grid from {nFeH} x {nMr} to {feHrows.size} x {mrRows.size} ([Fe/H] x {yLabel})"
         )
     return locusData[rows]
 
@@ -199,21 +327,35 @@ def getLSSTm5err(mags, depth="coadd"):
     return {b: np.interp(mags[b], magGrid, errGrid[b]) for b in "ugrizy"}
 
 
-def splitMonotonicSegments(tLocVals, MrTrueVals, minSegmentLen=4):
+def splitMonotonicSegments(tLocVals, MrTrueVals, minSegmentLen=4, jump=1.0):
     """Split Mr(tLoc) at one [Fe/H] into monotonic runs, as (start, end) index pairs ordered by tLoc.
 
     Runs shorter than minSegmentLen points (numerical noise) are merged into the preceding run.
+
+    A step in Mr larger than jump is a branch boundary rather than noise: where two branches meet on one
+    tLoc axis, Mr jumps, and that single step would otherwise form a run of one point which the merge rule
+    folds into the branch before it, giving that branch a range spanning the empty Mr between them. So the
+    points are first cut into blocks at such steps and each block is split on its own. With no step this
+    large there is one block and the result is what it always was, which is why adding a white dwarf branch
+    changes nothing for a locus that has none.
     """
-    signs = np.sign(np.diff(MrTrueVals))
-    signs[signs == 0] = signs[signs != 0][0] if np.any(signs != 0) else 1
-    breaks = [0, *(i for i in range(1, signs.size) if signs[i] != signs[i - 1]), len(tLocVals) - 1]
-    merged = []
-    for start, end in zip(breaks[:-1], breaks[1:], strict=True):
-        if merged and end - start < minSegmentLen:
-            merged[-1][1] = end
-        else:
-            merged.append([start, end])
-    return [tuple(s) for s in merged]
+    diffs = np.diff(MrTrueVals)
+    blocks = [0, *(int(i) + 1 for i in np.where(np.abs(diffs) > jump)[0]), len(tLocVals)]
+    out = []
+    for first, stop in zip(blocks[:-1], blocks[1:], strict=True):
+        if stop - first < 2:
+            continue
+        signs = np.sign(np.diff(MrTrueVals[first:stop]))
+        signs[signs == 0] = signs[signs != 0][0] if np.any(signs != 0) else 1
+        breaks = [0, *(i for i in range(1, signs.size) if signs[i] != signs[i - 1]), stop - first - 1]
+        merged = []
+        for start, end in zip(breaks[:-1], breaks[1:], strict=True):
+            if merged and end - start < minSegmentLen:
+                merged[-1][1] = end
+            else:
+                merged.append([start, end])
+        out.extend((first + s, first + e) for s, e in merged)
+    return out
 
 
 def buildSegmentData(globalParams, segmentLabelMap=None, turnoffTLoc=4.0):
@@ -221,16 +363,24 @@ def buildSegmentData(globalParams, segmentLabelMap=None, turnoffTLoc=4.0):
     and brighter (tLoc <= turnoffTLoc), and which TRILEGAL labels may be placed on it. Computed once and
     passed to assignTLocPartition.
     """
-    segmentLabelMap = SEGMENT_LABEL_MAP if segmentLabelMap is None else segmentLabelMap
     tLoc1d = globalParams.Mr1d
+    segment1d = getattr(globalParams, "segment1d", None)
+    if segmentLabelMap is None:
+        segmentLabelMap = segmentLabelMapFor(tLoc1d, segment1d)
+    # an extragalactic track has no model stars to take, and left in it would be a monotonic segment of its
+    # own that shifts the numbering of every stellar segment above it in the label map
     bright = tLoc1d <= turnoffTLoc
+    whiteDwarfTracks = False
+    if segment1d is not None:
+        bright &= ~np.isin(segment1d, EXTRAGALACTIC_SEGMENTS)
+        whiteDwarfTracks = bool(np.isin(segment1d, WHITE_DWARF_SEGMENTS).any())
     segmentData = {}
     for i, feh in enumerate(globalParams.FeH1d):
         MrRow = np.asarray(globalParams.MrTrueTable[i])[bright]
         segments = splitMonotonicSegments(tLoc1d[bright], MrRow)
         labels = segmentLabelMap.get(round(float(feh), 1), {})
         ranges = np.zeros((len(segments), 2))
-        labelToSeg = np.zeros((10, len(segments)), dtype=bool)
+        labelToSeg = np.zeros((11, len(segments)), dtype=bool)
         interpMr, interpTLoc = [], []
         for k, (s, e) in enumerate(segments):
             order = np.argsort(MrRow[s : e + 1])
@@ -243,6 +393,7 @@ def buildSegmentData(globalParams, segmentLabelMap=None, turnoffTLoc=4.0):
             "interpMr": interpMr,
             "interpTLoc": interpTLoc,
             "labelToSeg": labelToSeg,
+            "whiteDwarfTracks": whiteDwarfTracks,
         }
     return segmentData
 
@@ -259,18 +410,27 @@ def assignTLocPartition(
 ):
     """tLoc for each star of a TRILEGAL catalog (partition), from its Mr, [Fe/H] and evolutionary label.
 
-    Fainter than the turn-off (Mr > turnoffTLoc) tLoc equals Mr. At the turn-off and brighter, Mr(tLoc) is
-    not monotonic; a star is placed on the segment whose Mr range contains its Mr, and if several do, on the
-    one that matches its label. Stars that cannot be placed get NaN. The input is not modified.
+    Fainter than the turn-off (Mr > turnoffTLoc) tLoc equals Mr, except for a white dwarf on a locus with
+    white dwarf tracks. At the turn-off and brighter, Mr(tLoc) is not monotonic; a star is placed on the
+    segment whose Mr range contains its Mr, and if several do, on the one that matches its label. Stars that
+    cannot be placed get NaN. The input is not modified.
     """
     starFeH = df[starFeHCol].to_numpy()
     starMr = df[starMrCol].to_numpy()
-    starLabel = np.clip(df[starLabelCol].to_numpy().astype(int), 0, 9)
-    tLoc = np.where(starMr > turnoffTLoc, starMr, np.nan)
+    # Fainter than the turn-off tLoc is Mr, but only for a star that belongs on the main sequence. On a locus
+    # with white dwarf tracks a white dwarf (label 9, or 10 for the helium track) is faint without being on
+    # it, so taking tLoc = Mr would put it among the M dwarfs; it is routed through the segments like the
+    # evolved stars instead. A locus without the tracks keeps tLoc = Mr for every star fainter than the
+    # turn-off.
+    tracks = any(data.get("whiteDwarfTracks", False) for data in segmentData.values())
+    topLabel = HELIUM_WHITE_DWARF_LABEL if tracks else WHITE_DWARF_LABEL
+    starLabel = np.clip(df[starLabelCol].to_numpy().astype(int), 0, topLabel)
+    isWhiteDwarf = np.isin(starLabel, list(_WHITE_DWARF_LABELS)) & tracks
+    tLoc = np.where((starMr > turnoffTLoc) & ~isWhiteDwarf, starMr, np.nan)
 
     idx = np.clip(np.searchsorted(FeH1d, starFeH), 1, len(FeH1d) - 1)
     nearestFeH = np.where(np.abs(starFeH - FeH1d[idx - 1]) <= np.abs(starFeH - FeH1d[idx]), idx - 1, idx)
-    bright = starMr <= turnoffTLoc
+    bright = (starMr <= turnoffTLoc) | isWhiteDwarf
     for i in np.unique(nearestFeH[bright]):
         data = segmentData[i]
         stars = np.where(bright & (nearestFeH == i))[0]
