@@ -67,5 +67,56 @@ Bit    ``fit_flags``
 128    the posterior fell into a single grid cell: precise-looking and not to be trusted
 =====  ==================================================================================================
 
+Which rows are fitted is ``--selection``. ``recipe``, the default, fits the objects with S/N above 10 in r and
+above 3 in g and i (``photod.selection``), and flags those past r 23.5; ``flag`` fits every row and flags the
+ones the recipe would drop, so that a prepared catalog keeps all of its rows; ``none`` fits a prepared catalog
+as it comes, and of the survey table every point source fainter than r 16.5, with no S/N cut and no r limit. A
+colour whose error is above 1 mag, or that is not a number, carries no weight.
+
+White dwarfs and QSOs
+---------------------
+
+``data/LSSTlocus_10Gyr_WDmass_QSO.txt`` (``photod.locus.WD_LOCUS_FILE``) is the stellar locus with white dwarf
+tracks below it on the tLoc axis, one hydrogen and one helium, whose [Fe/H] rows are masses, and a QSO track
+between them and the stars, whose tLoc stands for a redshift. ``scripts/make_qso_locus.py`` builds it from the
+files in ``data/``. Its prior maps hold the stars, each white dwarf track and the QSOs as populations, each
+held to its share per r bin, and ``scripts/make_priors.py`` builds them with ``--locus``, ``--wd-mass-grid
+data/WD_massgrid_QSO.json``, ``--qso-counts`` and ``--dust-map``. The DP2 catalog of the three classes was fitted
+with
+
+.. code-block:: bash
+
+    python scripts/make_expo_dust_curves.py --out expo_h125.npz
+    python scripts/run_dp2.py --catalog <dp2_inclusive> --priors <white dwarf and QSO priors.npz> \
+        --locus data/LSSTlocus_10Gyr_WDmass_QSO.txt --qc-table data/qc_table_dp2_inclusive_wd.csv \
+        --floor 0.03 --dust-curves expo_h125.npz --dust-curve-mode band --estimate-class MS \
+        --selection flag --ar-column Ar_SFD --ar-scale 0.86005183 --ar-max 8.0 --out <dir> --name dp2_inclusive
+
+``--dust-curve-mode band`` bounds the A_r prior of the white dwarf and QSO rows by the dust in front of each
+point's distance, here an exponential layer of 125 pc scale height; ``--qc-table`` sets bit 1024 from the
+model's own null distribution of ``chi2min`` (``scripts/make_qc_table.py``); ``--estimate-class MS`` gives every
+row the estimates of the stars, whatever class is the most probable.
+
+Every run writes the class columns, which on a locus without the tracks are those of the stars alone:
+``p_MS``, ``p_WD`` and ``p_QSO``, the posterior mass of each class, ``p_He`` the mass on the helium white
+dwarfs, a part of ``p_WD``, ``lnodds_WD`` and ``lnprior_odds_WD`` the log odds of white dwarf against the rest
+after the fit and in the prior alone, ``class`` the most probable of the three (0, 1, 2; -1 with no answer),
+``nColors`` the colours measured, ``chi2minMS``, ``chi2minWD`` and ``chi2minQSO`` the best chi-squared within
+each class, ``DM_WD_quantile_lo``, ``_median`` and ``_hi`` the white dwarf distance modulus and ``WD_mass``
+its mass, both where ``p_WD`` is above 0.05, and ``photoz`` the median redshift along the QSO track. Without
+``--estimate-class MS`` the other estimates are of the most probable of the stars and the white dwarfs, and
+``DM`` is empty where the QSO class is the most probable.
+
+=====  ==================================================================================================
+Bit    ``fit_flags``, continued
+=====  ==================================================================================================
+256    past r 23.5, the r limit of the selection recipe
+512    the QSO class is the most probable
+1024   ``chi2min`` of the most probable class is above the 99th percentile of the model's own null for the
+       colours measured and the latitude (set only with ``--qc-table``)
+2048   fewer than three colours measured
+4096   fails the S/N cuts of the selection recipe, fitted because the run keeps every row (``--selection flag``)
+=====  ==================================================================================================
+
 ``python scripts/run_dp2.py --help`` lists the options. The pages below predate this pipeline and show the
 library being driven directly, which is still how a single field or a handful of stars is best looked at.

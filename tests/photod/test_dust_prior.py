@@ -83,8 +83,14 @@ def brutePosterior(star, params, shape, arMapColumn="Ar"):
     w = 1.0 / ((params.ArCurveFrac * Astar) ** 2 + params.ArCurveFloor**2)
     logPrior = -0.5 * w[:, None] * (Ar1d[None, :] - Astar[:, None]) ** 2 + 0.5 * np.log(w)[:, None]
     allowed = Ar1d <= params.ArPriorScale * star[arMapColumn] + params.ArPriorOffset
-    post = np.exp(logPrior - 0.5 * chi2 + 0.5 * chi2.min()) * allowed
-    return post.reshape(params.FeH1d.size, params.Mr1d.size, Ar1d.size)
+    # the flat density of the map times the area of each point's cell, as the fit weighs it
+    cells = (params.priorWeights * params.locusValid)[:, None]
+    post = np.exp(logPrior - 0.5 * chi2 + 0.5 * chi2.min()) * allowed * cells
+    post = post.reshape(params.FeH1d.size, params.Mr1d.size, Ar1d.size)
+    # and the estimates are of the most probable class alone
+    masks = list(params.classAxisMasks.values())
+    keep = masks[int(np.argmax([post[:, mask, :].sum() for mask in masks]))]
+    return post * keep[None, :, None]
 
 
 def bruteQuantiles(post, params):

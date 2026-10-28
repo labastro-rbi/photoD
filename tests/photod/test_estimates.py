@@ -2,8 +2,8 @@ import numpy as np
 import pandas as pd
 from numpy.testing import assert_allclose
 
-import photod.locus as lt
 import photod.bayes as bayes
+import photod.locus as lt
 from photod.bayes import (
     CHI2_POOR,
     FLAG_AR_EDGE,
@@ -87,22 +87,26 @@ def test_the_multimodality_is_written_for_every_fitted_star():
     assert np.all((values >= 0) & (values <= 0.5))
 
 
-def test_the_value_of_an_unmeasured_colour_barely_matters():
-    """A colour marked unmeasured keeps the weight its error asks for, and 9.99 mag asks for almost none.
+def test_the_value_of_an_unmeasured_colour_does_not_matter():
+    """A colour marked unmeasured carries no weight at all, so whatever value stands in for it is ignored.
 
-    Almost none, rather than none, and only against a value a colour could really take: the placeholder is
-    still a measurement of a sort, so one far outside the range of stellar colours would pull the answer.
+    An error above MISSING_COLOR_ERR or one that is not a number marks it, and so does a value that is not a
+    number. Zero, which is what catalogues write, is a white dwarf's g-r, so any weight left on it pulls.
     """
     catalog, priorGrid, params = setup()
     catalog.loc[1, "ugErr"] = 9.99
     catalog.loc[1, "ug"] = 0.0  # what scripts/run_dp2.py writes for a colour it could not measure
     reference, _ = makeBayesEstimates3d(catalog, priorGrid, params, batchSize=8)
     columns = [c for c in reference.columns if c.endswith(("_lo", "_median", "_hi"))]
-    for value in (1.5, 3.0):
-        catalog.loc[1, "ug"] = value
+    fitted = bayes.getColorsAndPriorIndices(catalog, params)[:2]
+    for value, error in ((1.5, 9.99), (3.0, 1.5), (-4.0, np.nan), (np.nan, 0.02)):
+        catalog.loc[1, "ug"], catalog.loc[1, "ugErr"] = value, error
+        # what the fit is handed is the same to the last bit, and on a GPU the answers to its rounding
+        for given, before in zip(bayes.getColorsAndPriorIndices(catalog, params)[:2], fitted, strict=True):
+            assert np.array_equal(given, before), f"a placeholder of {value} with error {error} got through"
         estimates, _ = makeBayesEstimates3d(catalog, priorGrid, params, batchSize=8)
-        moved = np.abs(estimates[columns].to_numpy(float) - reference[columns].to_numpy(float))
-        assert moved.max() < 0.01, f"a placeholder of {value} moved a percentile by {moved.max():.3f}"
+        assert_allclose(estimates[columns].to_numpy(float), reference[columns].to_numpy(float), rtol=1e-5)
+        assert estimates["nColors"].tolist()[1] == 2 and estimates["nColors"].tolist()[0] == 3
 
 
 def test_a_star_without_a_magnitude_keeps_its_row_and_no_estimate():
@@ -184,9 +188,7 @@ def test_a_batch_is_kept_within_its_memory_budget():
 def test_the_distance_modulus_is_the_magnitude_less_the_reddened_absolute_one():
     """DM = r - (Mr + A_r). Qr is that posterior, and it is no longer written, so read it inside."""
     catalog, priorGrid, params = setup()
-    estimates, results = makeBayesEstimates3d(
-        catalog, priorGrid, params, batchSize=8, returnPosteriors=True
-    )
+    estimates, results = makeBayesEstimates3d(catalog, priorGrid, params, batchSize=8, returnPosteriors=True)
     rmag = catalog["rmag"].to_numpy()
     for low, high in (("lo", "hi"), ("median", "median"), ("hi", "lo")):
         assert_allclose(
@@ -242,7 +244,12 @@ def test_a_colour_that_is_not_a_number_weighs_nothing_and_is_flagged():
     catalog.loc[2, "riErr"] = np.nan
     catalog.loc[3, ["ug", "gr", "ri"]] = np.nan
     estimates, _ = makeBayesEstimates3d(catalog, priorGrid, params, batchSize=4)
-    columns = [c for c in estimates.columns if c.endswith(("_lo", "_median", "_hi", "_std"))]
+    # the white dwarf distance is written only where that class is likely, which on this locus is nowhere
+    columns = [
+        c
+        for c in estimates.columns
+        if c.endswith(("_lo", "_median", "_hi", "_std")) and not c.startswith(bayes.WD_DISTANCE)
+    ]
     assert np.all(np.isfinite(estimates[columns].to_numpy(float))), "a NaN colour emptied the star"
     flags = estimates[bayes.cc.quality_flags].to_numpy()
     assert list(flags & FLAG_COLOR_MISSING > 0) == [False, True, True, True]
@@ -265,7 +272,12 @@ def test_a_star_with_no_dust_map_value_is_not_bounded_by_it():
     unbounded = catalog.copy()
     unbounded.loc[1, "Ar"] = 1e3  # a bound far above the top of the grid
     reference, _ = makeBayesEstimates3d(unbounded, priorGrid, params, batchSize=3)
-    columns = [c for c in estimates.columns if c.endswith(("_lo", "_median", "_hi", "_std"))]
+    # the white dwarf distance is written only where that class is likely, which on this locus is nowhere
+    columns = [
+        c
+        for c in estimates.columns
+        if c.endswith(("_lo", "_median", "_hi", "_std")) and not c.startswith(bayes.WD_DISTANCE)
+    ]
     assert np.all(np.isfinite(estimates[columns].to_numpy(float)[1])), "a NaN dust-map value emptied the star"
     assert_allclose(estimates[columns].to_numpy(float), reference[columns].to_numpy(float), rtol=1e-6)
 

@@ -19,25 +19,52 @@ ones listed below that the fit reads, since that table has over a thousand.
 
 A partition whose answers are already written is left alone, so a run that stopped part way is finished by
 repeating the command; --overwrite starts the result again from nothing. What the run was configured with is
-recorded beside the answers, and a resume that asks for anything else is refused rather than allowed to mix
-two fits inside one catalog. A partition that fails takes only itself down, and the run ends with a non-zero
+recorded beside the answers, with the fit model, and a resume that asks for anything else is refused rather
+than allowed to mix two fits inside one catalog; so are answers with no record, or whose record names no fit
+model, which other code than this wrote. A partition that fails takes only itself down, and the run ends with a non-zero
 status saying how much of the sky is missing.
 
 A prepared catalog carries objectId, rmag, the colours and their errors, and its position as ra and dec or,
 as the survey names it, coord_ra and coord_dec.
 
 Input columns (DP2 object table): coord_ra, coord_dec, objectId, <band>_psfFlux and _psfFluxErr for ugrizy,
-refExtendedness, ebv. Point sources are refExtendedness == 0 with r between 16.5 and 23.5 and S/N > 10 in r,
-> 3 in g and i. A colour whose bands are not both at S/N > 3 is set to 0 with error 9.99 and carries no
-weight. The error on r, which widens the distance modulus, is read from rmagErr or rErr, and a catalog that
-carries one under another name is refused rather than fitted with r taken as exact. The dust-map A_r is
+refExtendedness, ebv. Point sources are refExtendedness == 0 with r brighter than 16.5 left out. Both kinds of
+catalogue are then held to the recipe of photod.selection, S/N > 10 in r and > 3 in g and i (--selection none
+fits a prepared catalogue as it comes, and of a survey table every point source fainter than r 16.5): an
+object that fails it is not fitted, and one past the recipe's r limit of 23.5 is fitted and flagged
+(FLAG_BEYOND_RECIPE) rather than dropped. --selection flag fits the objects that fail it as well and sets
+FLAG_FAILS_RECIPE on them, so that the result of a prepared catalogue has a row for every row of it (one
+straight from the survey still loses its extended sources and the stars brighter than r 16.5). An object with
+no colour measured is fitted too, and its answer is its prior's.
+A colour whose bands are not both at S/N > 3 is set to 0 with error 9.99, and any colour with an error above
+1 mag carries no weight.
+The error on r, which widens the distance modulus, is read from rmagErr or rErr, and a catalog that carries
+one under another name is refused rather than fitted with r taken as exact. The dust-map A_r is
 AR_PER_EBV ebv, the LSST r ratio with the Schlafly & Finkbeiner 2011 recalibration of the map folded in, and
 it only bounds the A_r prior, which is flat from zero to a little above it. With --dust-curves, where the 3D
 map has measured the column through the disc, the smaller of the two is the bound, which matters towards the
 bulge, where the 2D map integrates to infinity and reaches tens of magnitudes.
+
+--locus names another locus than photod.locus.RUN_LOCUS_FILE, which the prior maps must have been built on.
+data/LSSTlocus_10Gyr_WDmass_QSO.txt (scripts/make_qso_locus.py) has white dwarf tracks whose rows are masses
+and a QSO track beside the stars. Its prior maps carry the prior on mass (make_priors.py --wd-mass-grid) and a
+QSO population (make_priors.py --qso-counts); the fit then writes the class probabilities, the white dwarf
+distance and mass, and photoz, and leaves the distance modulus empty where the QSO class wins.
+--estimate-class MS instead gives every row the estimates of the stars (segment 0), whatever class wins, with
+the white dwarf distance, the mass and photoz beside them (photod.bayes.CLASS_COLUMNS).
+
+--dust-curve-mode band turns the curves of --dust-curves into a band on the A_r prior of the white dwarf and
+QSO rows (photod.parameters.BAND_SEGMENTS): the extinction a point's distance allows, between the column in
+front of it over 1.3 less 0.1 and 1.3 times it plus 0.1, with the QSOs behind all of the column; every other
+row keeps the box, and every row's prior is normalised over its own cells. scripts/make_expo_dust_curves.py
+writes such curves for an exponential dust layer. --qc-table sets FLAG_POOR_FIT_P from the model's own null
+distribution of chi2min (scripts/make_qc_table.py). Both are recorded with the run, the table with its md5.
+
+docs/running.rst gives the command the DP2 catalogue of stars, white dwarfs and QSOs was fitted with.
 """
 
 import argparse
+import hashlib
 import json
 import multiprocessing as mp
 import os
@@ -67,9 +94,18 @@ from photod.bayes import (  # noqa: E402
     makeBayesEstimates3d,
     unfittedEstimates,
 )
-from photod.locus import RUN_LOCUS_FILE, LSSTsimsLocus, getArGridList, subsampleLocusData  # noqa: E402
-from photod.parameters import GlobalParams  # noqa: E402
+from photod.locus import (  # noqa: E402
+    RUN_LOCUS_FILE,
+    SEGMENT_QSO,
+    LSSTsimsLocus,
+    getArGridList,
+    hasWhiteDwarfMassAxis,
+    subsampleLocusData,
+)
+from photod.parameters import AR_CURVE_MODES, BAND_SEGMENTS, GlobalParams  # noqa: E402
 from photod.priors import getBayesConstants, priorGridFromMaps  # noqa: E402
+from photod.quality import readQcTable  # noqa: E402
+from photod.selection import FAILS_RECIPE, bandSnr, recipeSelection  # noqa: E402
 
 BANDS = "ugrizy"
 COLORS = ("ug", "gr", "ri", "iz", "zy")
@@ -91,6 +127,10 @@ RMAG_ERROR_NAMES = ("rmagErr", "rErr")
 FAILURES_REPORTED = 20  # failed partitions named one by one, after which only the count is kept
 WINDOW = 2  # partitions in the pool per worker, so that a worker always has the next one waiting
 RUN_FILE = "photod_run.json"  # what the run was configured with, beside the answers it wrote
+# The fit model, written into every run record: the locus fitted as segments, the stars, the white dwarf
+# tracks and the QSO track (photod.locus.SEGMENT_*). A record without it was written by other code, the fit of
+# the stars alone or an earlier version of this one, and its answers are not resumed (recordConfiguration).
+FIT_MODEL = "segments"
 # columns of the layout of a HATS catalog rather than of its stars, which the answers are given afresh
 HATS_LAYOUT = ("_healpix_29", "Norder", "Dir", "Npix")
 # the names a prepared catalog may give its position: the ones the answers use, or the survey's
@@ -101,6 +141,16 @@ PRIORS = {}
 PARAMS = {}
 CURVES = {}
 WORK = {}
+# The prior share given a population that the model puts none of in an r bin: a small number rather than zero,
+# whose logarithm would rule the population out for every star of the bin whatever its colours. It is far
+# below any share the model does put anywhere (1e-4 at r 14 for the white dwarfs), and any value under about
+# 1e-4 gives the same answers to the stars that are not of the population.
+SHARE_FLOOR = 1e-6
+SELECTIONS = ("recipe", "flag", "none")
+SELECTION = "recipe"  # the default of --selection, and of every function that selects
+# the class the stellar estimates are of (GlobalParams.estimateClass): "likely" for the most probable class of
+# star, "MS" for the stars on every row
+ESTIMATE_CLASSES = {"likely": None, "MS": "MS"}
 
 
 def catalogColumns(url):
@@ -251,11 +301,15 @@ def withInputColumns(estimates, inputs, source=""):
     return pd.concat([estimates.reset_index(drop=True), taken.to_pandas(types_mapper=pd.ArrowDtype)], axis=1)
 
 
-def prepareStars(df, curves=None, arColumn="", arScale=1.0):
+def prepareStars(df, curves=None, arColumn="", arScale=1.0, selection=SELECTION):
     """The stars of one partition with the columns the fit reads.
 
     A catalog prepared beforehand already carries the colours and their errors, and is passed through; one
     straight from the survey has its point sources selected and its colours built out of the PSF fluxes.
+    selection "recipe" then keeps the objects that meet photod.selection's recipe, which for a prepared
+    catalogue is read from its r error and colour errors; "flag" keeps every row and marks the ones the recipe
+    would drop (photod.selection.FAILS_RECIPE); "none" keeps every row of a prepared catalogue and every point
+    source of the survey table, with no S/N cut and no r limit.
 
     arColumn is None where the fit reads no extinction, as inputColumns describes, and no A_r is made.
     arScale puts a named column on this code's scale, as --ar-scale describes; an extinction made here from
@@ -276,26 +330,28 @@ def prepareStars(df, curves=None, arColumn="", arScale=1.0):
                 raise SystemExit(
                     "the prepared catalog carries no extinction column: name it with --ar-column"
                 )
+        if selection != "none":
+            passes = recipeSelection(out["rmag"].to_numpy(float), bandSnr(out))[0]
+            if selection == "recipe":
+                out = out[passes].reset_index(drop=True)
+            else:
+                out[FAILS_RECIPE] = ~passes
     else:
-        out = starsFromFluxes(df)
+        out = starsFromFluxes(df, selection)
     return withDust(out, curves)
 
 
-def starsFromFluxes(df):
+def starsFromFluxes(df, selection=SELECTION):
     """Magnitudes, colours and errors of the point sources in one partition of the survey object table."""
     flux = {b: df[f"{b}_psfFlux"].to_numpy(dtype=float, na_value=np.nan) for b in BANDS}
     err = {b: df[f"{b}_psfFluxErr"].to_numpy(dtype=float, na_value=np.nan) for b in BANDS}
     snr = {b: flux[b] / err[b] for b in BANDS}
     mag = {b: -2.5 * np.log10(np.where(flux[b] > 0, flux[b], np.nan)) + 31.4 for b in BANDS}
     magErr = {b: 1.0857 / snr[b] for b in BANDS}
-    keep = (
-        (df["refExtendedness"].to_numpy(dtype=float, na_value=np.nan) == 0)
-        & (mag["r"] > 16.5)
-        & (mag["r"] < 23.5)
-        & (snr["r"] > 10)
-        & (snr["g"] > 3)
-        & (snr["i"] > 3)
-    )
+    keep = (df["refExtendedness"].to_numpy(dtype=float, na_value=np.nan) == 0) & (mag["r"] > 16.5)
+    passes = recipeSelection(mag["r"], snr)[0]
+    if selection == "recipe":
+        keep &= passes
     out = pd.DataFrame(
         {
             "objectId": df["objectId"].to_numpy()[keep],
@@ -311,6 +367,8 @@ def starsFromFluxes(df):
         useful = ((snr[a] > 3) & (snr[b] > 3))[keep]
         out[c] = np.where(useful, (mag[a] - mag[b])[keep], 0.0)
         out[c + "Err"] = np.where(useful, np.hypot(magErr[a], magErr[b])[keep], 9.99)
+    if selection == "flag":
+        out[FAILS_RECIPE] = ~passes[keep]
     return out
 
 
@@ -356,25 +414,50 @@ def healpixOrder(nside):
     return order
 
 
-def globalParameters(floor, useDustMap, curves=None, arMax=5.0):
+def globalParameters(
+    floor,
+    useDustMap,
+    curves=None,
+    arMax=5.0,
+    locusPath=RUN_LOCUS_FILE,
+    wdMasses=None,
+    curveMode="gauss",
+    qcTable="",
+    estimateClass=None,
+):
     """The fit setup: the locus on the tLoc grid, the colour-error floor, the A_r prior.
 
-    The locus is RUN_LOCUS_FILE, read without the two corrections scripts/make_locus.py measures on DP2:
-    both were fitted to the output of this fit and then written into the locus it is measured against, so
-    read that script before applying them again.
+    wdMasses is the white dwarf mass of each [Fe/H] row of a locus with a mass axis, from the prior file
+    (checkPriorLocus), which gives the WD_mass column. curveMode is how the curves enter the A_r prior
+    (GlobalParams.ArCurveMode), and qcTable the path of the thresholds of photod.quality, empty for none.
+    estimateClass is the class the stellar estimates are of (GlobalParams.estimateClass), None for the most
+    probable class of star.
+
+    The locus is --locus, RUN_LOCUS_FILE unless a run names another, with its segment column, read without
+    the two corrections scripts/make_locus.py measures on DP2: both were fitted to the output of this fit
+    and then written into the locus it is measured against, so read that script before applying them again.
 
     The A_r grid has to reach the extinction of the field: the standard "ArLarge" grid stops at 2.5 mag, and a
     star whose A_r is above the top of the grid has it pinned there, which throws its distance out with it.
     """
     locus = LSSTsimsLocus(
-        fixForStripe82=False, datafile=str(RUN_LOCUS_FILE), colnames=["tLoc", "Mr", "FeH", *COLORS]
+        fixForStripe82=False, datafile=str(locusPath), colnames=["tLoc", "Mr", "FeH", *COLORS]
     )
     locusData = subsampleLocusData(locus, kMr=1, kFeH=1, yLabel="tLoc")
     ArGridList = getArGridList()
     ArGridList["ArLarge"] = np.arange(0, arMax + 1e-9, 0.02)
     dust = {}
     if curves is not None:
-        dust = dict(ArCurves=curves["shapes"], ArCurveMu=curves["mu"], ArCurveIndexColumn="dustIndex")
+        dust = dict(
+            ArCurves=curves["shapes"],
+            ArCurveMu=curves["mu"],
+            ArCurveIndexColumn="dustIndex",
+            ArCurveMode=curveMode,
+        )
+    elif curveMode != "gauss":
+        raise SystemExit(f"--dust-curve-mode {curveMode} needs the curves of --dust-curves")
+    if qcTable:
+        dust["qcThresholds"] = readQcTable(qcTable, COLORS)
     return GlobalParams(
         COLORS,
         locusData,
@@ -384,8 +467,15 @@ def globalParameters(floor, useDustMap, curves=None, arMax=5.0):
         computeMrTrue=True,
         ArMapColumn="Ar" if useDustMap else None,
         colorErrFloor=floor,
+        wdMasses=None if wdMasses is None else np.asarray(wdMasses, dtype=float),
+        estimateClass=estimateClass,
         **dust,
     )
+
+
+def fileMd5(path):
+    """The md5 of a file, which is how a run records which table it read."""
+    return hashlib.md5(Path(path).read_bytes()).hexdigest()
 
 
 def priorPixels(ra, dec, order):
@@ -478,13 +568,79 @@ def priorMapsHeader(path):
     return np.dtype(dtype), shape
 
 
-def checkPriorFile(path):
+def locusTLocMin(locusPath):
+    """The lowest tLoc of a locus, which sets how far the grid of its prior maps reaches."""
+    locus = LSSTsimsLocus(
+        fixForStripe82=False, datafile=str(locusPath), colnames=["tLoc", "Mr", "FeH", *COLORS]
+    )
+    return float(np.min(locus["tLoc"]))
+
+
+def checkPriorLocus(path, locusPath):
+    """Refuse maps built on another locus than the one fitted: their tLoc axis means something else.
+
+    Maps that come with population shares are refused as well when the locus lacks a segment they are for,
+    since that population would then have nowhere to go. A locus whose white dwarf rows are masses needs
+    maps that say how much of each mass there is (make_priors --wd-mass-grid), and maps that do need such
+    a locus; the masses, which the WD_mass column reads, are returned (None without a mass axis).
+    """
+    with np.load(path) as data:
+        model = json.loads(str(np.asarray(data["model"]))) if "model" in data else {}
+        populations = np.asarray(data["popSegment"]).tolist() if "popSegment" in data else []
+        weightShape = np.asarray(data["wdMassWeight"]).shape if "wdMassWeight" in data else None
+    built = model.get("locus")
+    if built and built != Path(locusPath).name:
+        raise SystemExit(
+            f"the maps in {path} were built on {built}, and this run fits {Path(locusPath).name}"
+        )
+    if model:
+        print(f"prior model stars: labels {model.get('labels')}, helium split {model.get('heliumFraction')}")
+    locus = LSSTsimsLocus(
+        fixForStripe82=False, datafile=str(locusPath), colnames=["tLoc", "Mr", "FeH", *COLORS]
+    )
+    massAxis = hasWhiteDwarfMassAxis(locus)
+    wdMass = model.get("wdMass")
+    if massAxis != bool(wdMass) or massAxis != (weightShape is not None):
+        said = "are masses, and the maps carry no prior on mass" if massAxis else "are not masses"
+        raise SystemExit(
+            f"the white dwarf rows of {locusPath} {said}, while {path} was built "
+            + ("without" if not wdMass else "with")
+            + " --wd-mass-grid: build the maps for this locus"
+        )
+    masses = None
+    if wdMass:
+        grid = (np.unique(np.asarray(locus["FeH"])).size, np.unique(np.asarray(locus["tLoc"])).size)
+        if tuple(weightShape) != grid or len(wdMass["masses"]) != grid[0]:
+            raise SystemExit(
+                f"the mass weights in {path} are on a {weightShape} grid, not this locus's {grid}"
+            )
+        masses = tuple(float(m) for m in wdMass["masses"])
+        print(f"white dwarf mass axis {masses[0]:.2f}-{masses[-1]:.2f} Msun from {wdMass['grid']}")
+    present = set(np.unique(np.asarray(locus.columns.get("segment", np.zeros(1)))).astype(int).tolist())
+    # a QSO track takes its prior from a population of its own, without which it would have only the smoothing
+    # tails of the stars to go on
+    if SEGMENT_QSO in present and SEGMENT_QSO not in populations:
+        raise SystemExit(
+            f"{locusPath} has a QSO track and the maps in {path} no QSO population: build them with "
+            "--qso-counts"
+        )
+    if populations:
+        absent = [code for code in populations if code not in present]
+        if absent:
+            raise SystemExit(
+                f"the maps in {path} hold populations for segments {absent}, which {locusPath} lacks"
+            )
+        print(f"prior populations on segments {populations}, each held to its share (floor {SHARE_FLOOR:g})")
+    return masses
+
+
+def checkPriorFile(path, locusPath=RUN_LOCUS_FILE):
     """Check a prior file against the code that is about to read it, before the pool starts.
 
-    The maps are tabulated on the grid of photod.priors.getBayesConstants() and read back on it, so a file
-    built with another grid comes out wrong everywhere rather than obviously; the file records the grid it
-    was built with, and says so here instead. So does a file that records no grid, or no decades to decode
-    its maps with: scripts/make_priors.py writes both.
+    The maps are tabulated on the grid of photod.priors.getBayesConstants() for the locus and read back on
+    it, so a file built with another grid comes out wrong everywhere rather than obviously; the file records
+    the grid it was built with, and says so here instead. So does a file that records no grid, or no decades
+    to decode its maps with: scripts/make_priors.py writes both.
     """
     with np.load(path) as data:
         missing = [name for name in ("constants", "decades") if name not in data]
@@ -494,7 +650,7 @@ def checkPriorFile(path):
                 "scripts/make_priors.py, which records both"
             )
         decades, constants = float(data["decades"]), priorConstants(data)
-    wanted = getBayesConstants()
+    wanted = getBayesConstants(locusTLocMin(locusPath))
     wrong = {name: value for name, value in constants.items() if float(wanted.get(name, value)) != value}
     if wrong:
         said = ", ".join(f"{name} = {value:g} rather than {wanted[name]:g}" for name, value in wrong.items())
@@ -525,15 +681,15 @@ def unpackPriors(path):
     writeAtomically(cache, lambda name: np.save(name, maps))
 
 
-def openResult(base, priorPath, overwrite):
-    """The result directory, made ready for the run once the prior file has been checked.
+def openResult(base, priorPath, overwrite, locusPath=RUN_LOCUS_FILE):
+    """The result directory, made ready for the run once the prior file has been checked against the locus.
 
     The prior file goes first because --overwrite removes the answers already there, and a file that will not
     do ends the run: checked after them, a mistyped path or a file built on another grid costs the whole of
     a result that nothing was going to replace. For the same reason the maps are unpacked before a result
     is removed; otherwise that waits until the resume has been checked against it.
     """
-    checkPriorFile(priorPath)
+    checkPriorFile(priorPath, locusPath)
     if overwrite and base.exists():
         unpackPriors(priorPath)
         shutil.rmtree(base)
@@ -599,10 +755,20 @@ def workerDevice(nDevices):
 def loadParams(setup):
     """The fit setup, built once per worker process from the few settings it is made of, rather than sent."""
     if setup not in PARAMS:
-        floor, useDustMap, curvePath, arMax = setup
+        floor, useDustMap, curvePath, arMax, locusPath, wdMasses, curveMode, qcTable, estimateClass = setup
         # the same curves the sightlines were looked up in, flat row and all, so that the index of a star
         # whose sky no 3D map covers points at that row here as well
-        PARAMS[setup] = globalParameters(floor, useDustMap, loadCurves(curvePath) or None, arMax)
+        PARAMS[setup] = globalParameters(
+            floor,
+            useDustMap,
+            loadCurves(curvePath) or None,
+            arMax,
+            locusPath,
+            wdMasses,
+            curveMode,
+            qcTable,
+            estimateClass,
+        )
     return PARAMS[setup]
 
 
@@ -614,8 +780,20 @@ def separation(ra, dec, ra0, dec0):
 
 
 def fitAndWrite(
-    source, pixel, base, priorPath, curvePath, setup, batchSize, batchBytes, cone, arColumn, arScale,
-    columns, keep=(),
+    source,
+    pixel,
+    base,
+    priorPath,
+    curvePath,
+    setup,
+    batchSize,
+    batchBytes,
+    cone,
+    arColumn,
+    arScale,
+    columns,
+    keep=(),
+    selection=SELECTION,
 ):
     """Read one partition file, fit its stars and write them where the partition's HEALPix pixel belongs.
 
@@ -625,7 +803,7 @@ def fitAndWrite(
     for a separate writing step holds the survey in memory as well.
     """
     table = pq.read_table(source, columns=columns)
-    stars = prepareStars(table.to_pandas(), loadCurves(curvePath), arColumn, arScale)
+    stars = prepareStars(table.to_pandas(), loadCurves(curvePath), arColumn, arScale, selection)
     # of the table only the columns written beside the answers are wanted from here on, and none of it when
     # they are not written, so the rest is let go before the fit rather than held through it
     table = table.select(list(keep)) if keep else None
@@ -674,6 +852,54 @@ def withSpatialIndex(estimates):
     return out.reset_index(drop=True)
 
 
+def renormalisedPopulations(grid, shares, segments, globalParams, shape=None):
+    """Each population's prior held to its share: its mass on its own locus points is the share of the r bin.
+
+    grid is the prior on the locus points per r bin, shares the (r bins, populations) table of the prior file
+    (popShare, which make_priors.py writes for a locus with white dwarf tracks) and segments the locus segment
+    each population lies on. The maps of a population are only its shape: a smoothed density leaks off the
+    stretch of tLoc its stars occupy, into the gaps between segments and past the ends of the map grid, where
+    no locus point collects it. The mass is taken with the cell weights the fit uses. A population whose map
+    is zero all along its segment is spread over it as shape (the mass weights of a white dwarf mass axis,
+    flat without them), and a share of zero is SHARE_FLOOR.
+    """
+    weights = globalParams.locusValid * globalParams.priorWeights
+    shape = np.ones_like(weights) if shape is None else np.asarray(shape, dtype=np.float64)
+    masks = [globalParams.segmentFlat == code for code in segments]
+    out = {}
+    for k, density in grid.items():
+        density = np.asarray(density, dtype=np.float64).copy()
+        for mask, share in zip(masks, shares[k], strict=True):
+            share = max(float(share), SHARE_FLOOR)
+            mass = float(np.sum((density * weights)[mask]))
+            if mass > 0:
+                density[mask] *= share / mass
+            else:
+                density[mask] = share * shape[mask] / float(np.sum((weights * shape)[mask]))
+        out[k] = density
+    return out
+
+
+def locusPrior(priors, row, globalParams):
+    """The prior of one sky pixel (row of the file) on the locus points, per r bin.
+
+    On a white dwarf mass axis the maps are flat in [Fe/H] and the prior on mass (wdMassWeight) is applied
+    here, on the locus grid, since the compact maps hold every other [Fe/H] point only. Maps with population
+    shares are then held to them.
+    """
+    grid = priorGridFromMaps(
+        priors["kde"][row], priors["rmag"], priors["xGrid"], priors["yGrid"], globalParams
+    )
+    shape = np.asarray(priors["wdMassWeight"]).ravel() if "wdMassWeight" in priors else None
+    if shape is not None:
+        grid = {k: np.asarray(density, dtype=np.float64) * shape for k, density in grid.items()}
+    if "popShare" in priors:
+        grid = renormalisedPopulations(
+            grid, priors["popShare"][row], priors["popSegment"], globalParams, shape
+        )
+    return grid
+
+
 def fitPartition(partition, priorPath, setup, batchSize, batchBytes=None):
     """One partition of stars, each group of them fitted with the prior maps of the sky pixel it lies in.
 
@@ -701,9 +927,7 @@ def fitPartition(partition, priorPath, setup, batchSize, batchBytes=None):
         pieces.append(unfittedEstimates(partition[row < 0], globalParams, FLAG_NO_PRIOR))
     for value in np.unique(row[row >= 0]):
         stars = partition[row == value]
-        grid = priorGridFromMaps(
-            priors["kde"][value], priors["rmag"], priors["xGrid"], priors["yGrid"], globalParams
-        )
+        grid = locusPrior(priors, value, globalParams)
         with jax.default_device(device):
             estimates, _ = makeBayesEstimates3d(
                 stars,
@@ -719,7 +943,18 @@ def fitPartition(partition, priorPath, setup, batchSize, batchBytes=None):
 
 
 def startWorker(
-    base, priorPath, curvePath, setup, batchSize, batchBytes, cone, arColumn, arScale, columns, keep=()
+    base,
+    priorPath,
+    curvePath,
+    setup,
+    batchSize,
+    batchBytes,
+    cone,
+    arColumn,
+    arScale,
+    columns,
+    keep=(),
+    selection=SELECTION,
 ):
     """What every partition of this run needs, held once per worker process."""
     WORK.update(
@@ -734,6 +969,7 @@ def startWorker(
         arScale=arScale,
         columns=columns,
         keep=keep,
+        selection=selection,
     )
 
 
@@ -754,6 +990,7 @@ def runPartition(source):
         WORK["arScale"],
         WORK["columns"],
         WORK["keep"],
+        WORK["selection"],
     )
 
 
@@ -810,6 +1047,7 @@ def runConfiguration(args):
     started on.
     """
     configuration = {
+        "model": FIT_MODEL,
         # a directory completed by the shell carries a trailing slash and the same command typed again may
         # not, which is the same catalog and must not read as another fit
         "catalog": str(args.catalog).rstrip("/"),
@@ -822,16 +1060,33 @@ def runConfiguration(args):
         "dustMap": not args.no_dust_map,
         "dustCurves": str(args.dust_curves) if not args.no_dust_map else "",
         "cone": [float(x) for x in args.cone] if args.cone else None,
+        # which objects are fitted
+        "selection": getattr(args, "selection", SELECTION),
     }
-    # an unscaled column is what every run made before this option existed, so the default stays out of the
-    # record and a catalog fitted then still resumes; a scaled one is written down and cannot be mixed with it
+    # Each setting below is left out of the record when it is off or at its default. Every record carries the
+    # model, so a setting it leaves out was off, not unknown to the code that wrote it. The default locus goes
+    # by its absence rather than by a path, which would change with the place the repository is kept.
+    locus = getattr(args, "locus", RUN_LOCUS_FILE)
+    if Path(locus).resolve() != Path(RUN_LOCUS_FILE).resolve():
+        configuration["locus"] = str(locus)
     if not args.no_dust_map and float(args.ar_scale) != 1.0:
         configuration["arScale"] = float(args.ar_scale)
     # The catalog's own columns change what a partition holds rather than any answer, but partitions that
-    # hold different columns do not read back as one catalog. Left out of the record when they are not
-    # written, which is how every run made before they were was written, so that such a run still resumes.
+    # hold different columns do not read back as one catalog.
     if not args.no_input_columns:
         configuration["inputColumns"] = True
+    # the A_r band, and the QC table with its md5
+    mode = getattr(args, "dust_curve_mode", "gauss")
+    if mode != "gauss" and not args.no_dust_map:
+        configuration["dustCurveMode"] = mode
+        configuration["dustCurveRows"] = list(BAND_SEGMENTS)
+    path = getattr(args, "qc_table", "")
+    if path:
+        configuration["qcTable"] = str(path)
+        configuration["qcTableMd5"] = fileMd5(path)
+    estimates = getattr(args, "estimate_class", "likely")
+    if ESTIMATE_CLASSES[estimates] is not None:
+        configuration["estimateClass"] = estimates
     return configuration
 
 
@@ -839,8 +1094,8 @@ def recordConfiguration(base, configuration):
     """Refuse a resume that asks for another fit than the answers already there were made with.
 
     An answer already written is kept whatever this run was asked for, so two settings inside one catalog
-    are not something a reader can see, let alone undo. A result written before this was recorded says
-    nothing about itself and is taken as it comes, which is the one case where there is nothing to compare.
+    are not something a reader can see, let alone undo. Answers with no record beside them, or with a record
+    that names no fit model (FIT_MODEL), were written by other code than this, and are refused as well.
 
     What is protected is the answers, so a directory that holds none takes the settings it is given. A run
     that stopped before its first partition, on prior maps it could not unpack or a catalog column it could
@@ -849,6 +1104,13 @@ def recordConfiguration(base, configuration):
     """
     path = Path(str(base)) / RUN_FILE
     answers = any(Path(str(base)).glob("dataset/Norder=*/Dir=*/Npix=*.parquet"))
+    if answers and (not path.exists() or "model" not in json.loads(path.read_text())):
+        what = f"no record in {RUN_FILE}" if not path.exists() else f"a {RUN_FILE} that names no fit model"
+        raise SystemExit(
+            f"{base} holds answers with {what}, so other code than this wrote them: a resume could leave "
+            "two fit models inside one catalog. Fit it again with --overwrite, or write this one under "
+            "another --name"
+        )
     if path.exists() and answers:
         found = json.loads(path.read_text())
         # both ways round: a setting that was recorded and is no longer asked for differs as much as one that
@@ -874,8 +1136,6 @@ def recordConfiguration(base, configuration):
                 "would leave two fits inside one catalog. Fit it again with --overwrite, or write this one "
                 "under another --name"
             )
-    elif answers and not path.exists():
-        print(f"{base} holds answers but no record of what made them, so they are taken as this run's")
     path.write_text(json.dumps(configuration, indent=2, sort_keys=True) + "\n")
 
 
@@ -1045,6 +1305,29 @@ def main():
     ap.add_argument("--cone", nargs=3, type=float, metavar=("RA", "DEC", "RADIUS_DEG"))
     ap.add_argument("--floor", type=float, default=0.03, help="colour-error floor in magnitudes")
     ap.add_argument(
+        "--locus",
+        default=str(RUN_LOCUS_FILE),
+        help="the locus to fit, which must be the one the prior maps were built on (make_priors.py --locus)",
+    )
+    ap.add_argument(
+        "--selection",
+        default=SELECTION,
+        choices=SELECTIONS,
+        help="'recipe' fits only the objects that meet photod.selection's recipe (S/N > 10 in r, > 3 in g "
+        "and i) and flags those past r 23.5; 'flag' fits every point source and sets FLAG_FAILS_RECIPE on "
+        "the ones the recipe would drop, so that a prepared catalogue keeps every row; 'none' fits every "
+        "row of a prepared catalogue as it comes, and every point source of a survey table, with no S/N cut "
+        "and no r limit",
+    )
+    ap.add_argument(
+        "--estimate-class",
+        default="likely",
+        choices=tuple(ESTIMATE_CLASSES),
+        help="the class the stellar estimates (Mr, [Fe/H], A_r, DM) are of: 'likely', the most probable "
+        "class of star, with DM empty where the QSO class wins; 'MS', the stars on every row, so that no "
+        "star loses its distance to another class (the white dwarf distance and photoz are written apart)",
+    )
+    ap.add_argument(
         "--ar-column",
         default="Ar",
         help="extinction column of a catalog prepared beforehand; from ebv when the fluxes are read instead",
@@ -1075,6 +1358,19 @@ def main():
         help="3D dust map to shape the A_r prior with, which is what matters at low Galactic latitude. Off "
         "by default, and no such file ships here. Without one the A_r prior is still bounded by the "
         "extinction column, which comes from the 2D map and not the 3D one",
+    )
+    ap.add_argument(
+        "--dust-curve-mode",
+        default="gauss",
+        choices=AR_CURVE_MODES,
+        help="how --dust-curves enters the A_r prior: 'gauss', a Gaussian around the curve on every row, or "
+        "'band', the distance-aware band on the white dwarf and QSO rows with the box kept on every other",
+    )
+    ap.add_argument(
+        "--qc-table",
+        default="",
+        help="chi2min thresholds of the model's own null distribution (scripts/make_qc_table.py), from which "
+        "FLAG_POOR_FIT_P is set; without one that flag is never set",
     )
     ap.add_argument(
         "--workers",
@@ -1117,8 +1413,7 @@ def main():
     ap.add_argument(
         "--no-input-columns",
         action="store_true",
-        help="write the estimates alone, without the catalog's own columns beside them, which is how a "
-        "result written before those were kept was written, and how it is resumed",
+        help="write the estimates alone, without the catalog's own columns beside them",
     )
     args = ap.parse_args()
     shard = parseShard(args.shard)
@@ -1130,6 +1425,8 @@ def main():
 
     # what the fit reads, which is not quite what was asked for: the flat A_r prior reads no extinction and
     # no 3D curves, so the run is configured, resumed and reported as the fit it actually is
+    if args.dust_curve_mode != "gauss" and (args.no_dust_map or not args.dust_curves):
+        raise SystemExit(f"--dust-curve-mode {args.dust_curve_mode} needs --dust-curves and the dust map")
     configuration = runConfiguration(args)
     arColumn, curvePath = configuration["arColumn"], configuration["dustCurves"]
     arScale = configuration.get("arScale", 1.0)
@@ -1140,6 +1437,15 @@ def main():
     )
     available = catalogColumns(args.catalog)
     columns = inputColumns(available, arColumn)
+    if (
+        args.selection != "none"
+        and preparedColumns(available) is not None
+        and rmagErrorColumn(available) is None
+    ):
+        raise SystemExit(
+            "the selection recipe reads the S/N of r from its error, and this prepared catalogue carries "
+            "none: add it, or fit the catalogue as it comes with --selection none"
+        )
     keep = [] if args.no_input_columns else keptColumns(available, columns)
     read = columns + [c for c in keep if c not in columns]
     objects = lsdb.open_catalog(args.catalog, columns=read, search_filter=search)
@@ -1149,7 +1455,6 @@ def main():
         print(f"shard {shard[0]} of {shard[1]}: {len(sources)} of {len(everything)} partitions")
     print(f"reading {'prepared colours' if 'ug' in columns else 'PSF fluxes'} from {args.catalog}")
     cone = tuple(args.cone) if args.cone else None
-    setup = (args.floor, not args.no_dust_map, curvePath, args.ar_max)
     if curvePath:
         curves = readCurves(curvePath)
         measured = curves.get("total")
@@ -1159,17 +1464,39 @@ def main():
             f"{bounded} of them with a measured total column to bound the extinction; "
             "a star the maps do not reach keeps the flat A_r prior"
         )
+        if args.dust_curve_mode == "band":
+            print(
+                f"as a band on the A_r prior of segments {list(BAND_SEGMENTS)}; every other row keeps the box"
+            )
     elif args.no_dust_map:
         print(
             "flat A_r prior over the whole grid: no extinction column is read and no 3D curve is opened"
             + (f", so {args.dust_curves} is left alone" if args.dust_curves else "")
         )
+    if args.qc_table:
+        thresholds = readQcTable(args.qc_table, COLORS)
+        print(
+            f"QC table {args.qc_table} (md5 {configuration['qcTableMd5']}): "
+            f"{int(np.isfinite(thresholds).sum())} thresholds for FLAG_POOR_FIT_P"
+        )
 
     base = Path(args.out) / args.name
-    openResult(base, args.priors, args.overwrite)
+    wdMasses = checkPriorLocus(args.priors, args.locus)
+    openResult(base, args.priors, args.overwrite, args.locus)
     recordConfiguration(base, configuration)
     if shard:
         startShard(base, shard)
+    setup = (
+        args.floor,
+        not args.no_dust_map,
+        curvePath,
+        args.ar_max,
+        str(args.locus),
+        wdMasses,
+        configuration.get("dustCurveMode", "gauss"),
+        args.qc_table,
+        ESTIMATE_CLASSES[args.estimate_class],
+    )
     unpackPriors(args.priors)
 
     todo, total = partitionsToFit(base, sources)
@@ -1192,6 +1519,7 @@ def main():
         arScale,
         read,
         keep,
+        args.selection,
     )
     fitted, failed = fitPartitions(todo, args.workers, args.chunk, initargs)
     total += fitted

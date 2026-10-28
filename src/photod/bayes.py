@@ -14,7 +14,9 @@ from mocpy import MOC
 from photod.column_map.base import mapper_from_glossary
 from photod.parameters import GlobalParams
 from photod.priors import getPriorMapIndex, initializePriorGrid
+from photod.quality import MIN_COLOURS, QC_CLASSES, claimedClass, colourPattern, latitudeClass, poorFit
 from photod.results import BayesResults
+from photod.selection import beyondRecipe, failsRecipe
 from photod.stats import getMargDistr3D, getPosteriorQuantiles, getStats, multimodality, pnorm
 
 cc = None
@@ -32,6 +34,32 @@ set_column_mapping(Path(__file__).parent / "column_map" / "variables.yaml")
 # compiled once per process; grid values above a star's limit have zero prior and are left out.
 AR_GRID_LENGTHS = (8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512)
 QUANTILE_NAMES = ("lo", "median", "hi")
+# The posterior split into the classes of locus.CLASS_SEGMENTS: the mass on each, the mass on the helium
+# white dwarfs, and the log odds of white dwarf against the rest, after the fit and in the prior alone. Every
+# other estimate is of the posterior within one class of star, since one median over two classes that lie
+# eight magnitudes apart describes neither. By default that is the most probable class of star. A QSO is not
+# one of them: it has no distance, so the stellar estimates are of the most probable stellar class whatever
+# p_QSO is, and where the QSO class is the most probable of all the distance modulus is left empty and
+# FLAG_EXTRAGALACTIC set. The white dwarf distance is also given on its own wherever the class holds more than
+# WD_DISTANCE_MIN_P of the posterior, and the QSO redshift (QSO_REDSHIFT, the median along the track) wherever
+# that class does. With GlobalParams.estimateClass "MS" the stellar estimates are of the stars for every
+# object, the distance modulus is written whatever class wins (FLAG_EXTRAGALACTIC still says where the QSO
+# class does) and the QSO redshift is written for every object.
+CLASS_COLUMNS = ("p_MS", "p_WD", "p_He", "p_QSO", "lnodds_WD", "lnprior_odds_WD")
+# the most probable of p_MS, p_WD and p_QSO, as its index in quality.QC_CLASSES (0, 1, 2); -1 with no answer
+CLASS_COLUMN = "class"
+# chi2min within each class: the smallest chi2 over the class's locus points that have prior weight, with A_r
+# inside each point's own allowed range (the box, or the band of GlobalParams.ArCurveMode). It is what a star
+# given that class is tested on (photod.quality); chi2min itself is over every point and the whole A_r grid.
+CHI2_CLASS_COLUMNS = tuple(f"chi2min{name}" for name in QC_CLASSES)
+STELLAR_CLASSES = ("MS", "WD")
+WD_DISTANCE_MIN_P = 0.05
+WD_DISTANCE = "DM_WD"
+QSO_REDSHIFT = "photoz"
+# On a locus whose white dwarf rows are a mass axis (GlobalParams.wdMasses), the median of the white dwarf
+# posterior along it, as a mass in Msun, where the class is as likely as for WD_DISTANCE. Photometry barely
+# constrains it: on DP2 it follows the prior on mass and correlates at 0.15-0.20 with spectroscopic masses.
+WD_MASS = "WD_mass"
 # A batch holds a locus by A_r plane for each of its stars, so its memory is the batch size times the number
 # of locus points times the length of the star's A_r grid. Bounding the bytes rather than that plane lets one
 # batch size serve a locus of any size and a field of any extinction: bounding the plane alone leaves the
@@ -49,17 +77,26 @@ BATCH_BYTES_PER_CELL = 12  # the posterior in float32, and the temporaries it is
 FLAG_POOR_FIT = 1  # chi2 above CHI2_POOR, or no answer at all: the locus does not describe this star
 FLAG_TWO_BRANCHES = 2  # the Mr posterior is lopsided, which is how a giant and a dwarf solution both survive
 FLAG_FEH_EDGE = 4  # [Fe/H] is against the end of the model grid, so it is a limit rather than a measurement
+# (on a white dwarf mass axis, for a star of that class, a mass within a row of 0.40 or 1.30 Msun)
 FLAG_AR_EDGE = 8  # A_r is against the top of its grid, and the distance goes wrong with it
 FLAG_COLOR_MISSING = 16  # at least one colour had no measurement and carried no weight in the fit
 FLAG_NO_MAGNITUDE = 32  # no r magnitude, so neither a prior map nor a distance: the row carries no estimate
 FLAG_NO_PRIOR = 64  # no prior map for this part of the sky, so the fit was never run: no estimate either
 FLAG_COLLAPSED = 128  # the posterior fell into a single grid cell: precise-looking and not to be trusted
+FLAG_BEYOND_RECIPE = 256  # past the r limit of the selection recipe (photod.selection), reported apart
+FLAG_EXTRAGALACTIC = 512  # the QSO class is the most probable: the distance modulus is empty, unless the
+# estimates are of the stars on every row (GlobalParams.estimateClass "MS")
+FLAG_POOR_FIT_P = 1024  # chi2min of the class the star is given is above the model's own 99th percentile for
+# its colours and |b| (photod.quality; set only when the fit has a QC table)
+FLAG_TOO_FEW_COLOURS = 2048  # fewer than quality.MIN_COLOURS colours measured: no white dwarf call
+FLAG_FAILS_RECIPE = 4096  # fails the S/N cuts of the selection recipe (photod.selection), fitted all the same
+# because the run kept every row (run_dp2 --selection flag): its class probabilities and calls are computed
+# like any other row's, and the bit is how they are left out
 CHI2_POOR = 100.0
 ASYMMETRY_POOR = 3.0
 COLLAPSED_WIDTH = 0.1  # half-width of the Qr interval below which an answer is collapsed, not precise
-MISSING_COLOR_ERR = 1.0  # a colour whose error is above this is effectively unmeasured: the fit weighs it
-# by 1 / err^2 like any other, which against a well measured colour is a ten-thousandth of the weight or less.
-# A colour or an error that is not a number is unmeasured as well, and weighs nothing at all.
+MISSING_COLOR_ERR = 1.0  # a colour whose error is above this, or is not a number, is not measured: the fit
+# gives it no weight at all, whatever value the catalogue holds for it, and nColors does not count it
 
 
 def makeBayesEstimates3d(
@@ -96,8 +133,11 @@ def makeBayesEstimates3d(
     -------
     estimatesDf : DataFrame
         The columns and types of getEstimatesMeta: object id, position and r magnitude, chi2min, the flags,
-        the multimodality, and the 16th/50th/84th percentiles and standard deviation of the locus coordinate,
-        [Fe/H], A_r and the distance modulus (and of the true Mr when globalParams.computeMrTrue).
+        the number of measured colours, the multimodality, the class columns (CLASS_COLUMNS), and the
+        16th/50th/84th percentiles and standard deviation of the locus coordinate, [Fe/H], A_r and the
+        distance modulus (and of the true Mr when globalParams.computeMrTrue), all of these within the most
+        probable class of star, the white dwarf distance modulus (WD_DISTANCE) and mass (WD_MASS) where that
+        class is likely enough, and the QSO redshift (QSO_REDSHIFT) where the QSO class is.
     results : BayesResults
         chi2min and every statistic computed, which also holds Qr, written to no column.
     """
@@ -110,6 +150,7 @@ def makeBayesEstimates3d(
         return meta, BayesResults(meta[cc.chi_sq_min].to_numpy(), {})
 
     logPriorGrid = _logPrior(priorGrid, globalParams)
+    lnPriorOdds = _priorClassOdds(priorGrid, globalParams)
     if returnPosteriors:
         gridLength = np.full(nStars, globalParams.Ar1d.size)
     else:
@@ -150,25 +191,44 @@ def makeBayesEstimates3d(
     }
     # the distance modulus is r - (Mr + A_r), and Qr is the posterior of Mr + A_r, so its quantiles carry
     # over directly, the low end of one being the high end of the other
-    for name, source in (("lo", "hi"), ("median", "median"), ("hi", "lo")):
-        statistics[f"{cc.distance_modulus}_quantile_{name}"] = (
-            rmag - statistics[f"{cc.abs_mag_ext_r}_quantile_{source}"]
-        )
     # r is measured, not known, and DM = r - Qr, so the distance modulus is less certain than Qr by that
     # error. It is symmetric, so the median does not move and each end moves out in quadrature. On DP2 this
     # is worth a few thousandths of a magnitude for a bright star and about 5 % of the interval at r = 23.
-    statistics[f"{cc.distance_modulus}_std"] = statistics[f"{cc.abs_mag_ext_r}_std"]
     rmagErr = magnitudeError(starsData)
-    if np.any(rmagErr > 0):
-        statistics[f"{cc.distance_modulus}_std"] = np.hypot(
-            statistics[f"{cc.distance_modulus}_std"], rmagErr
+    for dm, qr in ((cc.distance_modulus, cc.abs_mag_ext_r), (WD_DISTANCE, f"{cc.abs_mag_ext_r}_WD")):
+        for name, source in (("lo", "hi"), ("median", "median"), ("hi", "lo")):
+            statistics[f"{dm}_quantile_{name}"] = rmag - statistics[f"{qr}_quantile_{source}"]
+        if np.any(rmagErr > 0):
+            median = statistics[f"{dm}_quantile_median"]
+            for name, direction in (("lo", -1.0), ("hi", 1.0)):
+                half = np.abs(statistics[f"{dm}_quantile_{name}"] - median)
+                statistics[f"{dm}_quantile_{name}"] = median + direction * np.hypot(half, rmagErr)
+    statistics[f"{cc.distance_modulus}_std"] = np.hypot(statistics[f"{cc.abs_mag_ext_r}_std"], rmagErr)
+    for name in QUANTILE_NAMES:
+        del statistics[f"{cc.abs_mag_ext_r}_WD_quantile_{name}"]
+    likelyWD = statistics["p_WD"] > WD_DISTANCE_MIN_P
+    for name in QUANTILE_NAMES:
+        statistics[f"{WD_DISTANCE}_quantile_{name}"] = np.where(
+            likelyWD, statistics[f"{WD_DISTANCE}_quantile_{name}"], np.nan
         )
-        median = statistics[f"{cc.distance_modulus}_quantile_median"]
-        for name, direction in (("lo", -1.0), ("hi", 1.0)):
-            half = np.abs(statistics[f"{cc.distance_modulus}_quantile_{name}"] - median)
-            statistics[f"{cc.distance_modulus}_quantile_{name}"] = median + direction * np.hypot(
-                half, rmagErr
-            )
+    feHWD = statistics.pop(f"{cc.metallicity}_WD_quantile_median")
+    statistics[WD_MASS] = (
+        np.where(likelyWD, np.interp(feHWD, globalParams.FeH1d, globalParams.wdMasses), np.nan)
+        if globalParams.wdMasses is not None
+        else np.full(nStars, np.nan)
+    )
+    extragalactic = statistics["p_QSO"] > np.maximum(statistics["p_MS"], statistics["p_WD"])
+    if globalParams.estimateClass is None:
+        statistics[QSO_REDSHIFT] = np.where(
+            statistics["p_QSO"] > WD_DISTANCE_MIN_P, statistics[QSO_REDSHIFT], np.nan
+        )
+        modulus = cc.distance_modulus
+        for name in [f"{modulus}_quantile_{q}" for q in QUANTILE_NAMES] + [f"{modulus}_std"]:
+            statistics[name] = np.where(extragalactic, np.nan, statistics[name])
+    statistics["lnprior_odds_WD"] = lnPriorOdds[priorIndices].astype(np.float32)
+    # a class with no point of prior weight has no chi2 to give, and is written as empty rather than infinite
+    for name in CHI2_CLASS_COLUMNS:
+        statistics[name] = np.where(np.isfinite(statistics[name]), statistics[name], np.nan)
     # a star with no r magnitude has neither a prior map nor a distance modulus, and an answer read off the
     # brightest map would look like any other: it keeps its row, empty, and the flag says why
     noMagnitude = ~np.isfinite(rmag)
@@ -176,9 +236,18 @@ def makeBayesEstimates3d(
         chi2min[noMagnitude] = np.nan
         for value in statistics.values():
             value[noMagnitude] = np.nan
-    statistics[cc.quality_flags] = _qualityFlags(
-        chi2min, statistics, colorsErr, arMax, noMagnitude, globalParams
-    )
+    nColors = np.sum(np.isfinite(colorsErr), axis=1).astype(np.int32)
+    flags = _qualityFlags(chi2min, statistics, colorsErr, arMax, noMagnitude, globalParams, rmag)
+    flags |= np.where(extragalactic, FLAG_EXTRAGALACTIC, 0).astype(np.int32)
+    flags |= np.where(nColors < MIN_COLOURS, FLAG_TOO_FEW_COLOURS, 0).astype(np.int32)
+    flags |= np.where(failsRecipe(starsData), FLAG_FAILS_RECIPE, 0).astype(np.int32)
+    if globalParams.qcThresholds is not None:
+        latitude = latitudeClass(starsData[cc.right_ascension], starsData[cc.declination])
+        poor = poorFit(globalParams.qcThresholds, statistics, colourPattern(colorsErr), latitude)
+        flags |= np.where(poor, FLAG_POOR_FIT_P, 0).astype(np.int32)
+    statistics[cc.quality_flags] = flags
+    statistics["nColors"] = nColors
+    statistics[CLASS_COLUMN] = claimedClass(statistics).astype(np.int8)
 
     results = BayesResults(chi2min, statistics)
     if returnPosteriors:
@@ -223,10 +292,16 @@ def unfittedEstimates(starsData, globalParams, flag):
     errors = starsData[[color + "Err" for color in globalParams.fitColors]].to_numpy(dtype=np.float64)
     flags = np.full(len(starsData), flag | FLAG_POOR_FIT, dtype=np.int32)
     rmag = starsData[cc.observed_mag_r].to_numpy(dtype=np.float64)
-    missing = ~(errors <= MISSING_COLOR_ERR) | ~np.isfinite(colors)
-    flags |= np.where(missing.any(axis=1), FLAG_COLOR_MISSING, 0)
+    # measured as getColorsAndPriorIndices has it: an error of at most MISSING_COLOR_ERR and a value
+    measured = (errors <= MISSING_COLOR_ERR) & np.isfinite(colors)
+    flags |= np.where((~measured).any(axis=1), FLAG_COLOR_MISSING, 0)
     flags |= np.where(~np.isfinite(rmag), FLAG_NO_MAGNITUDE, 0)
+    flags |= np.where(beyondRecipe(rmag), FLAG_BEYOND_RECIPE, 0)
+    flags |= np.where(measured.sum(axis=1) < MIN_COLOURS, FLAG_TOO_FEW_COLOURS, 0)
+    flags |= np.where(failsRecipe(starsData), FLAG_FAILS_RECIPE, 0)
     columns[cc.quality_flags] = flags
+    columns["nColors"] = measured.sum(axis=1)
+    columns[CLASS_COLUMN] = np.full(len(starsData), -1)
     return pd.DataFrame(columns)[list(meta.columns)].astype(meta.dtypes.to_dict())
 
 
@@ -250,10 +325,13 @@ def getColorsAndPriorIndices(catalog, params):
     """Per star: colors and errors, prior map index, the A_r prior limit, r, the dust curve and A_r(map)."""
     colors = catalog[list(params.fitColors)].to_numpy(dtype=np.float64)
     colorsErr = catalog[[color + "Err" for color in params.fitColors]].to_numpy(dtype=np.float64)
-    # A colour or an error that is not a number is a colour that was not measured, and it carries no weight:
-    # an infinite error, whose weight 1 / err^2 is exactly zero, and a value of zero for that weight to
-    # multiply. Passed on as it is, a single one makes every estimate of the star NaN.
-    missing = ~np.isfinite(colors) | ~np.isfinite(colorsErr)
+    # A colour that was not measured carries no weight at all: an infinite error, whose weight 1 / err^2 is
+    # exactly zero, and a value of zero, which it then multiplies. Catalogues write such a colour as 0 with an
+    # error of 9.99, and 0 is a white dwarf's g-r, so the small weight a finite placeholder keeps pulls the
+    # faintest objects, the ones with most colours missing, towards the white dwarf track. A colour or an
+    # error that is not a number is not measured either; passed on as it is, it would make every estimate of
+    # the star NaN.
+    missing = ~(colorsErr <= MISSING_COLOR_ERR) | ~np.isfinite(colors)
     colors = np.where(missing, 0.0, colors)
     colorsErr = np.where(missing, np.inf, colorsErr)
     if params.colorErrFloor > 0:
@@ -304,15 +382,24 @@ def getEstimatesMeta(computeMrTrue: bool = False):
         cc.declination,
         cc.observed_mag_r,
         cc.chi_sq_min,
+        *CHI2_CLASS_COLUMNS,
         cc.quality_flags,
+        "nColors",
         cc.multimodality,
+        *CLASS_COLUMNS,
+        CLASS_COLUMN,
         *sorted(quantileCols + stdCols),
+        *(f"{WD_DISTANCE}_quantile_{q}" for q in QUANTILE_NAMES),
+        WD_MASS,
+        QSO_REDSHIFT,
     ]
     # the positions and the magnitude are carried over from the catalog rather than fitted, and float32
     # would round a position by a tenth of an arcsecond
     dtypes = {
         cc.object_id: np.int64,
         cc.quality_flags: np.int32,
+        "nColors": np.int32,
+        CLASS_COLUMN: np.int8,
         cc.right_ascension: np.float64,
         cc.declination: np.float64,
         cc.observed_mag_r: np.float64,
@@ -348,7 +435,32 @@ def starPosterior(star, logPriorGrid, args, computeMrTrue=False, returnPosterior
     # flat A_r prior between 0 and arMax (no limit for a single fixed A_r)
     allowed = (Ar1d <= arMax) | (ArFull.size == 1)
     logPrior = logPriorGrid[priorIndex]
-    if args["ArCurves"] is None:
+    kFirst, kLast, allowedPoint, logWidth = 0, jnp.sum(allowed) - 1, allowed[None, :], 0.0
+    band = args["ArBandRows"] is not None
+    if band:
+        # each point's own stretch of the A_r grid inside the box, with a flat density over its cells
+        # (GlobalParams.ArCurveMode), so that a point whose band is narrower is not given more prior for it.
+        # A star the dust map has no value for (arMax infinite) has no column to bound a band by: its arMap
+        # of 0 only stands in for the missing value, so every point keeps the box, the QSO points too.
+        Alo, Ahi = arBandEdges(
+            args["MrTrueFlat"],
+            rmag,
+            args["ArCurves"][curveIndex],
+            args["ArCurveMu"],
+            arMap,
+            args["ArPriorScale"],
+            args["ArPriorOffset"],
+            args["ArBandRows"] & jnp.isfinite(arMax),
+            args["extragalactic"],
+        )
+        dA = args["dAr"]
+        kTop = jnp.floor((jnp.minimum(Ahi, 1e6) - Ar1d[0]) / dA + 1e-9).astype(jnp.int32)
+        kLast = jnp.clip(jnp.minimum(kLast, kTop), 0, None)
+        kFirst = jnp.clip(jnp.ceil((Alo - Ar1d[0]) / dA - 1e-9).astype(jnp.int32), 0, kLast)
+        cells = jnp.arange(nAr)[None, :]
+        allowedPoint = (cells >= kFirst[:, None]) & (cells <= kLast[:, None])
+        logWidth = -jnp.log((kLast - kFirst + 1) * dA)
+    if args["ArCurves"] is None or band:
         Astar, wDust = jnp.zeros_like(A0), jnp.zeros_like(A0)
     else:
         # A 3D dust map adds a second quadratic in A_r: locus point i puts the star at mu = r - MrTrue_i - A,
@@ -370,11 +482,27 @@ def starPosterior(star, logPriorGrid, args, computeMrTrue=False, returnPosterior
     logDust = 0.5 * jnp.log(jnp.where(wDust > 0, wDust, 1.0))
     # the peak is taken over the A_r grid, not over the real line: without that, a star whose best A_r falls
     # outside the grid underflows everywhere and its quantiles come out as NaN
-    logPeak = jnp.max(
-        logPrior + logDust - 0.5 * _chi2GridMin(c + extra, S, Acomb, Ar1d, jnp.sum(allowed) - 1)
-    )
-    u = logPrior + logDust - 0.5 * (c + extra) - logPeak
-    post = jnp.exp(u[:, None] - 0.5 * S[:, None] * (Ar1d - Acomb[:, None]) ** 2) * allowed
+    logBase = logPrior + logDust + logWidth
+    peaks = logBase - 0.5 * _chi2GridMin(c + extra, S, Acomb, Ar1d, kLast, kFirst)
+    names = list(args["classAxisMasks"])
+    perClass = args["estimateMask"] is not None
+    if perClass:
+        # each class scaled to its own peak (GlobalParams.estimateClass), and a class no point of which is
+        # allowed to 1, where its posterior is zero anyway
+        # (each point's class by its place in names, which inside jit are in the sorted order of a pytree)
+        classAxis = jnp.argmax(jnp.stack([args["classAxisMasks"][name] for name in names]), axis=0)
+        classFlat = jnp.broadcast_to(classAxis, (nFeH, nMr)).ravel()
+        classPeak = jax.ops.segment_max(peaks, classFlat, num_segments=len(names))
+        reached = jnp.isfinite(classPeak)
+        # the peaks against the highest, for the class masses: a peak is near -chi2 / 2, and a float32 of 2e4
+        # is good to 2e-3 only, which taken as it is would leave the probabilities summing to 1 within that
+        classShift = jnp.where(reached, classPeak - jnp.max(jnp.where(reached, classPeak, -jnp.inf)), 0.0)
+        classPeak = jnp.where(reached, classPeak, 0.0)
+        logPeak = classPeak[classFlat]
+    else:
+        logPeak = jnp.max(peaks)
+    u = logBase - 0.5 * (c + extra) - logPeak
+    post = jnp.exp(u[:, None] - 0.5 * S[:, None] * (Ar1d - Acomb[:, None]) ** 2) * allowedPoint
 
     # sums over the short trailing axes as products with vectors of ones: several times faster on CPUs
     ones = partial(jnp.ones, dtype=post.dtype)
@@ -383,7 +511,74 @@ def starPosterior(star, logPriorGrid, args, computeMrTrue=False, returnPosterior
     # Held as an array of its own. Left to the compiler, this sum is fused into what is read from it, and on a
     # GPU that made the standard deviation of A_r alone take 16 of the 26 ms of a batch of 400 DP2 stars.
     postMrAr = jax.lax.optimization_barrier(jnp.sum(post, axis=0))
-    margMr = pnorm(jnp.sum(postFeHMr, axis=0), args["dMr"])
+
+    # The mass of each class is the posterior summed over the stretch of the axis it occupies; every class
+    # lies on its own stretch at every [Fe/H] (locus.segmentAxis), so the masks are along the axis alone.
+    # The sums are of weights scaled to 1 at the peak, so the largest is at least 1 and the log odds stay
+    # finite down to the float underflow of the smaller (about e^-87).
+    statistics = {}
+    postT = jnp.sum(postFeHMr, axis=0)
+    masks = jnp.stack([args["classAxisMasks"][name] for name in names])
+    masses = jnp.sum(jnp.where(masks, postT[None, :], 0.0), axis=1)
+    iWD = names.index("WD")
+    tiny = jnp.finfo(post.dtype).tiny
+    helium = jnp.sum(jnp.where(args["heliumAxisMask"], postT, 0.0))
+    if perClass:
+        # each mass is of its own class's scale, so they are put on one in logarithms
+        logMass = jnp.log(masses) + classShift
+        logTotal = jax.nn.logsumexp(logMass)
+        for name, value in zip(names, logMass, strict=True):
+            statistics[f"p_{name}"] = jnp.exp(value - logTotal)
+        statistics["p_He"] = jnp.exp(jnp.log(helium) + classShift[iWD] - logTotal)
+        logRest = jax.nn.logsumexp(jnp.where(jnp.arange(len(names)) == iWD, -jnp.inf, logMass))
+        statistics["lnodds_WD"] = jnp.maximum(logMass[iWD] - logTotal, jnp.log(tiny)) - jnp.maximum(
+            logRest - logTotal, jnp.log(tiny)
+        )
+    else:
+        total = jnp.sum(masses)
+        for name, mass in zip(names, masses, strict=True):
+            statistics[f"p_{name}"] = mass / total
+        statistics["p_He"] = helium / total
+        # the rest as a sum of its own classes rather than the total less the white dwarfs, which in float32
+        # loses everything below a part in 1e7 of the total and caps the odds of a sure white dwarf near e^16
+        rest = jnp.sum(jnp.where(jnp.arange(len(names)) == iWD, 0.0, masses))
+        statistics["lnodds_WD"] = jnp.log(jnp.maximum(masses[iWD], tiny)) - jnp.log(jnp.maximum(rest, tiny))
+    chi2Class = _chi2GridMin(c, s, A0, Ar1d, kLast, kFirst).reshape(nFeH, nMr)
+    reachable = jnp.isfinite(logPrior).reshape(nFeH, nMr)
+    for name in names:
+        inClass = reachable & args["classAxisMasks"][name][None, :]
+        statistics[f"chi2min{name}"] = jnp.min(jnp.where(inClass, chi2Class, jnp.inf))
+    # the white dwarf posterior along [Fe/H], which on a mass axis is the mass (WD_MASS)
+    wd = args["classAxisMasks"]["WD"].astype(post.dtype)
+    statistics[f"{cc.metallicity}_WD_quantile_median"] = getPosteriorQuantiles(
+        FeH1d, _dot(postFeHMr * wd[None, :], ones(nMr))
+    )[1]
+    # the QSO class: its median redshift along the track, on the track's own points, so that the interval
+    # to the next class on the axis never enters the interpolation
+    if args["qsoAxisIndex"].size:
+        _, statistics[QSO_REDSHIFT], _ = getPosteriorQuantiles(
+            args["qsoRedshift1d"], postT[args["qsoAxisIndex"]]
+        )
+    else:
+        statistics[QSO_REDSHIFT] = jnp.asarray(jnp.nan, dtype=post.dtype)
+    # every estimate below is of the posterior within one class of star: the one GlobalParams.estimateClass
+    # names, or else the most probable of the stellar classes. In the second case a QSO that no star comes
+    # near has no stellar posterior left above the float underflow, and its stellar estimates are empty.
+    if perClass:
+        keep = args["estimateMask"].astype(post.dtype)
+    else:
+        stellar = jnp.array([names.index(name) for name in STELLAR_CLASSES])
+        keep = masks[stellar[jnp.argmax(masses[stellar])]].astype(post.dtype)
+    postFeHMr = postFeHMr * keep[None, :]
+    QrWD = (
+        jnp.zeros_like(args["QrGrid"], dtype=post.dtype)
+        .at[args["QrIdxIndep"]]
+        .add(postMrAr[args["QrColsIndep"]] * wd[args["QrColsIndep"], None])
+        .at[args["QrIdxDepWD"]]
+        .add(post[:, args["QrColsDepWD"], :])
+    )
+    postMrAr = postMrAr * keep[:, None]
+    margMr = pnorm(postT * keep, args["dMr"])
     margFeH = pnorm(_dot(postFeHMr, ones(nMr)), args["dFeH"])
     margAr = pnorm(jnp.sum(postMrAr, axis=0), args["dAr"])
     QrWeights = (
@@ -391,10 +586,11 @@ def starPosterior(star, logPriorGrid, args, computeMrTrue=False, returnPosterior
         .at[args["QrIdxIndep"]]
         .add(postMrAr[args["QrColsIndep"]])
         .at[args["QrIdxDep"]]
-        .add(post[:, args["QrColsDep"], :])
+        .add(post[:, args["QrColsDep"], :] * keep[args["QrColsDep"]][None, :, None])
     )
+    for q, value in zip(QUANTILE_NAMES, getPosteriorQuantiles(args["QrGrid"], QrWD), strict=True):
+        statistics[f"{cc.abs_mag_ext_r}_WD_quantile_{q}"] = value
 
-    statistics = {}
     pdfs = [
         (Mr1d, margMr, cc.abs_mag_r),
         (FeH1d, margFeH, cc.metallicity),
@@ -415,11 +611,9 @@ def starPosterior(star, logPriorGrid, args, computeMrTrue=False, returnPosterior
 
     cubes = {}
     if returnPosteriors:
+        logPriorA = jnp.broadcast_to(logPrior + logDust + logWidth, logPrior.shape)
         prior = (
-            jnp.exp(
-                logPrior[:, None] + logDust[:, None] - 0.5 * wDust[:, None] * (Ar1d - Astar[:, None]) ** 2
-            )
-            * allowed
+            jnp.exp(logPriorA[:, None] - 0.5 * wDust[:, None] * (Ar1d - Astar[:, None]) ** 2) * allowedPoint
         ).reshape(nFeH, nMr, nAr)
         like = jnp.exp(-0.5 * (c[:, None] + s * (Ar1d - A0[:, None]) ** 2 - chi2min)).reshape(nFeH, nMr, nAr)
         cubes = {"prior": prior, "like": like, "post": post}
@@ -451,22 +645,56 @@ def _dot(a, b):
     return jnp.matmul(a, b, precision=jax.lax.Precision.HIGHEST)
 
 
-def _chi2GridMin(c, s, A0, grid, kLast):
-    """Smallest c + s * (A - A0)^2 over grid[0..kLast] of a uniform grid, for every locus point.
+def _chi2GridMin(c, s, A0, grid, kLast, kFirst=0):
+    """Smallest c + s * (A - A0)^2 over grid[kFirst..kLast] of a uniform grid, for every locus point.
 
     The function is convex in A, so the minimum is at one of the two grid values around A0.
     """
     if grid.size == 1:
         return c + s * (grid[0] - A0) ** 2
     k = jnp.floor((A0 - grid[0]) / (grid[1] - grid[0])).astype(jnp.int32)
-    below = grid[jnp.clip(k, 0, kLast)]
-    above = grid[jnp.clip(k + 1, 0, kLast)]
+    below = grid[jnp.clip(k, kFirst, kLast)]
+    above = grid[jnp.clip(k + 1, kFirst, kLast)]
     return c + s * jnp.minimum((below - A0) ** 2, (above - A0) ** 2)
 
 
+def arBandEdges(MrTrue, rmag, curve, mu, arMap, scale, offset, band, extragalactic):
+    """The A_r band of each locus point (GlobalParams.ArCurveMode "band"), as its lower and upper edge.
+
+    The column in front of a star at distance modulus mu is C(mu) = curve(mu) A_r(map), and the band is
+    C / scale - offset <= A <= scale C + offset, the box's factors both ways. Point i at extinction A sits at
+    mu = r - MrTrue_i - A, so an edge e is met where A = e(r - MrTrue_i - A); r - mu - e(mu) is monotone in
+    mu, which makes that an interpolation. A point of an extragalactic segment lies behind all of the dust,
+    so its column is the map's. A point off the band rows, or on a sightline whose curve ends at zero, keeps
+    the box: 0 to infinity here, which the caller cuts to the box.
+    """
+    column = curve * arMap
+    edges = []
+    for edge, far in (
+        (column / scale - offset, arMap / scale - offset),
+        (scale * column + offset, scale * arMap + offset),
+    ):
+        A = jnp.interp(MrTrue, (rmag - mu - edge)[::-1], edge[::-1])
+        edges.append(jnp.where(extragalactic, far, A))
+    inBand = band & ((column[-1] > 0) | extragalactic)
+    return jnp.where(inBand, jnp.maximum(edges[0], 0.0), 0.0), jnp.where(inBand, edges[1], jnp.inf)
+
+
 def _logPrior(priorGrid, params):
-    """Log prior on the locus, the points that only pad an isochrone to the grid excluded."""
-    return jnp.log(jnp.asarray(priorGrid) * params.locusValid)
+    """Log prior on the locus, the points that only pad an isochrone to the grid excluded.
+
+    The prior of a point is its density times the area of its cell (GlobalParams.priorWeights).
+    """
+    return jnp.log(jnp.asarray(priorGrid) * params.locusValid * params.priorWeights)
+
+
+def _priorClassOdds(priorGrid, params):
+    """Log prior odds of white dwarf against the rest, per r bin, with the cell weights the fit uses."""
+    prior = np.asarray(priorGrid, dtype=np.float64) * params.locusValid * params.priorWeights
+    isWD = np.broadcast_to(params.classAxisMasks["WD"], (params.FeH1d.size, params.Mr1d.size)).ravel()
+    massWD, rest = prior[:, isWD].sum(axis=1), prior[:, ~isWD].sum(axis=1)
+    tiny = np.finfo(np.float64).tiny
+    return np.log(np.maximum(massWD, tiny)) - np.log(np.maximum(rest, tiny))
 
 
 def _arGridLengths(arMax, Ar1d):
@@ -478,7 +706,7 @@ def _arGridLengths(arMax, Ar1d):
     return lengths[np.searchsorted(lengths, need)]
 
 
-def _qualityFlags(chi2min, statistics, colorsErr, arMax, noMagnitude, globalParams):
+def _qualityFlags(chi2min, statistics, colorsErr, arMax, noMagnitude, globalParams, rmag=None):
     """One bit per thing worth knowing about a star's fit, as described by the FLAG_ constants.
 
     Everything here is a property of the answer rather than of the star, and none of it removes a row: a
@@ -526,6 +754,8 @@ def _qualityFlags(chi2min, statistics, colorsErr, arMax, noMagnitude, globalPara
 
     flags |= np.where((colorsErr > MISSING_COLOR_ERR).any(axis=1), FLAG_COLOR_MISSING, 0)
     flags |= np.where(noMagnitude, FLAG_NO_MAGNITUDE, 0)
+    if rmag is not None:
+        flags |= np.where(beyondRecipe(rmag), FLAG_BEYOND_RECIPE, 0)
     return flags
 
 

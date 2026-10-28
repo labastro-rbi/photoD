@@ -122,13 +122,14 @@ def test_the_fit_reads_the_curves_the_sightlines_were_looked_up_in(run, tmp_path
     """The flat row is only the flat row if the table the fit reads is the one the index was resolved in."""
     monkeypatch.setattr(run, "PARAMS", {})
     monkeypatch.setattr(run, "CURVES", {})
-    monkeypatch.setattr(run, "globalParameters", lambda floor, useDustMap, curves=None, arMax=5.0: curves)
+    monkeypatch.setattr(run, "globalParameters", lambda floor, useDustMap, curves, *rest: curves)
     path = str(dustFile(tmp_path / "curves.npz"))
+    rest = (str(run.RUN_LOCUS_FILE), None, "gauss", "", None)
 
-    curves = run.loadParams((0.03, True, path, 8.0))
+    curves = run.loadParams((0.03, True, path, 8.0, *rest))
     assert curves is run.loadCurves(path), "the fit was given another table than the index was resolved in"
     assert np.all(curves["shapes"][-1] == 0), "the table the fit reads has no flat sightline at its end"
-    assert run.loadParams((0.03, True, "", 8.0)) is None, "a run with no dust curves was given some"
+    assert run.loadParams((0.03, True, "", 8.0, *rest)) is None, "a run with no dust curves was given some"
 
 
 def test_an_nside_that_is_not_a_power_of_two_is_an_error(run, tmp_path):
@@ -515,11 +516,11 @@ def test_a_catalog_is_asked_for_extinction_only_where_the_fit_reads_it(run):
     assert run.inputColumns(run.FIT_COLUMNS, None) == run.FIT_COLUMNS
 
     frame = pd.DataFrame({c: np.zeros(2) for c in run.FIT_COLUMNS})
-    stars = run.prepareStars(frame, {}, None)
+    stars = run.prepareStars(frame, {}, None, selection="none")
     assert "Ar" not in stars.columns, "an extinction was made for a fit that does not read one"
     assert list(stars["dustIndex"]) == [0, 0], "a run with no curves still looked a sightline up"
     with pytest.raises(SystemExit, match="extinction"):
-        run.prepareStars(frame, {}, "Ar")
+        run.prepareStars(frame, {}, "Ar", selection="none")
 
 
 def test_the_r_error_is_read_under_either_spelling(run):
@@ -537,7 +538,7 @@ def test_the_r_error_is_read_under_either_spelling(run):
     for name in ("rmagErr", "rErr"):
         frame = pd.DataFrame({c: np.zeros(2) for c in run.FIT_COLUMNS})
         frame[name] = [0.01, 0.02]
-        stars = run.prepareStars(frame, {}, None)
+        stars = run.prepareStars(frame, {}, None, selection="none")
         assert "rmagErr" in stars.columns, f"{name} did not reach the fit"
         assert np.allclose(stars["rmagErr"], [0.01, 0.02])
 
@@ -580,22 +581,18 @@ def test_an_extinction_column_built_with_another_coefficient_is_put_on_this_scal
     """
     frame = pd.DataFrame({c: np.zeros(3) for c in run.FIT_COLUMNS})
     frame["Ar_SFD"] = [0.0, 2.7010, 5.4020]
-    scaled = run.prepareStars(frame, {}, "Ar_SFD", run.AR_PER_EBV / 2.7010)
+    scaled = run.prepareStars(frame, {}, "Ar_SFD", run.AR_PER_EBV / 2.7010, selection="none")
     assert np.allclose(scaled["Ar"], [0.0, run.AR_PER_EBV, 2 * run.AR_PER_EBV])
-    assert np.allclose(run.prepareStars(frame, {}, "Ar_SFD")["Ar"], [0.0, 2.7010, 5.4020])
+    assert np.allclose(run.prepareStars(frame, {}, "Ar_SFD", selection="none")["Ar"], [0.0, 2.7010, 5.4020])
 
     fromEbv = pd.DataFrame({c: np.zeros(2) for c in run.FIT_COLUMNS})
     fromEbv["ebv"] = [0.0, 1.0]
-    made = run.prepareStars(fromEbv, {}, "Ar_SFD", 0.5)
+    made = run.prepareStars(fromEbv, {}, "Ar_SFD", 0.5, selection="none")
     assert np.allclose(made["Ar"], [0.0, run.AR_PER_EBV]), "a column's scale was applied to ebv as well"
 
 
-def test_an_unscaled_run_records_no_scale_so_a_catalog_fitted_before_it_resumes(run):
-    """The option is new, and every answer already written was made without it.
-
-    Recording the default would make each of those catalogs differ from the command that wrote them, and a
-    resume compares every setting it finds, so the default is left out and only a real scale written down.
-    """
+def test_an_unscaled_run_records_no_scale(run):
+    """A setting at its default is left out of the record, so only a real scale is written down."""
     assert "arScale" not in run.runConfiguration(SimpleNamespace(**SETTINGS))
     scaled = run.runConfiguration(SimpleNamespace(**(SETTINGS | {"ar_scale": 0.86})))
     assert scaled["arScale"] == 0.86
@@ -630,7 +627,7 @@ def test_a_prepared_catalog_may_name_its_position_as_the_survey_does(run):
     assert run.keptColumns(survey + ["q_flag", "_healpix_29"], read) == survey + ["q_flag"]
     frame = pd.DataFrame({c: np.arange(2.0) for c in survey + ["Ar_SFD"]})
     frame["coord_ra"], frame["coord_dec"] = [10.0, 11.0], [-5.0, -6.0]
-    stars = run.prepareStars(frame, None, "Ar_SFD")
+    stars = run.prepareStars(frame, None, "Ar_SFD", selection="none")
     assert list(stars["ra"]) == [10.0, 11.0] and list(stars["dec"]) == [-5.0, -6.0]
     # a catalog with the colours but no position under either name is not a prepared one
     assert run.preparedColumns([c for c in run.FIT_COLUMNS if c != "ra"]) is None
@@ -665,7 +662,7 @@ def test_a_prepared_catalog_is_kept_whole_and_the_survey_table_as_read(run):
     assert run.keptColumns(survey, run.inputColumns(survey, "Ar")) == run.RAW_COLUMNS
     assert run.runConfiguration(SimpleNamespace(**SETTINGS))["inputColumns"] is True
     alone = run.runConfiguration(SimpleNamespace(**(SETTINGS | {"no_input_columns": True})))
-    assert "inputColumns" not in alone, "a run without them would no longer resume one written before them"
+    assert "inputColumns" not in alone, "a run without them leaves them out of its record"
 
 
 def test_partitions_with_the_catalog_columns_read_back_as_one_catalog(run, tmp_path):
@@ -697,13 +694,14 @@ def test_a_resume_that_asks_for_another_fit_is_refused(run, tmp_path):
     from hats.pixel_math import HealpixPixel
 
     base = tmp_path / "photod"
-    # what the refusal protects is the answers already written, so the catalog holds one
-    frame = estimatesFrame(*zip(*[pixelCentre(p, 5) for p in (7, 8)], strict=True))
-    run.writePartition(base, HealpixPixel(5, 1), frame)
+    base.mkdir()
     settings = SETTINGS
     wanted = run.runConfiguration(SimpleNamespace(**settings))
     run.recordConfiguration(base, wanted)
     assert json.loads((base / run.RUN_FILE).read_text()) == wanted, "the run recorded something else"
+    # what the refusal protects is the answers already written, so the catalog holds one
+    frame = estimatesFrame(*zip(*[pixelCentre(p, 5) for p in (7, 8)], strict=True))
+    run.writePartition(base, HealpixPixel(5, 1), frame)
     run.recordConfiguration(base, wanted)  # the same command again, which is how a run is resumed
 
     for name, value in (
@@ -747,11 +745,12 @@ def test_a_resume_that_differs_only_in_the_catalog_columns_is_told_the_option_th
     from hats.pixel_math import HealpixPixel
 
     base = tmp_path / "photod"
-    frame = estimatesFrame(*zip(*[pixelCentre(p, 5) for p in (7, 8)], strict=True))
-    run.writePartition(base, HealpixPixel(5, 1), frame)
+    base.mkdir()
     alone = run.runConfiguration(SimpleNamespace(**(SETTINGS | {"no_input_columns": True})))
     beside = run.runConfiguration(SimpleNamespace(**SETTINGS))
     run.recordConfiguration(base, alone)
+    frame = estimatesFrame(*zip(*[pixelCentre(p, 5) for p in (7, 8)], strict=True))
+    run.writePartition(base, HealpixPixel(5, 1), frame)
     with pytest.raises(SystemExit, match="resume it with --no-input-columns"):
         run.recordConfiguration(base, beside)
     (base / run.RUN_FILE).write_text(json.dumps(beside))
@@ -810,18 +809,31 @@ def test_a_directory_with_no_answers_in_it_takes_the_settings_it_is_given(run, t
         run.recordConfiguration(base, first)
 
 
-def test_a_result_with_no_record_of_its_settings_is_taken_as_it_comes(run, tmp_path, capsys):
-    """The one case with nothing to compare against: answers written before this was recorded."""
+def test_answers_other_code_wrote_are_not_resumed(run, tmp_path):
+    """Answers with no record, or with a record that names no fit model, were written by other code than this.
+
+    The fit of the stars alone and the earlier versions of this one record no model, so a resume of their
+    answers would leave two fit models inside one catalog, whatever the rest of the record says.
+    """
     from hats.pixel_math import HealpixPixel
 
     base = tmp_path / "photod"
     frame = estimatesFrame(*zip(*[pixelCentre(p, 5) for p in (7, 8)], strict=True))
     run.writePartition(base, HealpixPixel(5, 1), frame)
-    wanted = {"floor": 0.03}
-    run.recordConfiguration(base, wanted)
+    wanted = run.runConfiguration(SimpleNamespace(**SETTINGS))
+    assert wanted["model"] == run.FIT_MODEL
+    with pytest.raises(SystemExit, match="no record.*--overwrite.*--name"):
+        run.recordConfiguration(base, wanted)
+    assert not (base / run.RUN_FILE).exists(), "the refused run recorded itself over the answers"
 
-    assert "no record" in capsys.readouterr().out, "a resume of an older result said nothing about it"
-    assert json.loads((base / run.RUN_FILE).read_text()) == wanted
+    older = {name: value for name, value in wanted.items() if name != "model"}
+    (base / run.RUN_FILE).write_text(json.dumps(older))
+    with pytest.raises(SystemExit, match="names no fit model.*--overwrite.*--name"):
+        run.recordConfiguration(base, wanted)
+    assert json.loads((base / run.RUN_FILE).read_text()) == older, "the refused run rewrote the record"
+
+    (base / run.RUN_FILE).write_text(json.dumps(wanted))
+    run.recordConfiguration(base, wanted)  # with the model recorded, the same command resumes
 
 
 def test_a_partition_is_written_where_the_dataset_scan_cannot_see_it(run, tmp_path, monkeypatch):
