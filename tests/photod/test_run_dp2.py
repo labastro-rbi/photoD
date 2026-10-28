@@ -722,7 +722,6 @@ def test_a_resume_that_asks_for_another_fit_is_refused(run, tmp_path):
         ("cone", [30.0, 15.0, 1.0]),
         ("catalog", "/data/dp3"),
         ("ar_scale", 0.86),
-        ("no_input_columns", True),
     ):
         other = run.runConfiguration(SimpleNamespace(**(settings | {name: value})))
         with pytest.raises(SystemExit, match="--overwrite"):
@@ -748,10 +747,57 @@ def test_a_resume_that_asks_for_another_fit_is_refused(run, tmp_path):
     assert flat == bare and flat["dustCurves"] == "" and flat["arColumn"] is None
 
 
+def test_a_resume_that_differs_only_in_the_catalog_columns_is_told_the_option_that_mends_it(run, tmp_path):
+    """The catalog's own columns change what a partition holds, not an answer, so a fit again is not the fix.
+
+    A result written without them is resumed with --no-input-columns, and one written with them without it.
+    """
+    from hats.pixel_math import HealpixPixel
+
+    base = tmp_path / "photod"
+    frame = estimatesFrame(*zip(*[pixelCentre(p, 5) for p in (7, 8)], strict=True))
+    run.writePartition(base, HealpixPixel(5, 1), frame)
+    alone = run.runConfiguration(SimpleNamespace(**(SETTINGS | {"no_input_columns": True})))
+    beside = run.runConfiguration(SimpleNamespace(**SETTINGS))
+    run.recordConfiguration(base, alone)
+    with pytest.raises(SystemExit, match="resume it with --no-input-columns"):
+        run.recordConfiguration(base, beside)
+    (base / run.RUN_FILE).write_text(json.dumps(beside))
+    with pytest.raises(SystemExit, match="resume it without --no-input-columns"):
+        run.recordConfiguration(base, alone)
+    # with anything else differing as well it is another fit, and refused as one
+    other = run.runConfiguration(SimpleNamespace(**(SETTINGS | {"no_input_columns": True, "floor": 0.05})))
+    with pytest.raises(SystemExit, match="--overwrite"):
+        run.recordConfiguration(base, other)
+
+
+def test_overwrite_keeps_the_answers_when_the_prior_file_will_not_do(run, tmp_path, monkeypatch):
+    """--overwrite removes the result, so the prior file is checked first and a bad one costs nothing."""
+    base = tmp_path / "photod"
+    base.mkdir()
+    (base / "answers.parquet").write_text("written by an earlier run")
+    monkeypatch.setattr(run, "mapFile", lambda path: tmp_path / "unpacked.kde.npy")
+    maps, scale = np.zeros((1, 1, 2, 2), dtype=np.uint8), np.ones((1, 1), dtype=np.float32)
+    wrong = json.dumps(getBayesConstants() | {"FeHNpts": 48})
+    np.savez(tmp_path / "wrong.npz", kde=maps, kdeScale=scale, decades=8.0, constants=wrong)
+    with pytest.raises(SystemExit, match="FeHNpts"):
+        run.openResult(base, tmp_path / "wrong.npz", overwrite=True)
+    assert (base / "answers.parquet").exists(), "the answers went before the prior file was looked at"
+
+    right = json.dumps(getBayesConstants())
+    np.savez(tmp_path / "right.npz", kde=maps, kdeScale=scale, decades=8.0, constants=right)
+    run.openResult(base, tmp_path / "right.npz", overwrite=False)
+    assert (base / "answers.parquet").exists(), "the answers went without --overwrite"
+    assert not (tmp_path / "unpacked.kde.npy").exists(), "unpacked before the resume could be refused"
+    run.openResult(base, tmp_path / "right.npz", overwrite=True)
+    assert base.is_dir() and not any(base.iterdir()), "--overwrite left the earlier result in place"
+    assert (tmp_path / "unpacked.kde.npy").exists(), "the result went before the maps were unpacked"
+
+
 def test_a_directory_with_no_answers_in_it_takes_the_settings_it_is_given(run, tmp_path, capsys):
     """What the refusal protects is the answers, and a run can exit before it has written any.
 
-    A prior file it cannot read or a column the catalog has not got ends a run after it has recorded itself,
+    Prior maps it cannot unpack or a column the catalog has not got end a run after it has recorded itself,
     and the corrected command would then be refused by the empty directory the first one left.
     """
     from hats.pixel_math import HealpixPixel

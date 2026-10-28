@@ -550,6 +550,21 @@ def unpackPriors(path):
     writeAtomically(cache, lambda name: np.save(name, maps))
 
 
+def openResult(base, priorPath, overwrite):
+    """The result directory, made ready for the run once the prior file has been checked.
+
+    The prior file goes first because --overwrite removes the answers already there, and a file that will not
+    do ends the run: checked after them, a mistyped path or a file built on another grid costs the whole of
+    a result that nothing was going to replace. For the same reason the maps are unpacked before a result
+    is removed; otherwise that waits until the resume has been checked against it.
+    """
+    checkPriorFile(priorPath)
+    if overwrite and base.exists():
+        unpackPriors(priorPath)
+        shutil.rmtree(base)
+    base.mkdir(parents=True, exist_ok=True)
+
+
 def writeAtomically(path, write, scratch=None):
     """Put a file in place in one step: written under a temporary name, then renamed.
 
@@ -659,6 +674,9 @@ def fitAndWrite(
     """
     table = pq.read_table(source, columns=columns)
     stars = prepareStars(table.to_pandas(), loadCurves(curvePath), arColumn, arScale)
+    # of the table only the columns written beside the answers are wanted from here on, and none of it when
+    # they are not written, so the rest is let go before the fit rather than held through it
+    table = table.select(list(keep)) if keep else None
     if cone is not None and len(stars):
         ra, dec, radius = cone
         stars = stars[separation(stars["ra"].to_numpy(), stars["dec"].to_numpy(), ra, dec) <= radius]
@@ -666,7 +684,7 @@ def fitAndWrite(
     if not len(estimates):
         return 0
     if keep:
-        estimates = withInputColumns(estimates, table.select(list(keep)), source)
+        estimates = withInputColumns(estimates, table, source)
     writePartition(base, pixel, estimates)
     return len(estimates)
 
@@ -874,7 +892,7 @@ def recordConfiguration(base, configuration):
     nothing about itself and is taken as it comes, which is the one case where there is nothing to compare.
 
     What is protected is the answers, so a directory that holds none takes the settings it is given. A run
-    that stopped before its first partition, on a prior file it could not read or a catalog column it could
+    that stopped before its first partition, on prior maps it could not unpack or a catalog column it could
     not find, recorded itself all the same, and the corrected command would otherwise be refused by the
     empty directory the first one left.
     """
@@ -889,6 +907,15 @@ def recordConfiguration(base, configuration):
             for name in sorted(found.keys() | configuration.keys())
             if found.get(name) != configuration.get(name)
         }
+        if set(differs) == {"inputColumns"}:
+            # the one difference that changes no answer, only what a partition holds beside it, and the option
+            # that made it is what mends it, not a fit of the whole catalog again
+            written = "with" if found.get("inputColumns") else "without"
+            option = "without" if found.get("inputColumns") else "with"
+            raise SystemExit(
+                f"{base} was written {written} the catalog's own columns beside the answers, and nothing "
+                f"else differs: resume it {option} --no-input-columns"
+            )
         if differs:
             said = ", ".join(f"{name} {was!r} rather than {now!r}" for name, (was, now) in differs.items())
             raise SystemExit(
@@ -1188,14 +1215,11 @@ def main():
         )
 
     base = Path(args.out) / args.name
-    if base.exists() and args.overwrite:
-        shutil.rmtree(base)
-    base.mkdir(parents=True, exist_ok=True)
+    openResult(base, args.priors, args.overwrite)
     recordConfiguration(base, configuration)
     if shard:
         startShard(base, shard)
     sweepOrphans(base)
-    checkPriorFile(args.priors)
     unpackPriors(args.priors)
 
     todo, total = partitionsToFit(base, sources)
