@@ -10,6 +10,15 @@ QUANTILES = (0.16, 0.5, 0.84)
 MULTIMODALITY_LEVELS = 300
 # cuts evaluated in one step, per distribution of a batch. A DP2 posterior needs 27 on average.
 MULTIMODALITY_CUTS_PER_STEP = 8
+# The Qr posterior is smoothed by a Gaussian of this width (mag) before its multimodality is measured, on a
+# regular grid of this step. On the giant branch the tracks of neighbouring [Fe/H] lie 0.04-0.5 mag apart and
+# one tLoc step moves Mr by up to 0.19 mag, so the posterior of a giant is a comb of about 150 spikes. Each
+# gap between teeth counts as a valley, and without smoothing a correct giant gets a median multimodality of
+# 0.16. Smoothing removes the comb, and also lets a broad posterior spread over both branches show its second
+# bump. On the TRILEGAL wrong-branch test (|Mr_true - Mr| > 4 sigma, 1,971 of 261,844 stars) the AUC is 0.84
+# raw, 0.945 at 0.1 mag, 0.953 at 0.2, 0.950 at 0.3 and 0.929 at 0.5, against 0.952 for Mr_std.
+MULTIMODALITY_SMOOTHING = 0.2
+MULTIMODALITY_STEP = 0.01
 
 
 def pnorm(pdf, dx):
@@ -59,6 +68,42 @@ def binWidths(x):
     """Width of the bin each sorted value of x stands for, from the midpoint before it to the one after."""
     half = 0.5 * jnp.diff(x)
     return jnp.concatenate([half[:1], half]) + jnp.concatenate([half, half[-1:]])
+
+
+def smoothingGrid(x, sigma, step=MULTIMODALITY_STEP):
+    """What smoothPdfs needs to smooth distributions sampled at the sorted values x by a Gaussian of sigma.
+
+    The weight of each value of x is shared between the two points of a regular grid of the given step on
+    either side of it, in proportion to how near it is to each, and the grid is then convolved with the
+    Gaussian sampled at the same step out to four widths and normalized. The grid reaches four widths past
+    either end of x, so no weight is lost. With sigma = 0 nothing is smoothed and the grid is x itself.
+
+    Returns the grid, the index in it of the point at or below each value of x, the share of its weight that
+    goes to the point above, and the kernel.
+    """
+    x = np.asarray(x, dtype=float)
+    if not sigma > 0:
+        return x, np.arange(x.size), np.zeros(x.size), np.ones(1)
+    half = int(np.ceil(4 * sigma / step))
+    start = x[0] - half * step
+    nBins = int(np.ceil((x[-1] - start) / step)) + half + 2
+    grid = start + step * np.arange(nBins)
+    position = (x - start) / step
+    lower = np.clip(np.floor(position).astype(int), 0, nBins - 2)
+    kernel = np.exp(-0.5 * (step * np.arange(-half, half + 1) / sigma) ** 2)
+    return grid, lower, position - lower, kernel / kernel.sum()
+
+
+def smoothPdfs(pdfs, lower, upper, kernel, nBins):
+    """Rows of weights smoothed onto the grid of smoothingGrid, given its index, share and kernel.
+
+    Weights rather than densities go in and come out: the grid is regular, so the two are the same shape.
+    """
+    pdfs = jnp.asarray(pdfs)
+    grid = jnp.zeros((pdfs.shape[0], nBins), dtype=pdfs.dtype)
+    grid = grid.at[:, lower].add(pdfs * (1 - upper)).at[:, lower + 1].add(pdfs * upper, mode="drop")
+    convolve = partial(jnp.convolve, mode="same", precision=jax.lax.Precision.HIGHEST)
+    return jax.vmap(lambda row: convolve(row, kernel.astype(pdfs.dtype)))(grid)
 
 
 def multimodality(x, pdfs, nLevels=MULTIMODALITY_LEVELS):

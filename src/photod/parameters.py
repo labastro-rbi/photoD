@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from photod.locus import extcoeff, locusPlateau
+from photod.stats import MULTIMODALITY_SMOOTHING, smoothingGrid
 
 
 @dataclass
@@ -53,6 +54,10 @@ class GlobalParams:
     colorErrFloor : float
         Added in quadrature to every colour error before the fit. The locus is not exact, so with the
         catalog errors alone the posteriors of bright stars are too narrow; 0.03 mag is right for Rubin DP2.
+    multimodalitySmoothing : float
+        Width (mag) of the Gaussian the Qr posterior is smoothed by before its multimodality is measured, so
+        that the comb the separate [Fe/H] tracks make of a giant's posterior does not count as modes (see
+        stats.MULTIMODALITY_SMOOTHING). Zero measures the posterior as it is.
     """
 
     fitColors: tuple
@@ -76,6 +81,7 @@ class GlobalParams:
     ArCurveIndexColumn: str = None
     ArCurveFrac: float = 0.15
     ArCurveFloor: float = 0.05
+    multimodalitySmoothing: float = MULTIMODALITY_SMOOTHING
 
     def __post_init__(self):
         self.FeH1d = np.unique(np.asarray(self.locusData[self.xLabel], dtype=float))
@@ -159,6 +165,9 @@ class GlobalParams:
         self.QrColsDep = np.where(~independent)[0]
         self.QrIdxIndep = QrIndices[0, independent, :]
         self.QrIdxDep = QrIndices[:, ~independent, :]
+        self.QrSmoothGrid, self.QrSmoothLower, self.QrSmoothUpper, self.QrSmoothKernel = smoothingGrid(
+            self.QrGrid, self.multimodalitySmoothing
+        )
 
     def starArgs(self, nAr=None):
         """Arrays used by the per-star computation, with the A_r grid cut to its first nAr values."""
@@ -178,6 +187,10 @@ class GlobalParams:
             "QrColsDep": self.QrColsDep,
             "QrIdxIndep": self.QrIdxIndep[:, :nAr],
             "QrIdxDep": self.QrIdxDep[:, :, :nAr],
+            "QrSmoothGrid": self.QrSmoothGrid,
+            "QrSmoothLower": self.QrSmoothLower,
+            "QrSmoothUpper": self.QrSmoothUpper,
+            "QrSmoothKernel": self.QrSmoothKernel,
             "MrTrueGrid": self.MrTrueGrid,
             "MrTrueIndices": self.MrTrueIndices,
             "MrTrueFlat": self.MrTrueFlat,

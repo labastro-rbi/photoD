@@ -15,7 +15,7 @@ from photod.column_map.base import mapper_from_glossary
 from photod.parameters import GlobalParams
 from photod.priors import getPriorMapIndex, initializePriorGrid
 from photod.results import BayesResults
-from photod.stats import getMargDistr3D, getPosteriorQuantiles, getStats, multimodality, pnorm
+from photod.stats import getMargDistr3D, getPosteriorQuantiles, getStats, multimodality, pnorm, smoothPdfs
 
 cc = None
 
@@ -44,18 +44,21 @@ QUANTILE_NAMES = ("lo", "median", "hi")
 # work, is the case for giving a run less rather than the default.
 BATCH_BYTES = 16 << 30
 BATCH_BYTES_PER_CELL = 12  # the posterior in float32, and the temporaries it is built from
-# Bits of the fit_flags column. A star with none of them set is one the model describes, on a single branch,
-# with every colour measured and nothing of it against the edge of the grid.
-FLAG_POOR_FIT = 1  # chi2 above CHI2_POOR, or no answer at all: the locus does not describe this star
-FLAG_TWO_BRANCHES = 2  # the Mr posterior is lopsided, which is how a giant and a dwarf solution both survive
-FLAG_FEH_EDGE = 4  # [Fe/H] is against the end of the model grid, so it is a limit rather than a measurement
+# Bits of the fit_flags column. Each states a fact about the row that holds whatever the science: the fit was
+# not run, an input was missing, or a number is a grid limit or a grid artefact rather than a measurement. How
+# good an answer is (chi2min, multimodality, the shape columns) is left to columns, for the user to cut on.
+# Bits 1 and 2 (a poor fit at chi2 > 100, a lopsided Mr posterior) are no longer set, and bits 256 to 4096
+# are left free because the white-dwarf branch uses them.
+FLAG_FEH_LOW_EDGE = 4  # [Fe/H] is against the metal-poor end of the grid, so it is a limit, not a measurement
 FLAG_AR_EDGE = 8  # A_r is against the top of its grid, and the distance goes wrong with it
 FLAG_COLOR_MISSING = 16  # at least one colour had no measurement and carried no weight in the fit
 FLAG_NO_MAGNITUDE = 32  # no r magnitude, so neither a prior map nor a distance: the row carries no estimate
 FLAG_NO_PRIOR = 64  # no prior map for this part of the sky, so the fit was never run: no estimate either
 FLAG_COLLAPSED = 128  # the posterior fell into a single grid cell: precise-looking and not to be trusted
-CHI2_POOR = 100.0
-ASYMMETRY_POOR = 3.0
+FLAG_FEH_HIGH_EDGE = 8192  # [Fe/H] is against the metal-rich end of the grid
+# one bit per colour of GlobalParams.fitColors, in that order, for a colour that was not measured: on DP2
+# u-g 16384, g-r 32768, r-i 65536, i-z 131072, z-y 262144. Bit 16 is set whenever any of them is.
+FLAG_COLOR_MISSING_FIRST = 16384
 COLLAPSED_WIDTH = 0.1  # half-width of the Qr interval below which an answer is collapsed, not precise
 MISSING_COLOR_ERR = 1.0  # a colour whose error is above this is effectively unmeasured: the fit weighs it
 # by 1 / err^2 like any other, which against a well measured colour is a ten-thousandth of the weight or less.
@@ -69,6 +72,7 @@ def makeBayesEstimates3d(
     batchSize: int = 100,
     returnPosteriors: bool = False,
     batchBytes: int = None,
+    returnMarginals: bool = False,
 ):
     """Posterior statistics for all stars of a catalog partition.
 
@@ -91,13 +95,20 @@ def makeBayesEstimates3d(
     returnPosteriors : bool
         Also return the prior, likelihood and posterior cubes and their marginal distributions. Meant for
         inspecting a few stars.
+    returnMarginals : bool
+        Also return each star's one-dimensional posteriors, in results.marginals: of the locus coordinate,
+        [Fe/H], A_r, Qr = Mr + A_r (the distance modulus turned round, r - DM) and, with
+        globalParams.computeMrTrue, the true Mr, each normalised to a sum of one over its grid, the grids in
+        results.marginalGrids. About 26 kB per star on the DP2 grid, so meant for runs of thousands of stars
+        rather than a survey.
 
     Returns
     -------
     estimatesDf : DataFrame
         The columns and types of getEstimatesMeta: object id, position and r magnitude, chi2min, the flags,
         the multimodality, and the 16th/50th/84th percentiles and standard deviation of the locus coordinate,
-        [Fe/H], A_r and the distance modulus (and of the true Mr when globalParams.computeMrTrue).
+        [Fe/H], A_r and the distance modulus (and of the true Mr when globalParams.computeMrTrue), and the
+        non-gaussianity and asymmetry of the absolute magnitude, [Fe/H], A_r and the distance modulus.
     results : BayesResults
         chi2min and every statistic computed, which also holds Qr, written to no column.
     """
@@ -139,7 +150,9 @@ def makeBayesEstimates3d(
                 curveIndex[b],
                 arMap[b],
             )
-            out = _starBatch(data, logPriorGrid, args, globalParams.computeMrTrue, returnPosteriors)
+            out = _starBatch(
+                data, logPriorGrid, args, globalParams.computeMrTrue, returnPosteriors, returnMarginals
+            )
             # off the device as soon as it is done: holding every batch of a partition on the GPU until the
             # end keeps thousands of buffers alive, which exhausts it on a large partition
             batches.append((b, _toHost(out)))
@@ -160,9 +173,7 @@ def makeBayesEstimates3d(
     statistics[f"{cc.distance_modulus}_std"] = statistics[f"{cc.abs_mag_ext_r}_std"]
     rmagErr = magnitudeError(starsData)
     if np.any(rmagErr > 0):
-        statistics[f"{cc.distance_modulus}_std"] = np.hypot(
-            statistics[f"{cc.distance_modulus}_std"], rmagErr
-        )
+        statistics[f"{cc.distance_modulus}_std"] = np.hypot(statistics[f"{cc.distance_modulus}_std"], rmagErr)
         median = statistics[f"{cc.distance_modulus}_quantile_median"]
         for name, direction in (("lo", -1.0), ("hi", 1.0)):
             half = np.abs(statistics[f"{cc.distance_modulus}_quantile_{name}"] - median)
@@ -176,9 +187,8 @@ def makeBayesEstimates3d(
         chi2min[noMagnitude] = np.nan
         for value in statistics.values():
             value[noMagnitude] = np.nan
-    statistics[cc.quality_flags] = _qualityFlags(
-        chi2min, statistics, colorsErr, arMax, noMagnitude, globalParams
-    )
+    statistics.update(shapeColumns(statistics, shapeNames(globalParams.computeMrTrue)))
+    statistics[cc.quality_flags] = _qualityFlags(statistics, colorsErr, arMax, noMagnitude, globalParams)
 
     results = BayesResults(chi2min, statistics)
     if returnPosteriors:
@@ -189,6 +199,13 @@ def makeBayesEstimates3d(
         results.margpostMr = {k: extra[f"margMr{k}"] for k in range(3)}
         results.margpostFeH = {k: extra[f"margFeH{k}"] for k in range(3)}
         results.margpostAr = {k: extra[f"margAr{k}"] for k in range(3)}
+    if returnMarginals:
+        names = [name for name in batches[0][1][2] if name.startswith("marginal_")]
+        results.marginals = {
+            name.removeprefix("marginal_"): _collect([(b, out[2][name]) for b, out in batches], nStars)
+            for name in names
+        }
+        results.marginalGrids = marginalGrids(globalParams)
 
     estimatesDf = pd.DataFrame(
         {
@@ -221,10 +238,10 @@ def unfittedEstimates(starsData, globalParams, flag):
     # counting the stars of a run by what was measured of them does not depend on which rows were fitted
     colors = starsData[list(globalParams.fitColors)].to_numpy(dtype=np.float64)
     errors = starsData[[color + "Err" for color in globalParams.fitColors]].to_numpy(dtype=np.float64)
-    flags = np.full(len(starsData), flag | FLAG_POOR_FIT, dtype=np.int32)
+    flags = np.full(len(starsData), flag, dtype=np.int32)
     rmag = starsData[cc.observed_mag_r].to_numpy(dtype=np.float64)
     missing = ~(errors <= MISSING_COLOR_ERR) | ~np.isfinite(colors)
-    flags |= np.where(missing.any(axis=1), FLAG_COLOR_MISSING, 0)
+    flags |= _colorFlags(missing)
     flags |= np.where(~np.isfinite(rmag), FLAG_NO_MAGNITUDE, 0)
     columns[cc.quality_flags] = flags
     return pd.DataFrame(columns)[list(meta.columns)].astype(meta.dtypes.to_dict())
@@ -298,6 +315,8 @@ def getEstimatesMeta(computeMrTrue: bool = False):
     )
     quantileCols = [f"{name}_quantile_{q}" for name in names for q in QUANTILE_NAMES]
     stdCols = [f"{name}_std" for name in names]
+    shapes = ("nongaussianity", "asymmetry")
+    shapeCols = [f"{name}_{shape}" for name in shapeNames(computeMrTrue) for shape in shapes]
     colNames = [
         cc.object_id,
         cc.right_ascension,
@@ -306,7 +325,7 @@ def getEstimatesMeta(computeMrTrue: bool = False):
         cc.chi_sq_min,
         cc.quality_flags,
         cc.multimodality,
-        *sorted(quantileCols + stdCols),
+        *sorted(quantileCols + stdCols + shapeCols),
     ]
     # the positions and the magnitude are carried over from the catalog rather than fitted, and float32
     # would round a position by a tenth of an arcsecond
@@ -324,7 +343,9 @@ def getEstimatesMeta(computeMrTrue: bool = False):
     return meta
 
 
-def starPosterior(star, logPriorGrid, args, computeMrTrue=False, returnPosteriors=False):
+def starPosterior(
+    star, logPriorGrid, args, computeMrTrue=False, returnPosteriors=False, returnMarginals=False
+):
     """Posterior statistics for one star, and the Qr posterior they are partly read from.
 
     For locus point i and extinction A the model colors are m_i + A R, so
@@ -414,6 +435,14 @@ def starPosterior(star, logPriorGrid, args, computeMrTrue=False, returnPosterior
         statistics[f"{name}_std"] = getStats(values, pdf)[1]
 
     cubes = {}
+    if returnMarginals:
+        weights = [(cc.abs_mag_r, margMr), (cc.metallicity, margFeH), (cc.extinction_r, margAr)]
+        weights.append((cc.abs_mag_ext_r, QrWeights))
+        if computeMrTrue:
+            weights.append(("Mr", MrTrueWeights))
+        for name, pdf in weights:
+            total = jnp.sum(pdf)
+            cubes[f"marginal_{name}"] = pdf / jnp.where(total > 0, total, 1.0)
     if returnPosteriors:
         prior = (
             jnp.exp(
@@ -429,20 +458,30 @@ def starPosterior(star, logPriorGrid, args, computeMrTrue=False, returnPosterior
     return chi2min, statistics, cubes, QrWeights
 
 
-@partial(jax.jit, static_argnames=("computeMrTrue", "returnPosteriors"))
-def _starBatch(data, logPriorGrid, args, computeMrTrue, returnPosteriors):
+@partial(jax.jit, static_argnames=("computeMrTrue", "returnPosteriors", "returnMarginals"))
+def _starBatch(data, logPriorGrid, args, computeMrTrue, returnPosteriors, returnMarginals=False):
     star = partial(
         starPosterior,
         logPriorGrid=logPriorGrid,
         args=args,
         computeMrTrue=computeMrTrue,
         returnPosteriors=returnPosteriors,
+        returnMarginals=returnMarginals,
     )
     chi2min, statistics, cubes, QrWeights = jax.vmap(star)(data)
     # Of the distance modulus, which is the Qr posterior turned round: the measure does not depend on which
     # way the axis runs. It is taken before the error on r is folded in, which moves both peaks together, and
     # on the whole batch at once, which is several times faster than star by star (see stats.multimodality).
-    statistics[cc.multimodality] = multimodality(args["QrGrid"], QrWeights)
+    # The posterior is smoothed first, so that the comb of the separate [Fe/H] tracks on the giant branch is
+    # not counted as modes (see stats.MULTIMODALITY_SMOOTHING).
+    smoothed = smoothPdfs(
+        QrWeights,
+        args["QrSmoothLower"],
+        args["QrSmoothUpper"],
+        args["QrSmoothKernel"],
+        args["QrSmoothGrid"].shape[0],
+    )
+    statistics[cc.multimodality] = multimodality(args["QrSmoothGrid"], smoothed)
     return chi2min, statistics, cubes
 
 
@@ -478,31 +517,17 @@ def _arGridLengths(arMax, Ar1d):
     return lengths[np.searchsorted(lengths, need)]
 
 
-def _qualityFlags(chi2min, statistics, colorsErr, arMax, noMagnitude, globalParams):
-    """One bit per thing worth knowing about a star's fit, as described by the FLAG_ constants.
+def _qualityFlags(statistics, colorsErr, arMax, noMagnitude, globalParams):
+    """The fit_flags bits the answer sets, as described by the FLAG_ constants.
 
-    Everything here is a property of the answer rather than of the star, and none of it removes a row: a
-    catalog that quietly drops what it cannot fit is harder to use than one that says so.
+    Each is a fact rather than a judgement of quality, and none of it removes a row: a catalog that quietly
+    drops what it cannot fit is harder to use than one that says so.
     """
-    flags = np.zeros(chi2min.size, dtype=np.int32)
-    # the absolute magnitude itself when the locus is parametrised by tLoc, since that is where a giant and a
-    # dwarf solution sit far apart
-    name = "Mr" if "Mr_quantile_median" in statistics else cc.abs_mag_r
-    low, median, high = (statistics[f"{name}_quantile_{q}"] for q in QUANTILE_NAMES)
-    # a star the fit could not place at all must not come out looking like one it placed well
-    flags |= np.where((chi2min > CHI2_POOR) | ~np.isfinite(median), FLAG_POOR_FIT, 0)
-
-    upper, lower = high - median, median - low
-    with np.errstate(divide="ignore", invalid="ignore"):
-        ratio = np.where(lower > 0, upper / lower, np.inf)
-    lopsided = (ratio > ASYMMETRY_POOR) | (ratio < 1 / ASYMMETRY_POOR)
-    flags |= np.where(lopsided & np.isfinite(median), FLAG_TWO_BRANCHES, 0)
-
+    flags = np.zeros(noMagnitude.size, dtype=np.int32)
     feH = statistics[f"{cc.metallicity}_quantile_median"]
     step = np.diff(globalParams.FeH1d)[0] if globalParams.FeH1d.size > 1 else 0.0
-    flags |= np.where(
-        (feH <= globalParams.FeH1d[0] + step) | (feH >= globalParams.FeH1d[-1] - step), FLAG_FEH_EDGE, 0
-    )
+    flags |= np.where(feH <= globalParams.FeH1d[0] + step, FLAG_FEH_LOW_EDGE, 0)
+    flags |= np.where(feH >= globalParams.FeH1d[-1] - step, FLAG_FEH_HIGH_EDGE, 0)
 
     # A_r is bounded by the dust map as well as by the grid, and with a map it is the map that binds: a star
     # pinned against either has an extinction that is a limit, and a distance that goes wrong with it
@@ -524,9 +549,52 @@ def _qualityFlags(chi2min, statistics, colorsErr, arMax, noMagnitude, globalPara
     )
     flags |= np.where(np.isfinite(width) & (width < COLLAPSED_WIDTH), FLAG_COLLAPSED, 0)
 
-    flags |= np.where((colorsErr > MISSING_COLOR_ERR).any(axis=1), FLAG_COLOR_MISSING, 0)
+    flags |= _colorFlags(colorsErr > MISSING_COLOR_ERR)
     flags |= np.where(noMagnitude, FLAG_NO_MAGNITUDE, 0)
     return flags
+
+
+def _colorFlags(missing):
+    """The bits for the colours that were not measured: one per colour, and bit 16 if any of them is set."""
+    bits = FLAG_COLOR_MISSING_FIRST << np.arange(missing.shape[1], dtype=np.int64)
+    flags = (missing * bits).sum(axis=1)
+    return np.where(missing.any(axis=1), flags | FLAG_COLOR_MISSING, 0).astype(np.int32)
+
+
+def shapeColumns(statistics, names):
+    """Non-gaussianity and asymmetry of each posterior named, from its quantiles and standard deviation.
+
+    The non-gaussianity is the standard deviation over half the 16-84 % interval: one for a Gaussian, larger
+    when the tails or a second peak hold weight the interval does not see. The asymmetry is the length of the
+    interval above the median over its length below: one for a symmetric posterior, far from one when a second
+    branch sits on one side. Both are infinite where the divisor is zero and the other part is not, and NaN
+    where the posterior is a single value or there is no answer.
+    """
+    out = {}
+    for name in names:
+        low, median, high = (statistics[f"{name}_quantile_{q}"] for q in QUANTILE_NAMES)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            out[f"{name}_nongaussianity"] = statistics[f"{name}_std"] / (0.5 * (high - low))
+            out[f"{name}_asymmetry"] = (high - median) / (median - low)
+    return out
+
+
+def marginalGrids(globalParams):
+    """The grids results.marginals are on, by the same names."""
+    grids = {
+        cc.abs_mag_r: globalParams.Mr1d,
+        cc.metallicity: globalParams.FeH1d,
+        cc.extinction_r: globalParams.Ar1d,
+        cc.abs_mag_ext_r: globalParams.QrGrid,
+    }
+    if globalParams.computeMrTrue:
+        grids["Mr"] = globalParams.MrTrueGrid
+    return grids
+
+
+def shapeNames(computeMrTrue):
+    """The posteriors that get shape columns: the absolute magnitude, [Fe/H], A_r and the distance modulus."""
+    return ["Mr" if computeMrTrue else cc.abs_mag_r, cc.metallicity, cc.extinction_r, cc.distance_modulus]
 
 
 def _batchLimit(globalParams, nAr, batchBytes=None):

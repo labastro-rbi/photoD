@@ -9,7 +9,7 @@ import photod.locus as lt
 from photod.bayes import _starBatch, makeBayesEstimates3d
 from photod.parameters import GlobalParams
 from photod.priors import get2Dmap, getBayesConstants, getPriorMapIndex, initializePriorGrid
-from photod.stats import multimodality
+from photod.stats import MULTIMODALITY_SMOOTHING, multimodality, smoothingGrid, smoothPdfs
 
 try:
     from jax import enable_x64
@@ -94,6 +94,21 @@ def multimodality_by_hand(x, p, nLevels=300):
     return best
 
 
+def smoothed_by_hand(x, p, sigma, step=0.01):
+    """Weights shared linearly between the regular grid points either side, then convolved with a Gaussian."""
+    half = int(np.ceil(4 * sigma / step))
+    start = x[0] - half * step
+    grid = start + step * np.arange(int(np.ceil((x[-1] - start) / step)) + half + 2)
+    weights = np.zeros(grid.size)
+    for value, weight in zip(x, p, strict=True):
+        k = int(np.floor((value - start) / step))
+        share = (value - start) / step - k
+        weights[k] += weight * (1 - share)
+        weights[k + 1] += weight * share
+    kernel = np.exp(-0.5 * (step * np.arange(-half, half + 1) / sigma) ** 2)
+    return grid, np.convolve(weights, kernel / kernel.sum(), mode="same")
+
+
 def reddenedLocus(params):
     """The locus colors on the (FeH, Mr, Ar) grid, reddened by the extinction coefficients of each band."""
     C = lt.extcoeff()
@@ -138,7 +153,8 @@ def brute_force(star, params, priorGrid):
         out.update(
             zip([f"{name}_quantile_{q}" for q in ("lo", "median", "hi")], quantiles(x, p), strict=True)
         )
-    out["multimodality"] = multimodality_by_hand(*margs["Qr"])
+    smoothed = smoothed_by_hand(*margs["Qr"], params.multimodalitySmoothing)
+    out["multimodality"] = multimodality_by_hand(*smoothed)
     return out
 
 
@@ -414,6 +430,69 @@ def test_the_multimodality_is_the_count_by_hand():
             values = np.asarray(multimodality(x, np.array(batch + [np.zeros_like(x)])))
             assert_allclose(values[:-1], [multimodality_by_hand(x, p) for p in batch], rtol=1e-9, atol=1e-12)
             assert np.isnan(values[-1])
+
+
+def smoothed_multimodality(x, p, sigma=MULTIMODALITY_SMOOTHING):
+    """The multimodality of one posterior after the smoothing the fit applies to Qr."""
+    grid, lower, upper, kernel = smoothingGrid(x, sigma)
+    return multimodality_of(grid, smoothPdfs(np.asarray(p)[None, :], lower, upper, kernel, grid.size)[0])
+
+
+def test_the_comb_of_the_giant_tracks_is_not_a_second_mode():
+    """A giant's Qr posterior is a broad peak broken into spikes, one per [Fe/H] track and tLoc step.
+
+    Every gap between two spikes is a valley, so the posterior as it is has a large multimodality although it
+    has one peak; smoothed, it has none. The spikes are 0.02 to 0.2 mag apart, as on the DP2 giant branch.
+    """
+    x = np.round(np.arange(-2.0, 6.0, 0.01), 2)
+    rng = np.random.default_rng(2)
+    spikes = np.cumsum(rng.integers(2, 20, x.size))
+    teeth = np.isin(np.arange(x.size), spikes)
+    p = bumps(x, [1.0], [0.4], [1]) * teeth
+    assert multimodality_of(x, p) > 0.1
+    assert smoothed_multimodality(x, p) == 0.0
+
+
+def test_two_branches_keep_their_multimodality_when_smoothed():
+    """A giant solution and a dwarf one, five magnitudes apart, are as separate after smoothing as before."""
+    x = np.arange(-2.0, 12.0, 0.01)
+    p = bumps(x, [1.0, 6.0], [0.3, 0.2], [0.7, 0.3])
+    assert_allclose(smoothed_multimodality(x, p), multimodality_of(x, p), atol=0.01)
+    assert 0.28 < smoothed_multimodality(x, p) < 0.3
+
+
+def test_the_smoothing_is_a_gaussian_of_the_given_width():
+    """On unevenly spaced values, the smoothed weights are those of each value spread as a Gaussian.
+
+    Up to the kernel ending at four widths, which leaves out 6e-5 of each Gaussian. No weight is lost at the
+    ends, and the mean and variance are those of the posterior, the variance plus sigma^2.
+    """
+    rng = np.random.default_rng(4)
+    x = np.sort(np.round(rng.uniform(0.0, 10.0, 600), 3))
+    p = bumps(x, [3.0, 7.0], [0.5, 0.05], [0.6, 0.4])
+    sigma = 0.2
+    with float64():
+        grid, lower, upper, kernel = smoothingGrid(x, sigma)
+        smoothed = np.asarray(smoothPdfs(np.asarray(p)[None, :], lower, upper, kernel, grid.size)[0])
+    assert np.allclose(np.diff(grid), 0.01) and grid[0] <= x[0] - 4 * sigma and grid[-1] >= x[-1] + 4 * sigma
+    spread = (p[None, :] * np.exp(-0.5 * ((grid[:, None] - x[None, :]) / sigma) ** 2)).sum(1)
+    assert_allclose(smoothed, spread * smoothed.sum() / spread.sum(), rtol=1e-3, atol=1e-3 * smoothed.max())
+    assert_allclose(smoothed.sum(), p.sum(), rtol=1e-12)
+    mean = (x * p).sum() / p.sum()
+    assert_allclose((grid * smoothed).sum() / smoothed.sum(), mean, atol=1e-4)
+    variance = ((x - mean) ** 2 * p).sum() / p.sum()
+    assert_allclose(((grid - mean) ** 2 * smoothed).sum() / smoothed.sum(), variance + sigma**2, rtol=1e-3)
+
+
+def test_without_smoothing_the_posterior_is_measured_as_it_is():
+    """multimodalitySmoothing = 0 leaves the Qr grid and its weights as they are."""
+    rng = np.random.default_rng(6)
+    x = np.sort(rng.uniform(0.0, 20.0, 800))
+    p = bumps(x, [5.0, 9.0], [0.3, 0.3], [0.5, 0.5])
+    grid, lower, upper, kernel = smoothingGrid(x, 0.0)
+    assert np.array_equal(grid, x)
+    with float64():
+        assert_allclose(smoothPdfs(np.asarray(p)[None, :], lower, upper, kernel, grid.size)[0], p, rtol=1e-12)
 
 
 def test_calls_of_the_tLoc_parametrization():

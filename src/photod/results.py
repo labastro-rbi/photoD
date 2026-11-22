@@ -17,3 +17,5 @@ class BayesResults:
     margpostMr: dict | None = None
     margpostFeH: dict | None = None
     margpostAr: dict | None = None
+    marginals: dict | None = None
+    marginalGrids: dict | None = None

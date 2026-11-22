@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from photod.bayes import FLAG_NO_PRIOR, FLAG_POOR_FIT, getEstimatesMeta, unfittedEstimates
+from photod.bayes import FLAG_NO_PRIOR, getEstimatesMeta, unfittedEstimates
 from photod.priors import getBayesConstants
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "run_dp2.py"
@@ -153,8 +153,10 @@ def test_a_star_with_no_prior_map_is_kept_and_flagged(run, monkeypatch, tmp_path
     monkeypatch.setattr(
         run,
         "loadPriors",
-        lambda path: {"index": index, "order": order, "kde": maps}
-        | dict.fromkeys(("rmag", "xGrid", "yGrid"), np.zeros(4)),
+        lambda path: (
+            {"index": index, "order": order, "kde": maps}
+            | dict.fromkeys(("rmag", "xGrid", "yGrid"), np.zeros(4))
+        ),
     )
     monkeypatch.setattr(run, "priorGridFromMaps", lambda *args: {0: np.zeros(4)})
     # a real fit is minutes of locus; what matters here is which stars reach it and what becomes of the rest
@@ -171,7 +173,7 @@ def test_a_star_with_no_prior_map_is_kept_and_flagged(run, monkeypatch, tmp_path
     assert len(estimates) == len(stars), "a star was dropped for the sky it sits in"
     assert sorted(estimates["objectId"]) == sorted(stars["objectId"])
     flags = dict(zip(estimates["objectId"], estimates["fit_flags"], strict=True))
-    assert all(flags[star] == FLAG_NO_PRIOR | FLAG_POOR_FIT for star in (3, 4)), "the rows do not say why"
+    assert all(flags[star] == FLAG_NO_PRIOR for star in (3, 4)), "the rows do not say why"
     assert not any(flags[star] & FLAG_NO_PRIOR for star in (0, 1, 2)), "a fitted star was marked unfittable"
 
 
@@ -319,8 +321,8 @@ def test_a_resumed_shard_writes_the_metadata_again(run, tmp_path):
     inside = [pixelCentre(pixels[0].pixel * 4 + corner, 4) for corner in range(4)]
     run.writePartition(base, pixels[0], estimatesFrame(*zip(*inside, strict=True)))
     assert run.finishShard(base, "photod", (0, 2), everything) is None
-    assert run.finishShard(base, "photod", (1, 2), everything) is True   # shard 1's partition failed
-    run.startShard(base, (1, 2))                                            # its resume
+    assert run.finishShard(base, "photod", (1, 2), everything) is True  # shard 1's partition failed
+    run.startShard(base, (1, 2))  # its resume
     inside = [pixelCentre(pixels[1].pixel * 4 + corner, 4) for corner in range(4)]
     run.writePartition(base, pixels[1], estimatesFrame(*zip(*inside, strict=True)))
     assert run.finishShard(base, "photod", (1, 2), everything) is True
@@ -550,9 +552,24 @@ def test_an_r_error_the_fit_would_not_read_is_refused_rather_than_dropped(run):
     """
     # every convention an outside catalogue has been seen to use: Rubin's Err, Gaia's and csv's _error,
     # SDSS's err_r, VizieR's e_rmag, and sigma. Each carries a real r error, so each must stop the run
-    for odd in ("rPsfMagErr", "r_err", "rMagErr", "rmag_error", "r_error", "rMagError", "err_r",
-                "e_rmag", "sigma_rmag", "rmagSigma", "rmagErrPsf", "r_psfMagErr", "rmagUncertainty",
-                "rSigma", "rErrTotal", "r_cModelMagErr"):
+    for odd in (
+        "rPsfMagErr",
+        "r_err",
+        "rMagErr",
+        "rmag_error",
+        "r_error",
+        "rMagError",
+        "err_r",
+        "e_rmag",
+        "sigma_rmag",
+        "rmagSigma",
+        "rmagErrPsf",
+        "r_psfMagErr",
+        "rmagUncertainty",
+        "rSigma",
+        "rErrTotal",
+        "r_cModelMagErr",
+    ):
         with pytest.raises(SystemExit, match="does not read"):
             run.rmagErrorColumn(run.FIT_COLUMNS + [odd])
 
@@ -561,10 +578,27 @@ def test_an_r_error_the_fit_would_not_read_is_refused_rather_than_dropped(run):
     # and nothing that merely mentions an error may stop it. The survey measures errors on plenty of r-band
     # quantities that are not its magnitude, and a wide catalogue carrying them alongside the colours used to
     # fit, so it still has to
-    for safe in ("rzErr", "riErrTotal", "parallax_error", "ra_error", "dec_error", "mjd_err",
-                 "g_psfMagErr", "i_psfMagErr", "e_gmag", "ebv",
-                 "r_psfFluxErr", "r_cModelFluxErr", "r_gaapFluxErr", "r_kronFluxErr", "r_calibFluxErr",
-                 "r_ixxErr", "r_iyyErr", "r_raErr", "r_decErr"):
+    for safe in (
+        "rzErr",
+        "riErrTotal",
+        "parallax_error",
+        "ra_error",
+        "dec_error",
+        "mjd_err",
+        "g_psfMagErr",
+        "i_psfMagErr",
+        "e_gmag",
+        "ebv",
+        "r_psfFluxErr",
+        "r_cModelFluxErr",
+        "r_gaapFluxErr",
+        "r_kronFluxErr",
+        "r_calibFluxErr",
+        "r_ixxErr",
+        "r_iyyErr",
+        "r_raErr",
+        "r_decErr",
+    ):
         assert run.rmagErrorColumn(run.FIT_COLUMNS + [safe]) is None, f"{safe} was taken for the r error"
     # the script's own raw columns are the sharpest case: a catalogue carrying both shapes must still fit
     assert run.rmagErrorColumn(run.FIT_COLUMNS + run.RAW_COLUMNS) is None, "the raw columns stopped the run"
@@ -882,8 +916,10 @@ def test_the_batch_memory_budget_reaches_the_fit(run, monkeypatch, tmp_path):
     monkeypatch.setattr(
         run,
         "loadPriors",
-        lambda path: {"index": index, "order": order, "kde": maps}
-        | dict.fromkeys(("rmag", "xGrid", "yGrid"), np.zeros(4)),
+        lambda path: (
+            {"index": index, "order": order, "kde": maps}
+            | dict.fromkeys(("rmag", "xGrid", "yGrid"), np.zeros(4))
+        ),
     )
     monkeypatch.setattr(run, "priorGridFromMaps", lambda *args: {0: np.zeros(4)})
 
@@ -897,3 +933,20 @@ def test_the_batch_memory_budget_reaches_the_fit(run, monkeypatch, tmp_path):
     run.fitPartition(stars, "priors.npz", (0.03, True, "", 8.0), 100, 1 << 30)
 
     assert asked == {"batchSize": 100, "batchBytes": 1 << 30}, "the batch budget did not reach the fit"
+
+
+def test_the_posteriors_of_a_partition_are_written_beside_the_catalog(run, tmp_path):
+    """One npz per partition, outside the dataset, with the grids and one row per fitted star in order."""
+    grids = {"FeH": np.linspace(-2.5, 0.5, 4), "Qr": np.linspace(-1.0, 15.0, 5)}
+    pieces = [
+        (np.array([7, 3]), {"FeH": np.full((2, 4), 0.25), "Qr": np.full((2, 5), 0.2)}, grids),
+        (np.array([5]), {"FeH": np.eye(1, 4), "Qr": np.eye(1, 5)}, grids),
+    ]
+    path = run.writePosteriors(tmp_path / "result", SimpleNamespace(order=5, pixel=42), pieces)
+    assert path == tmp_path / "result" / "posteriors" / "Norder=5" / "Npix=42.npz"
+    assert "dataset" not in path.parts, "the posteriors would be read as part of the catalog"
+    with np.load(path) as data:
+        assert data["objectId"].tolist() == [7, 3, 5]
+        assert data["FeH"].shape == (3, 4) and data["Qr"].shape == (3, 5)
+        np.testing.assert_allclose(data["FeH_grid"], grids["FeH"], rtol=1e-6)
+        np.testing.assert_allclose(data["Qr"][2], np.eye(1, 5)[0])

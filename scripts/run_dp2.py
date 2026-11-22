@@ -614,10 +614,25 @@ def separation(ra, dec, ra0, dec0):
 
 
 def fitAndWrite(
-    source, pixel, base, priorPath, curvePath, setup, batchSize, batchBytes, cone, arColumn, arScale,
-    columns, keep=(),
+    source,
+    pixel,
+    base,
+    priorPath,
+    curvePath,
+    setup,
+    batchSize,
+    batchBytes,
+    cone,
+    arColumn,
+    arScale,
+    columns,
+    keep=(),
+    savePosteriors=False,
 ):
     """Read one partition file, fit its stars and write them where the partition's HEALPix pixel belongs.
+
+    With savePosteriors the one-dimensional posteriors of its stars go beside the catalog as well
+    (writePosteriors).
 
     The task carries a path rather than a piece of a catalog. Handing the workers pieces of a catalog sends
     each of them the structure of the whole survey along with it, which on DP2 is gigabytes per worker before
@@ -632,13 +647,40 @@ def fitAndWrite(
     if cone is not None and len(stars):
         ra, dec, radius = cone
         stars = stars[separation(stars["ra"].to_numpy(), stars["dec"].to_numpy(), ra, dec) <= radius]
-    estimates = fitPartition(stars, priorPath, setup, batchSize, batchBytes)
+    posteriors = [] if savePosteriors else None
+    estimates = fitPartition(stars, priorPath, setup, batchSize, batchBytes, posteriors)
     if not len(estimates):
         return 0
     if keep:
         estimates = withInputColumns(estimates, table, source)
+    if posteriors:
+        writePosteriors(base, pixel, posteriors)
     writePartition(base, pixel, estimates)
     return len(estimates)
+
+
+def posteriorFile(base, pixel):
+    """Where one HEALPix pixel's posteriors go: beside the catalog, so that it still reads as a catalog."""
+    return Path(base) / "posteriors" / f"Norder={pixel.order}" / f"Npix={pixel.pixel}.npz"
+
+
+def writePosteriors(base, pixel, posteriors):
+    """The one-dimensional posteriors of a partition's fitted stars, as one npz file.
+
+    It holds objectId, and per posterior <name> (the names of the estimate columns: tLoc, FeH, Ar, Mr, and Qr,
+    which is r - DM) an array of one row per star, normalised to a sum of one over its grid, the grid in
+    <name>_grid. Stars with no prior map were never fitted and have no row.
+    """
+    ids = np.concatenate([objectIds for objectIds, _, _ in posteriors])
+    grids = posteriors[0][2]
+    arrays = {"objectId": ids}
+    for name, grid in grids.items():
+        arrays[name] = np.concatenate([marginals[name] for _, marginals, _ in posteriors]).astype(np.float32)
+        arrays[f"{name}_grid"] = np.asarray(grid, dtype=np.float32)
+    path = posteriorFile(base, pixel)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    writeAtomically(path, lambda name: np.savez_compressed(name, **arrays), scratch=partialDirectory(base))
+    return path
 
 
 def writePartition(base, pixel, estimates):
@@ -674,7 +716,7 @@ def withSpatialIndex(estimates):
     return out.reset_index(drop=True)
 
 
-def fitPartition(partition, priorPath, setup, batchSize, batchBytes=None):
+def fitPartition(partition, priorPath, setup, batchSize, batchBytes=None, posteriors=None):
     """One partition of stars, each group of them fitted with the prior maps of the sky pixel it lies in.
 
     Looking the sightline up beats joining against a catalog of maps: a join is between two pixel trees of
@@ -687,6 +729,9 @@ def fitPartition(partition, priorPath, setup, batchSize, batchBytes=None):
 
     batchBytes bounds the memory of one batch, and so of one worker at a time: a run of several workers asks
     for that much again for each of them.
+
+    A list given as posteriors gets, for each group of stars fitted, their object ids, their one-dimensional
+    posteriors and the grids those are on (BayesResults.marginals and marginalGrids).
     """
     empty = npd.NestedFrame(getEstimatesMeta(computeMrTrue=True).reset_index(drop=True))
     if not len(partition):
@@ -705,21 +750,37 @@ def fitPartition(partition, priorPath, setup, batchSize, batchBytes=None):
             priors["kde"][value], priors["rmag"], priors["xGrid"], priors["yGrid"], globalParams
         )
         with jax.default_device(device):
-            estimates, _ = makeBayesEstimates3d(
+            # asked for only when they are kept, so that a run without them calls the fit as it always has
+            marginals = {} if posteriors is None else {"returnMarginals": True}
+            estimates, results = makeBayesEstimates3d(
                 stars,
                 jax.numpy.array(list(grid.values())),
                 globalParams,
                 batchSize=batchSize,
                 batchBytes=batchBytes,
+                **marginals,
             )
         pieces.append(estimates)
+        if posteriors is not None and results.marginals:
+            posteriors.append((stars["objectId"].to_numpy(), results.marginals, results.marginalGrids))
     if not pieces:
         return empty
     return npd.NestedFrame(pd.concat(pieces, ignore_index=True))
 
 
 def startWorker(
-    base, priorPath, curvePath, setup, batchSize, batchBytes, cone, arColumn, arScale, columns, keep=()
+    base,
+    priorPath,
+    curvePath,
+    setup,
+    batchSize,
+    batchBytes,
+    cone,
+    arColumn,
+    arScale,
+    columns,
+    keep=(),
+    savePosteriors=False,
 ):
     """What every partition of this run needs, held once per worker process."""
     WORK.update(
@@ -734,6 +795,7 @@ def startWorker(
         arScale=arScale,
         columns=columns,
         keep=keep,
+        savePosteriors=savePosteriors,
     )
 
 
@@ -754,6 +816,7 @@ def runPartition(source):
         WORK["arScale"],
         WORK["columns"],
         WORK["keep"],
+        WORK.get("savePosteriors", False),
     )
 
 
@@ -1120,6 +1183,13 @@ def main():
         help="write the estimates alone, without the catalog's own columns beside them, which is how a "
         "result written before those were kept was written, and how it is resumed",
     )
+    ap.add_argument(
+        "--save-posteriors",
+        action="store_true",
+        help="also write each star's one-dimensional posteriors (tLoc, FeH, Ar, Mr and Qr = r - DM) to "
+        "<out>/<name>/posteriors, one npz per partition, about 26 kB a star: for a cone or a small "
+        "catalog, to look at stars closely",
+    )
     args = ap.parse_args()
     shard = parseShard(args.shard)
     if shard and args.overwrite:
@@ -1192,6 +1262,7 @@ def main():
         arScale,
         read,
         keep,
+        args.save_posteriors,
     )
     fitted, failed = fitPartitions(todo, args.workers, args.chunk, initargs)
     total += fitted

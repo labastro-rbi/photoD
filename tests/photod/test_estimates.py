@@ -2,17 +2,17 @@ import numpy as np
 import pandas as pd
 from numpy.testing import assert_allclose
 
-import photod.locus as lt
 import photod.bayes as bayes
+import photod.locus as lt
 from photod.bayes import (
-    CHI2_POOR,
     FLAG_AR_EDGE,
+    FLAG_COLLAPSED,
     FLAG_COLOR_MISSING,
-    FLAG_FEH_EDGE,
+    FLAG_COLOR_MISSING_FIRST,
+    FLAG_FEH_HIGH_EDGE,
+    FLAG_FEH_LOW_EDGE,
     FLAG_NO_MAGNITUDE,
     FLAG_NO_PRIOR,
-    FLAG_POOR_FIT,
-    FLAG_TWO_BRANCHES,
     getEstimatesMeta,
     makeBayesEstimates3d,
     unfittedEstimates,
@@ -112,7 +112,7 @@ def test_a_star_without_a_magnitude_keeps_its_row_and_no_estimate():
     estimates, _ = makeBayesEstimates3d(catalog, priorGrid, params, batchSize=8)
     flags = estimates[bayes.cc.quality_flags].to_numpy()
     assert len(estimates) == len(catalog)
-    assert flags[2] & FLAG_NO_MAGNITUDE and flags[2] & FLAG_POOR_FIT
+    assert flags[2] & FLAG_NO_MAGNITUDE
     assert not np.isfinite(estimates[f"{bayes.cc.abs_mag_r}_quantile_median"].to_numpy()[2])
     assert not np.isfinite(estimates[bayes.cc.chi_sq_min].to_numpy()[2])
     assert np.all(np.isfinite(estimates[f"{bayes.cc.abs_mag_r}_quantile_median"].to_numpy()[[0, 1, 3]]))
@@ -138,7 +138,6 @@ def test_a_star_the_fit_never_saw_is_kept_and_flagged():
     assert list(rows.columns) == list(meta.columns) and rows.dtypes.to_dict() == meta.dtypes.to_dict()
     assert len(rows) == len(catalog)
     assert np.all(rows[bayes.cc.quality_flags].to_numpy() & FLAG_NO_PRIOR)
-    assert np.all(rows[bayes.cc.quality_flags].to_numpy() & FLAG_POOR_FIT)
     assert_allclose(rows[bayes.cc.object_id].to_numpy(), catalog["objectId"].to_numpy())
     assert not np.any(np.isfinite(rows[f"{bayes.cc.abs_mag_r}_quantile_median"].to_numpy()))
 
@@ -151,7 +150,7 @@ def test_an_unfitted_row_still_says_what_was_measured_of_the_star():
     flags = unfittedEstimates(catalog, params, FLAG_NO_PRIOR)[bayes.cc.quality_flags].to_numpy()
     assert flags[0] & FLAG_NO_MAGNITUDE and not flags[0] & FLAG_COLOR_MISSING
     assert flags[1] & FLAG_COLOR_MISSING and not flags[1] & FLAG_NO_MAGNITUDE
-    assert flags[2] == FLAG_NO_PRIOR | FLAG_POOR_FIT
+    assert flags[2] == FLAG_NO_PRIOR
     assert np.all(flags & FLAG_NO_PRIOR)
 
 
@@ -178,15 +177,19 @@ def test_a_batch_is_kept_within_its_memory_budget():
     assert bayes._batchLimit(params, params.Ar1d.size, 3 * cells) == 3, "the budget is not what bounds it"
     whole, _ = makeBayesEstimates3d(catalog, priorGrid, params, batchSize=16)
     tiny, _ = makeBayesEstimates3d(catalog, priorGrid, params, batchSize=16, batchBytes=3 * cells)
-    assert_allclose(tiny.to_numpy(float), whole.to_numpy(float), rtol=1e-5, atol=1e-5, equal_nan=True)
+    # the shape columns are ratios of differences, which carry the last bits of float32 further
+    shapes = [c for c in whole.columns if c.endswith(("_nongaussianity", "_asymmetry"))]
+    rest = [c for c in whole.columns if c not in shapes]
+    assert_allclose(
+        tiny[rest].to_numpy(float), whole[rest].to_numpy(float), rtol=1e-5, atol=1e-5, equal_nan=True
+    )
+    assert_allclose(tiny[shapes].to_numpy(float), whole[shapes].to_numpy(float), rtol=1e-3, equal_nan=True)
 
 
 def test_the_distance_modulus_is_the_magnitude_less_the_reddened_absolute_one():
     """DM = r - (Mr + A_r). Qr is that posterior, and it is no longer written, so read it inside."""
     catalog, priorGrid, params = setup()
-    estimates, results = makeBayesEstimates3d(
-        catalog, priorGrid, params, batchSize=8, returnPosteriors=True
-    )
+    estimates, results = makeBayesEstimates3d(catalog, priorGrid, params, batchSize=8, returnPosteriors=True)
     rmag = catalog["rmag"].to_numpy()
     for low, high in (("lo", "hi"), ("median", "median"), ("hi", "lo")):
         assert_allclose(
@@ -200,25 +203,16 @@ def test_the_distance_modulus_is_the_magnitude_less_the_reddened_absolute_one():
     )
 
 
-def test_a_star_the_locus_cannot_fit_is_flagged_and_still_answered():
-    """Nothing is dropped for being unfittable: the row stays and says so."""
+def test_a_star_the_locus_cannot_fit_is_answered_and_left_to_its_chi2():
+    """How bad a fit is too bad depends on the science, so it is chi2min that says it, not a bit."""
     catalog, priorGrid, params = setup()
     catalog.loc[0, ["ug", "gr", "ri"]] = [-5.0, 5.0, -5.0]
     estimates, _ = makeBayesEstimates3d(catalog, priorGrid, params, batchSize=8)
     flags = estimates[bayes.cc.quality_flags].to_numpy()
-    assert estimates[bayes.cc.chi_sq_min].to_numpy()[0] > CHI2_POOR
-    assert flags[0] & FLAG_POOR_FIT
+    assert estimates[bayes.cc.chi_sq_min].to_numpy()[0] > 100
     assert np.isfinite(estimates[f"{bayes.cc.abs_mag_r}_quantile_median"].to_numpy()[0])
     assert len(estimates) == len(catalog)
-
-
-def test_a_star_with_no_answer_is_not_mistaken_for_a_good_one():
-    """A row whose fit produced nothing has to say so rather than come back with an empty flag."""
-    catalog, priorGrid, params = setup()
-    estimates, _ = makeBayesEstimates3d(catalog, priorGrid, params, batchSize=8)
-    median = estimates[f"{bayes.cc.abs_mag_r}_quantile_median"].to_numpy()
-    flags = estimates[bayes.cc.quality_flags].to_numpy()
-    assert np.all(flags[~np.isfinite(median)] & FLAG_POOR_FIT)
+    assert not np.any(flags & 3), "a retired bit (1, a poor fit; 2, two branches) was set"
 
 
 def test_a_colour_with_no_measurement_is_flagged():
@@ -228,6 +222,8 @@ def test_a_colour_with_no_measurement_is_flagged():
     estimates, _ = makeBayesEstimates3d(catalog, priorGrid, params, batchSize=8)
     flags = estimates[bayes.cc.quality_flags].to_numpy()
     assert flags[1] & FLAG_COLOR_MISSING
+    assert flags[1] & FLAG_COLOR_MISSING_FIRST, "the bit of u-g, the first colour, is not set"
+    assert not flags[1] & (FLAG_COLOR_MISSING_FIRST << 1 | FLAG_COLOR_MISSING_FIRST << 2)
     assert not flags[2] & FLAG_COLOR_MISSING
 
 
@@ -246,6 +242,8 @@ def test_a_colour_that_is_not_a_number_weighs_nothing_and_is_flagged():
     assert np.all(np.isfinite(estimates[columns].to_numpy(float))), "a NaN colour emptied the star"
     flags = estimates[bayes.cc.quality_flags].to_numpy()
     assert list(flags & FLAG_COLOR_MISSING > 0) == [False, True, True, True]
+    perColour = [[(flag >> 14 + k) & 1 for k in range(len(COLORS))] for flag in flags]
+    assert perColour == [[0, 0, 0], [1, 0, 0], [0, 0, 1], [1, 1, 1]], "the bits name the wrong colours"
 
     weightless = catalog.copy()
     weightless.loc[1, ["ug", "ugErr"]] = [0.0, 1e6]
@@ -255,6 +253,8 @@ def test_a_colour_that_is_not_a_number_weighs_nothing_and_is_flagged():
 
     rows = unfittedEstimates(catalog, params, FLAG_NO_PRIOR)[bayes.cc.quality_flags].to_numpy()
     assert list(rows & FLAG_COLOR_MISSING > 0) == [False, True, True, True]
+    colourBits = FLAG_COLOR_MISSING | sum(FLAG_COLOR_MISSING_FIRST << k for k in range(len(COLORS)))
+    assert list(rows & colourBits) == list(flags & colourBits), "an unfitted row names other colours"
 
 
 def test_a_star_with_no_dust_map_value_is_not_bounded_by_it():
@@ -278,24 +278,58 @@ def test_the_edges_of_the_grid_are_flagged_as_limits():
     feH = estimates[f"{bayes.cc.metallicity}_quantile_median"].to_numpy()
     ar = estimates[f"{bayes.cc.extinction_r}_quantile_median"].to_numpy()
     step = np.diff(params.FeH1d)[0]
-    atEdge = (feH <= params.FeH1d[0] + step) | (feH >= params.FeH1d[-1] - step)
-    assert_allclose((flags & FLAG_FEH_EDGE) > 0, atEdge)
+    assert_allclose((flags & FLAG_FEH_LOW_EDGE) > 0, feH <= params.FeH1d[0] + step)
+    assert_allclose((flags & FLAG_FEH_HIGH_EDGE) > 0, feH >= params.FeH1d[-1] - step)
     assert_allclose((flags & FLAG_AR_EDGE) > 0, ar >= params.Ar1d[-1] - params.dAr)
 
 
-def test_a_lopsided_posterior_is_flagged():
-    """Two surviving branches show up as a posterior far longer on one side of its median than the other.
+def test_the_shape_of_each_posterior_is_written_beside_it():
+    """Non-gaussianity and asymmetry of Mr, [Fe/H], A_r and DM, read straight off the columns they come from.
 
-    Measured on the absolute magnitude, not on the tLoc the locus is parametrised by, since that is where a
+    For Mr it is the true absolute magnitude, not the tLoc the locus is parametrised by, since that is where a
     giant and a dwarf solution sit far apart.
     """
     catalog, priorGrid, params = setup()
     estimates, _ = makeBayesEstimates3d(catalog, priorGrid, params, batchSize=8)
-    low, median, high = (estimates[f"Mr_quantile_{q}"].to_numpy() for q in ("lo", "median", "hi"))
-    ratio = (high - median) / np.where(median - low > 0, median - low, np.nan)
-    flagged = (estimates[bayes.cc.quality_flags].to_numpy() & FLAG_TWO_BRANCHES) > 0
-    assert np.all(flagged[np.isfinite(ratio) & (ratio > 3.0)])
-    assert not np.any(flagged[np.isfinite(ratio) & (ratio > 0.5) & (ratio < 2.0)])
+    names = ["Mr", bayes.cc.metallicity, bayes.cc.extinction_r, bayes.cc.distance_modulus]
+    assert bayes.shapeNames(params.computeMrTrue) == names
+    for name in names:
+        low, median, high = (estimates[f"{name}_quantile_{q}"].to_numpy(float) for q in bayes.QUANTILE_NAMES)
+        std = estimates[f"{name}_std"].to_numpy(float)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            assert_allclose(estimates[f"{name}_nongaussianity"], std / (0.5 * (high - low)), rtol=1e-4)
+            assert_allclose(estimates[f"{name}_asymmetry"], (high - median) / (median - low), rtol=1e-4)
+    columns = set(getEstimatesMeta(True).columns)
+    assert {"Mr_nongaussianity", "Mr_asymmetry", "DM_nongaussianity", "DM_asymmetry"} <= columns
+    assert f"{bayes.cc.abs_mag_r}_asymmetry" not in getEstimatesMeta(True).columns
+
+
+def test_the_shape_of_a_gaussian_is_one_and_one():
+    """A Gaussian has a non-gaussianity and an asymmetry of one; a long tail on one side does not."""
+    statistics = {"x_quantile_lo": np.array([-1.0, -1.0]), "x_quantile_median": np.array([0.0, 0.0])}
+    statistics |= {"x_quantile_hi": np.array([1.0, 3.0]), "x_std": np.array([1.0, 2.5])}
+    shapes = bayes.shapeColumns(statistics, ["x"])
+    assert_allclose(shapes["x_nongaussianity"], [1.0, 1.25])
+    assert_allclose(shapes["x_asymmetry"], [1.0, 3.0])
+
+
+def test_the_one_dimensional_posteriors_come_back_when_asked_for():
+    """Each is normalised over its grid and gives back the median written for it."""
+    catalog, priorGrid, params = setup(n=4)
+    estimates, results = makeBayesEstimates3d(catalog, priorGrid, params, batchSize=4, returnMarginals=True)
+    plain, _ = makeBayesEstimates3d(catalog, priorGrid, params, batchSize=4)
+    pd.testing.assert_frame_equal(estimates, plain)
+    assert set(results.marginals) == set(results.marginalGrids)
+    for name, pdf in results.marginals.items():
+        grid = results.marginalGrids[name]
+        assert pdf.shape == (len(catalog), grid.size)
+        assert_allclose(pdf.sum(axis=1), 1.0, rtol=1e-5)
+    for name in ("Mr", bayes.cc.metallicity, bayes.cc.extinction_r):
+        grid, pdf = results.marginalGrids[name], results.marginals[name]
+        cdf = np.cumsum(pdf, axis=1) - 0.5 * pdf
+        median = np.array([np.interp(0.5, c, grid) for c in cdf])
+        step = np.max(np.diff(grid))
+        assert_allclose(median, estimates[f"{name}_quantile_median"].to_numpy(float), atol=step)
 
 
 def test_the_r_error_widens_the_distance_modulus():
@@ -344,12 +378,11 @@ def test_a_collapsed_posterior_is_flagged():
     statistics[f"{bayes.cc.abs_mag_ext_r}_quantile_lo"][::2] = 5.00
     statistics[f"{bayes.cc.abs_mag_ext_r}_quantile_hi"][::2] = 5.01
     flags = bayes._qualityFlags(
-        np.full(6, 1.0),
         statistics,
         np.full((6, len(params.fitColors)), 0.02),
         np.full(6, 8.0),
         np.zeros(6, dtype=bool),
         params,
     )
-    assert np.all((flags[::2] & bayes.FLAG_COLLAPSED) > 0), "a collapsed posterior was not flagged"
-    assert not np.any(flags[1::2] & bayes.FLAG_COLLAPSED), "a normal posterior was flagged"
+    assert np.all((flags[::2] & FLAG_COLLAPSED) > 0), "a collapsed posterior was not flagged"
+    assert not np.any(flags[1::2] & FLAG_COLLAPSED), "a normal posterior was flagged"
