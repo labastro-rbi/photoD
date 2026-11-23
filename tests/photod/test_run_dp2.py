@@ -7,6 +7,7 @@ the pool is watched through a stand-in and the fit itself is covered by the test
 
 import importlib.util
 import json
+import os
 import sys
 from concurrent.futures import Future
 from pathlib import Path
@@ -191,6 +192,18 @@ def test_an_answer_is_either_whole_or_not_there(run, tmp_path):
     with pytest.raises(KeyboardInterrupt):
         run.writeAtomically(tmp_path / "half.parquet", killed)
     assert sorted(p.name for p in tmp_path.iterdir()) == ["answers.parquet"], "a temporary file was left"
+
+
+def test_an_answer_can_be_read_by_whoever_can_read_the_files_of_its_owner(run, tmp_path):
+    """The catalog is written for other people: a temporary file is made readable by its owner alone."""
+    path = tmp_path / "answers.parquet"
+    frame = estimatesFrame(*zip(*[pixelCentre(p, 5) for p in (0, 1, 2)], strict=True))
+    umask = os.umask(0o022)
+    try:
+        run.writeAtomically(path, lambda name: run.withSpatialIndex(frame).to_parquet(name, index=False))
+    finally:
+        os.umask(umask)
+    assert path.stat().st_mode & 0o777 == 0o644
 
 
 def test_a_partition_that_is_already_written_is_not_fitted_again(run, tmp_path):

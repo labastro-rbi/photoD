@@ -44,6 +44,7 @@ import os
 import re
 import shutil
 import tempfile
+import uuid
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from pathlib import Path
 
@@ -551,12 +552,14 @@ def writeAtomically(path, write, scratch=None):
     The temporary name goes in scratch, which has to be on the same filesystem for the rename to stay
     atomic, and by default beside the file itself. A partition of the result is written in a directory of
     its own instead: see partialDirectory.
+
+    The writer creates the temporary file itself, so it gets the permissions of any file the user writes.
+    tempfile.mkstemp would make it readable by its owner alone, and the rename would carry that over to a
+    catalog meant to be shared.
     """
     path = Path(str(path))
-    handle, temporary = tempfile.mkstemp(
-        dir=Path(str(scratch)) if scratch else path.parent, prefix=f"{path.stem}-", suffix=path.suffix
-    )
-    os.close(handle)
+    directory = Path(str(scratch)) if scratch else path.parent
+    temporary = directory / f"{path.stem}-{uuid.uuid4().hex}{path.suffix}"
     try:
         write(temporary)
         os.replace(temporary, path)
