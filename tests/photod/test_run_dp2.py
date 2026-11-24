@@ -123,13 +123,14 @@ def test_the_fit_reads_the_curves_the_sightlines_were_looked_up_in(run, tmp_path
     """The flat row is only the flat row if the table the fit reads is the one the index was resolved in."""
     monkeypatch.setattr(run, "PARAMS", {})
     monkeypatch.setattr(run, "CURVES", {})
-    monkeypatch.setattr(run, "globalParameters", lambda floor, useDustMap, curves=None, arMax=5.0: curves)
+    monkeypatch.setattr(run, "globalParameters", lambda floor, useDustMap, curves, *rest: curves)
     path = str(dustFile(tmp_path / "curves.npz"))
+    rest = (str(run.RUN_LOCUS_FILE),)
 
-    curves = run.loadParams((0.03, True, path, 8.0))
+    curves = run.loadParams((0.03, True, path, 8.0, *rest))
     assert curves is run.loadCurves(path), "the fit was given another table than the index was resolved in"
     assert np.all(curves["shapes"][-1] == 0), "the table the fit reads has no flat sightline at its end"
-    assert run.loadParams((0.03, True, "", 8.0)) is None, "a run with no dust curves was given some"
+    assert run.loadParams((0.03, True, "", 8.0, *rest)) is None, "a run with no dust curves was given some"
 
 
 def test_an_nside_that_is_not_a_power_of_two_is_an_error(run, tmp_path):
@@ -650,6 +651,15 @@ def test_an_unscaled_run_records_no_scale_so_a_catalog_fitted_before_it_resumes(
     assert "arScale" not in flat, "a fit that reads no extinction recorded a scale for one"
 
 
+def test_the_default_locus_is_not_recorded_so_a_catalog_fitted_before_it_resumes(run):
+    """The default goes by its absence, as the path of the repository is no part of the fit; another is kept."""
+    assert "locus" not in run.runConfiguration(SimpleNamespace(**SETTINGS))
+    named = run.runConfiguration(SimpleNamespace(**(SETTINGS | {"locus": str(run.RUN_LOCUS_FILE)})))
+    assert "locus" not in named, "the default locus, named, was recorded as another"
+    other = run.runConfiguration(SimpleNamespace(**(SETTINGS | {"locus": "/data/other_locus.txt"})))
+    assert other["locus"] == "/data/other_locus.txt"
+
+
 def inputTable(objectIds, qFlag):
     """A prepared catalog's rows for the given stars, with columns the fit does not read and one named like
     an answer."""
@@ -761,6 +771,7 @@ def test_a_resume_that_asks_for_another_fit_is_refused(run, tmp_path):
         ("cone", [30.0, 15.0, 1.0]),
         ("catalog", "/data/dp3"),
         ("ar_scale", 0.86),
+        ("locus", "/data/other_locus.txt"),
     ):
         other = run.runConfiguration(SimpleNamespace(**(settings | {name: value})))
         with pytest.raises(SystemExit, match="--overwrite"):

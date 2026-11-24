@@ -35,6 +35,8 @@ AR_PER_EBV ebv, the LSST r ratio with the Schlafly & Finkbeiner 2011 recalibrati
 it only bounds the A_r prior, which is flat from zero to a little above it. With --dust-curves, where the 3D
 map has measured the column through the disc, the smaller of the two is the bound, which matters towards the
 bulge, where the 2D map integrates to infinity and reaches tens of magnitudes.
+
+--locus names another locus than photod.locus.RUN_LOCUS_FILE, which the prior maps must have been built on.
 """
 
 import argparse
@@ -357,18 +359,18 @@ def healpixOrder(nside):
     return order
 
 
-def globalParameters(floor, useDustMap, curves=None, arMax=5.0):
+def globalParameters(floor, useDustMap, curves=None, arMax=5.0, locusPath=RUN_LOCUS_FILE):
     """The fit setup: the locus on the tLoc grid, the colour-error floor, the A_r prior.
 
-    The locus is RUN_LOCUS_FILE, read without the two corrections scripts/make_locus.py measures on DP2:
-    both were fitted to the output of this fit and then written into the locus it is measured against, so
-    read that script before applying them again.
+    The locus is --locus, RUN_LOCUS_FILE unless a run names another, read without the two corrections
+    scripts/make_locus.py measures on DP2: both were fitted to the output of this fit and then written into
+    the locus it is measured against, so read that script before applying them again.
 
     The A_r grid has to reach the extinction of the field: the standard "ArLarge" grid stops at 2.5 mag, and a
     star whose A_r is above the top of the grid has it pinned there, which throws its distance out with it.
     """
     locus = LSSTsimsLocus(
-        fixForStripe82=False, datafile=str(RUN_LOCUS_FILE), colnames=["tLoc", "Mr", "FeH", *COLORS]
+        fixForStripe82=False, datafile=str(locusPath), colnames=["tLoc", "Mr", "FeH", *COLORS]
     )
     locusData = subsampleLocusData(locus, kMr=1, kFeH=1, yLabel="tLoc")
     ArGridList = getArGridList()
@@ -602,10 +604,10 @@ def workerDevice(nDevices):
 def loadParams(setup):
     """The fit setup, built once per worker process from the few settings it is made of, rather than sent."""
     if setup not in PARAMS:
-        floor, useDustMap, curvePath, arMax = setup
+        floor, useDustMap, curvePath, arMax, locusPath = setup
         # the same curves the sightlines were looked up in, flat row and all, so that the index of a star
         # whose sky no 3D map covers points at that row here as well
-        PARAMS[setup] = globalParameters(floor, useDustMap, loadCurves(curvePath) or None, arMax)
+        PARAMS[setup] = globalParameters(floor, useDustMap, loadCurves(curvePath) or None, arMax, locusPath)
     return PARAMS[setup]
 
 
@@ -889,6 +891,11 @@ def runConfiguration(args):
         "dustCurves": str(args.dust_curves) if not args.no_dust_map else "",
         "cone": [float(x) for x in args.cone] if args.cone else None,
     }
+    # The default locus goes by its absence rather than by a path, which would change with the place the
+    # repository is kept, and is what every run made before this option existed fitted.
+    locus = getattr(args, "locus", RUN_LOCUS_FILE)
+    if Path(locus).resolve() != Path(RUN_LOCUS_FILE).resolve():
+        configuration["locus"] = str(locus)
     # an unscaled column is what every run made before this option existed, so the default stays out of the
     # record and a catalog fitted then still resumes; a scaled one is written down and cannot be mixed with it
     if not args.no_dust_map and float(args.ar_scale) != 1.0:
@@ -1111,6 +1118,11 @@ def main():
     ap.add_argument("--cone", nargs=3, type=float, metavar=("RA", "DEC", "RADIUS_DEG"))
     ap.add_argument("--floor", type=float, default=0.03, help="colour-error floor in magnitudes")
     ap.add_argument(
+        "--locus",
+        default=str(RUN_LOCUS_FILE),
+        help="the locus to fit, which must be the one the prior maps were built on",
+    )
+    ap.add_argument(
         "--ar-column",
         default="Ar",
         help="extinction column of a catalog prepared beforehand; from ebv when the fluxes are read instead",
@@ -1222,7 +1234,7 @@ def main():
         print(f"shard {shard[0]} of {shard[1]}: {len(sources)} of {len(everything)} partitions")
     print(f"reading {'prepared colours' if 'ug' in columns else 'PSF fluxes'} from {args.catalog}")
     cone = tuple(args.cone) if args.cone else None
-    setup = (args.floor, not args.no_dust_map, curvePath, args.ar_max)
+    setup = (args.floor, not args.no_dust_map, curvePath, args.ar_max, str(args.locus))
     if curvePath:
         curves = readCurves(curvePath)
         measured = curves.get("total")
