@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -255,6 +257,26 @@ def test_the_locus_rows_have_to_be_the_grid_they_claim():
         GlobalParams(COLORS, shuffled, lt.getArGridList())
     with pytest.raises(ValueError, match="rectangular"):
         GlobalParams(COLORS, locus[:-1], lt.getArGridList())
+
+
+def test_an_uneven_locus_axis_is_warned_about_and_still_fitted():
+    """A missing grid value gives its neighbours the wrong prior weight, which is worth a warning, not a refusal."""
+    locus = make_locus(True)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        make_params(locus, tLoc=True)  # an even grid says nothing
+    holed = locus[~np.isclose(locus["tLoc"], 4.0)]
+    with pytest.warns(UserWarning, match=r"not evenly spaced \(3\.75 -> 4\.25\)"):
+        params = make_params(holed, tLoc=True)
+    assert params.Mr1d.size == np.unique(np.asarray(holed["tLoc"])).size
+
+    # separate tracks on one axis, named by a segment column, are taken one at a time
+    tracks = make_locus(True)
+    tracks["tLoc"] = np.where(tracks["tLoc"] < 3, tracks["tLoc"] - 5, tracks["tLoc"])
+    tracks["segment"] = np.where(tracks["tLoc"] < 0, 1, 0)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        make_params(tracks, tLoc=True)
 
 
 def test_subsampling_keeps_the_end_of_each_axis():

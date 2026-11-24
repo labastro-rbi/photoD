@@ -1,3 +1,4 @@
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
@@ -109,6 +110,7 @@ class GlobalParams:
                 f"the locus rows must run over {self.yLabel} within blocks of increasing {self.xLabel}, "
                 "both ascending"
             )
+        self._warnUnevenAxis(onGrid[1][0])
 
         # the color model is linear in A_r: colors = locusColors2d + A_r * reddVector, each color reddened by
         # its name, whatever the column order of the locus table
@@ -168,6 +170,39 @@ class GlobalParams:
         self.QrSmoothGrid, self.QrSmoothLower, self.QrSmoothUpper, self.QrSmoothKernel = smoothingGrid(
             self.QrGrid, self.multimodalitySmoothing
         )
+
+    def _warnUnevenAxis(self, axis):
+        """Warn, without refusing the locus, where the step along yLabel is not the step of the rest of it.
+
+        The fit takes every grid point as dMr wide, so where a value is missing the stretch it stood for gets
+        no prior weight at all. A locus whose segment column puts separate tracks on one axis is taken a
+        segment at a time, since the stretch between two tracks is no hole in either.
+        """
+        names = getattr(self.locusData, "colnames", None) or list(getattr(self.locusData, "columns", []))
+        if "segment" in names:
+            segment = np.asarray(self.locusData["segment"]).reshape(self.FeH1d.size, -1)[0]
+        else:
+            segment = np.zeros(axis.size, dtype=int)
+        uneven = []
+        for k in np.unique(segment):
+            values = axis[segment == k]
+            if values.size < 3:
+                continue
+            steps = np.round(np.diff(values), 9)
+            found, counts = np.unique(steps, return_counts=True)
+            usual = found[np.argmax(counts)]
+            off = ~np.isclose(steps, usual, rtol=1e-6)
+            # a subsampled axis keeps its last value whatever the step leaves over (subsampleLocusData), so a
+            # short last step is how it ends rather than a hole in it
+            off[-1] &= steps[-1] > usual
+            uneven += [f"{values[i]:g} -> {values[i + 1]:g}" for i in np.where(off)[0]]
+        if uneven:
+            shown = ", ".join(uneven[:5]) + (f" and {len(uneven) - 5} more" if len(uneven) > 5 else "")
+            warnings.warn(
+                f"the {self.yLabel} grid of the locus is not evenly spaced ({shown}): a grid value may be "
+                "missing from the locus file, and the points either side of it then carry the wrong prior weight",
+                stacklevel=4,
+            )
 
     def starArgs(self, nAr=None):
         """Arrays used by the per-star computation, with the A_r grid cut to its first nAr values."""
